@@ -618,5 +618,3 @@ Scale here is not users — it is **conversation length, idle time, uptime, and 
 ---
 *Pitfalls research for: local-first LLM-native personal voice assistant (framework + appliance + control panel), solo-maintained*
 *Researched: 2026-07-13 / Written: 2026-07-18*
-</content>
-</invoke>
