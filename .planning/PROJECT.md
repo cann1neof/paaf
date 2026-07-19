@@ -75,7 +75,9 @@ It is for two audiences equally: self-hosters and privacy-minded people who want
 
 **The competitive wedge.** Home Assistant Assist is the strongest existing open voice stack and will be the #1 comparison at launch. It is a smart-home platform with a voice feature: you must run all of Home Assistant, and the LLM is a single "conversation agent" dropdown — no user-facing model routing or fallbacks, no long-request behaviors, no LLM-native skill packaging, minimal persona control. PAAF is assistant-first: **the LLM framework is the product**, no smart-home install required, and HA becomes just one tool the assistant can drive. OpenVoiceOS carries pre-LLM DNA (intent parsing at the core) and can't retrofit its way out. Willow proved solo-maintainer risk is real — hence publishing early.
 
-**Language handling is a founding property, not a feature.** The user speaks English, Russian, Hebrew, and Spanish, often mixed within a single sentence, and expects the assistant to simply cope — the way an LLM does. STT is a non-issue here (Whisper-class models are natively multilingual and handle code-switching). TTS is where the constraint bites: a single-language phoneme model cannot voice a mixed-script sentence, so a **multilingual TTS engine is a hard requirement**, and engine selection must be driven by it.
+**Language handling is a founding property, not a feature.** The user speaks English, Russian, Hebrew, and Spanish, often mixed within a single sentence, and expects the assistant to simply cope — the way an LLM does. A single-language phoneme model cannot voice a mixed-script sentence, so a **multilingual TTS engine is a hard requirement**, and engine selection is driven by it.
+
+⚠️ **Correction (2026-07-19, from research):** an earlier draft of this document claimed "STT is a non-issue" because Whisper is natively multilingual. That was **overconfident**. Whisper emits one language token per 30-second window and, on code-switched speech, tends to lock onto a single language and transliterate or silently translate the rest. Both halves of the pipeline carry code-switching risk. Neither Chatterbox's intra-sentence code-switching nor its Hebrew quality is documented by anyone — this is the project's highest-risk unverified claim and the reason Phase 0 exists. No public claim about multilingual behavior may exceed what Phase 0 measures.
 
 **Latency is the make-or-break.** Voice feels dead above ~1.5–2s to first audio. Streaming TTS and the long-request behaviors are core features, not polish. Time-to-first-audio on the reference config is a tracked number from the Voice phase onward.
 
@@ -102,6 +104,12 @@ It is for two audiences equally: self-hosters and privacy-minded people who want
 | Linux is the product, macOS is a dev harness | Avoids paying a cross-platform abstraction tax for a platform we don't ship. | — Pending |
 | Hardware reference build deferred out of this milestone | No target hardware yet; the software must stand on its own regardless. | — Pending |
 | Name is `PAAF` (Personalized Agentic Assistant Framework), working title | A real name can be chosen before launch without touching architecture. | — Pending |
+| **Five framework packages, not two modules**: `paaf-core`, `paaf-llm`, `paaf-voice`, `paaf-session`, `paaf-trace` | Research found the original two-module sketch has no owner for the realtime loop. Correct barge-in must truncate LLM history to what actually played out of the speaker — requiring knowledge of both modules at once — so the project's own decoupling rule *forces* a session orchestrator. Pipecat (`Pipeline`) and LiveKit (`AgentSession`) independently converged on the same component. | — Pending |
+| **`paaf-session` stays narrow** — only what requires knowing time is passing and audio is playing | A session package that accumulates unrelated cross-cutting features stops being testable without hardware, which was the main argument for extracting it. Test: does the feature need to know the clock is running? Multi-endpoint routing and semantic search fail that test and live in `paaf-llm`. | — Pending |
+| **Stack: LangChain 1.3 + LangGraph 1.2, Chatterbox Multilingual V3, Whisper large-v3** | Hebrew collapses both the STT and TTS decision trees to one survivor each. Kokoro is disqualified (no Hebrew *and* no Russian); Piper is archived and its successor is GPL-3.0. The LangChain-vs-Pydantic-AI stability argument has *reversed* since `project-docs/` was written. All choices remain falsifiable in Phase 0. | — Pending |
+| **Hebrew: accept measured quality, document honestly** | Chatterbox's Hebrew quality and intra-sentence code-switching are unverified by anyone. Rather than gate the project on them, measure in Phase 0, ship what is real, and state it plainly. A per-language *engine* override (never voice switching) is the escape hatch. | — Pending |
+| **Lead positioning with "shows you its own mind and proves it's offline"**, not "user-facing LLM management" | A competitor missed by the original landscape scan (Row-Bot, 1.4k★) already owns the LLM-management framing and ships model profiles, routing, a tool registry, and a skills hub. The verbatim prompt inspector and verifiable offline mode remain genuinely unclaimed. | — Pending |
+| **The permission model is the only injection defense** | Competitors defend against prompt injection with hidden system-prompt instructions. PAAF's "nothing hidden from the user" commitment forbids that, so `confirm` on every irreversible action must carry the weight. A values commitment cashed out as an architectural constraint. | — Pending |
 
 ## Evolution
 
@@ -121,4 +129,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-13 after initialization*
+*Last updated: 2026-07-19 after research and requirements definition*
