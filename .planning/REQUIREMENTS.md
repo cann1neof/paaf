@@ -159,7 +159,7 @@ Narrow by design: only what requires knowing that time is passing and audio is p
 ### Open Source & Launch (OSS)
 
 - [ ] **OSS-01**: `paaf-llm` published to PyPI as a standalone usable package, with the verbatim prompt inspector working, before voice exists
-- [ ] **OSS-02**: Documentation site covering install, configuration, skill authoring, and the framework API
+- [ ] **OSS-02**: Documentation site covering install, configuration, skill authoring, and the framework API — published with the PyPI release covering what exists then, and extended in Phase 12 to cover voice, the appliance, and the desktop app
 - [ ] **OSS-03**: An honest comparison page that concedes Home Assistant's real strengths
 - [ ] **OSS-04**: A third-party developer can build a different assistant on the framework alone, proven by an example that is not PAAF's own app
 - [ ] **OSS-05**: Public launch — demo video, HN, r/selfhosted, r/LocalLLaMA
@@ -207,16 +207,142 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| SPIKE-01 | Phase 1 — Spike Gate | Pending |
+| SPIKE-02 | Phase 1 — Spike Gate | Pending |
+| SPIKE-03 | Phase 1 — Spike Gate | Pending |
+| SPIKE-04 | Phase 1 — Spike Gate | Pending |
+| SPIKE-05 | Phase 1 — Spike Gate | Pending |
+| SPIKE-06 | Phase 1 — Spike Gate | Pending |
+| SPIKE-07 | Phase 1 — Spike Gate | Pending |
+| SPIKE-08 | Phase 1 — Spike Gate | Pending |
+| SPIKE-09 | Phase 1 — Spike Gate | Pending |
+| FOUND-01 | Phase 2 — Foundation | Pending |
+| FOUND-02 | Phase 2 — Foundation | Pending |
+| FOUND-03 | Phase 2 — Foundation | Pending |
+| FOUND-04 | Phase 2 — Foundation | Pending |
+| FOUND-05 | Phase 2 — Foundation | Pending |
+| FOUND-06 | Phase 2 — Foundation | Pending |
+| FOUND-07 | Phase 2 — Foundation | Pending |
+| CORE-01 | Phase 2 — Foundation | Pending |
+| CORE-02 | Phase 2 — Foundation | Pending |
+| CORE-03 | Phase 2 — Foundation | Pending |
+| CORE-04 | Phase 2 — Foundation | Pending |
+| CORE-05 | Phase 2 — Foundation | Pending |
+| CORE-06 | Phase 2 — Foundation | Pending |
+| TRACE-01 | Phase 2 — Foundation | Pending |
+| TRACE-02 | Phase 2 — Foundation | Pending |
+| TRACE-03 | Phase 2 — Foundation | Pending |
+| TRACE-04 | Phase 2 — Foundation | Pending |
+| TRACE-05 | Phase 2 — Foundation | Pending |
+| MODEL-01 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-02 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-03 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-04 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-05 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-06 | Phase 3 — paaf-llm Core | Pending |
+| MODEL-07 | Phase 10 — Desktop Core | Pending |
+| MODEL-08 | Phase 3 — paaf-llm Core | Pending |
+| PERS-01 | Phase 3 — paaf-llm Core | Pending |
+| PERS-02 | Phase 3 — paaf-llm Core | Pending |
+| PERS-03 | Phase 3 — paaf-llm Core | Pending |
+| PERS-04 | Phase 3 — paaf-llm Core | Pending |
+| PERS-05 | Phase 3 — paaf-llm Core | Pending |
+| TOOL-01 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-02 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-03 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-04 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-05 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-06 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-07 | Phase 4 — Tools, MCP & Permissions | Pending |
+| TOOL-08 | Phase 4 — Tools, MCP & Permissions | Pending |
+| SKILL-01 | Phase 5 — Skills & PyPI Release | Pending |
+| SKILL-02 | Phase 5 — Skills & PyPI Release | Pending |
+| SKILL-03 | Phase 5 — Skills & PyPI Release | Pending |
+| SKILL-04 | Phase 5 — Skills & PyPI Release | Pending |
+| SKILL-05 | Phase 5 — Skills & PyPI Release | Pending |
+| VOICE-01 | Phase 6 — paaf-voice Ports & Fakes | Pending |
+| VOICE-02 | Phase 6 — paaf-voice Ports & Fakes | Pending |
+| VOICE-03 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-04 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-05 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-06 | Phase 6 — paaf-voice Ports & Fakes | Pending |
+| VOICE-07 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-08 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-09 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-10 | Phase 7 — Real Engines & Live Audio | Pending |
+| VOICE-11 | Phase 6 — paaf-voice Ports & Fakes | Pending |
+| VOICE-12 | Phase 7 — Real Engines & Live Audio | Pending |
+| SESS-01 | Phase 8 — paaf-session | Pending |
+| SESS-02 | Phase 8 — paaf-session | Pending |
+| SESS-03 | Phase 8 — paaf-session | Pending |
+| SESS-04 | Phase 8 — paaf-session | Pending |
+| SESS-05 | Phase 8 — paaf-session | Pending |
+| SESS-06 | Phase 8 — paaf-session | Pending |
+| SESS-07 | Phase 8 — paaf-session | Pending |
+| SESS-08 | Phase 8 — paaf-session | Pending |
+| SESS-09 | Phase 8 — paaf-session | Pending |
+| APP-01 | Phase 9 — The Appliance | Pending |
+| APP-02 | Phase 9 — The Appliance | Pending |
+| APP-03 | Phase 9 — The Appliance | Pending |
+| APP-04 | Phase 9 — The Appliance | Pending |
+| APP-05 | Phase 9 — The Appliance | Pending |
+| APP-06 | Phase 9 — The Appliance | Pending |
+| APP-07 | Phase 9 — The Appliance | Pending |
+| APP-08 | Phase 9 — The Appliance | Pending |
+| APP-09 | Phase 9 — The Appliance | Pending |
+| APP-10 | Phase 9 — The Appliance | Pending |
+| DESK-01 | Phase 10 — Desktop Core | Pending |
+| DESK-02 | Phase 10 — Desktop Core | Pending |
+| DESK-03 | Phase 10 — Desktop Core | Pending |
+| DESK-04 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-05 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-06 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-07 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-08 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-09 | Phase 11 — Desktop Remaining Pages | Pending |
+| DESK-10 | Phase 10 — Desktop Core | Pending |
+| DESK-11 | Phase 10 — Desktop Core | Pending |
+| DESK-12 | Phase 10 — Desktop Core | Pending |
+| DESK-13 | Phase 10 — Desktop Core | Pending |
+| PRIV-01 | Phase 2 — Foundation | Pending |
+| PRIV-02 | Phase 2 — Foundation | Pending |
+| PRIV-03 | Phase 9 — The Appliance | Pending |
+| PRIV-04 | Phase 12 — Bring-Up & Launch | Pending |
+| PRIV-05 | Phase 10 — Desktop Core | Pending |
+| PRIV-06 | Phase 7 — Real Engines & Live Audio | Pending |
+| PRIV-07 | Phase 12 — Bring-Up & Launch | Pending |
+| OSS-01 | Phase 5 — Skills & PyPI Release | Pending |
+| OSS-02 | Phase 5 — Skills & PyPI Release | Pending |
+| OSS-03 | Phase 12 — Bring-Up & Launch | Pending |
+| OSS-04 | Phase 12 — Bring-Up & Launch | Pending |
+| OSS-05 | Phase 12 — Bring-Up & Launch | Pending |
+| OSS-06 | Phase 12 — Bring-Up & Launch | Pending |
 
 **Coverage:**
 - v1 requirements: 110 total
-- Mapped to phases: 0
-- Unmapped: 110 ⚠️
+- Mapped to phases: 110 ✓
+- Unmapped: 0
+
+**Per-phase totals:**
+
+| Phase | Requirements |
+|-------|--------------|
+| Phase 1 — Spike Gate | 9 |
+| Phase 2 — Foundation | 20 |
+| Phase 3 — paaf-llm Core | 12 |
+| Phase 4 — Tools, MCP & Permissions | 8 |
+| Phase 5 — Skills & PyPI Release | 7 |
+| Phase 6 — paaf-voice Ports & Fakes | 4 |
+| Phase 7 — Real Engines & Live Audio | 9 |
+| Phase 8 — paaf-session | 9 |
+| Phase 9 — The Appliance | 11 |
+| Phase 10 — Desktop Core | 9 |
+| Phase 11 — Desktop Remaining Pages | 6 |
+| Phase 12 — Bring-Up & Launch | 6 |
 
 ---
 *Requirements defined: 2026-07-19*
