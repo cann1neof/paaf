@@ -400,4 +400,156 @@ OK  import ollama
 
 ## Task 3 — Tool-call sanity gate
 
-<!-- filled by Task 3 -->
+### 3.1 VERDICT: **GREEN — no model swap required**
+
+`qwen3.5:9b` and `qwen3.5:2b` emitted a **well-formed tool call on 30 of 30 trials, 100%
+in every condition**. Assumption **A5 is confirmed**: the instrument works, so a weak
+tool-caller cannot be the hidden cause of a SPIKE-06 MCP-tracing failure. SPIKE-06 and
+SPIKE-07 may proceed, and their verdict will be about the frameworks.
+
+Report from `SPIKE_TOOL_TRIALS=5 python spike/bakeoff/tool_call_sanity.py`:
+
+```
+host=http://127.0.0.1:11434  trials=5  min_reliability=1.0
+
+=== qwen3.5:9b  caps=['completion', 'vision', 'tools', 'thinking'] ===
+  [PASS] raw       add       100% (5/5)  mean   5.3s  usage={'prompt_eval_count': 364, 'eval_count': 110}
+  [PASS] raw       get_time  100% (5/5)  mean   3.8s  usage={'prompt_eval_count': 356, 'eval_count': 76}
+  [PASS] langchain add       100% (5/5)  mean   5.2s  usage={'input_tokens': 346, 'output_tokens': 115, 'total_tokens': 461}
+  [PASS] langchain get_time  100% (5/5)  mean   3.5s  usage={'input_tokens': 338, 'output_tokens': 76, 'total_tokens': 414}
+
+=== qwen3.5:2b  caps=['completion', 'vision', 'tools', 'thinking'] ===
+  [PASS] langchain add       100% (5/5)  mean   2.8s  usage={'input_tokens': 346, 'output_tokens': 120, 'total_tokens': 466}
+  [PASS] langchain get_time  100% (5/5)  mean   1.8s  usage={'input_tokens': 338, 'output_tokens': 88, 'total_tokens': 426}
+
+GATE: GREEN
+```
+
+Run at **stock sampling defaults** (`temperature 1`, `top_p 0.95`, `top_k 20`,
+`presence_penalty 1.5`) — not a tuned harness. The question was what a user gets.
+
+### 3.2 What "well-formed" was actually required to mean
+
+A naive `if response.tool_calls:` would pass on a call with a stringified integer and a
+missing operand. `validate_tool_call` checks seven independent conditions:
+
+1. at least one tool call (i.e. not prose) — the most likely failure mode;
+2. **exactly** one (both prompts admit exactly one);
+3. the name is among the bound tools (catches hallucinated tools);
+4. the name is the **expected** one — this measures tool **selection**, not just emission.
+   Two cases, one per tool, so a model that always calls `add` scores 50%, which a
+   single-case gate would score 100%;
+5. arguments are a dict **and** survive a JSON round trip;
+6. argument keys match the schema exactly — nothing missing, nothing extra;
+7. argument types and **values** match (`{"a": 48271, "b": 9384}`, large arbitrary
+   addends so they cannot be a memorised constant). `bool` is explicitly excluded from
+   `integer`, because Python's `isinstance(True, int)` is `True` and `{"a": true}` would
+   otherwise pass as a valid integer.
+
+### 3.3 The gate is proven capable of failing
+
+01-03's rule — *a gate that cannot fail manufactures confidence* — is enforced by **ten
+negative controls**, each a hand-built malformed call the validator must reject, *and
+reject for the stated reason*: prose, two calls, hallucinated name, wrong tool, args as a
+JSON string, missing required arg, extra arg, stringified integer, bool-as-integer, and
+right-shape-wrong-values. Two complementary tests assert a correct call is **accepted**,
+since a validator that rejects everything is equally useless.
+
+`validate_tool_call` takes the framework-free shape `[{"name": str, "args": dict}]`, which
+is what makes those controls possible without model traffic — and is why they run in
+0.12 s while the live gate takes 88 s.
+
+### 3.4 ⚠️ Finding: the no-cloud assertion was silently vacuous, and the gate caught it
+
+The first run of the fast suite **failed**, on this:
+
+```
+AssertionError: model 'qwen3.5:9b' does not declare the 'tools' capability: []
+```
+
+Cause: the `ollama` python client 0.6.2 models the `/api/tags` response with a pydantic
+schema whose `Model` class declares only `model / modified_at / digest / size / details`
+— **no `capabilities` field**. The daemon *does* send `capabilities` on `/api/tags`
+(confirmed against the raw HTTP endpoint), but pydantic drops the unknown key. So
+`client.list()` reports `[]` for every model.
+
+Why that matters beyond a typo: the check written against `list()` was
+
+```python
+if "cloud" in caps:   # caps is always [] -> never true
+    raise AssertionError(...)
+```
+
+**The PRIV-02 no-cloud guarantee would have passed for every tag, including a genuinely
+cloud-routed `qwen3.5:cloud`.** A guarantee that is vacuously true is worse than none,
+because it reads as evidence. `capabilities_of()` now reads `/api/show` (whose schema
+*does* declare `capabilities`) and treats an empty list as an **error**, never as "no
+cloud capability". Two regression tests pin it, one of which fails deliberately if a
+future `ollama` client adds the field, so the workaround retires itself instead of rotting.
+
+This is the same class of defect as 01-03's dicta finding: it lives in the *interaction*
+between two packages' schemas and is invisible to reading either one.
+
+### 3.5 Informational, carried to SPIKE-05 — token counts are NOT `None`
+
+CLAUDE.md §Decision 1 lists *"Token counts come back `None` for Ollama"* as a known rough
+edge and a reason the LangChain recommendation is only MEDIUM confidence. RESEARCH
+§Pitfall 8 warns against concluding it from a streaming chunk. Measured here on the
+**non-streaming** path, at both levels:
+
+| Path | Field | Value |
+|---|---|---|
+| raw `ollama` client | `prompt_eval_count` / `eval_count` | **364 / 110** — non-`None` |
+| `init_chat_model("ollama:…")` | `usage_metadata` | **`{'input_tokens': 346, 'output_tokens': 115, 'total_tokens': 461}`** — non-`None` |
+
+`langchain-ollama` 1.1.0 is correctly mapping `prompt_eval_count`/`eval_count` into
+`usage_metadata`, exactly as RESEARCH read from the wheel. **This does not close SPIKE-05**
+— the open question is the *streaming* path, which is where Pitfall 8 says the `None`
+actually appears, and SPIKE-05 owns it. Recorded so 01-06 starts from a known baseline
+rather than rediscovering the non-streaming half. Per 01-03's pattern this check is
+informational: the test asserts only that the fields *exist* and prints their values, so a
+negative answer would be a finding to carry forward, not a gate failure.
+
+### 3.6 Observed shape for SPIKE-08 (not a measurement — that is 01-09's job)
+
+Both models are **thinking** models and emit a reasoning pass before the tool call, in a
+separate `thinking` field rather than mixed into `content` (so a tracer will not mistake
+reasoning for a malformed call). Single-turn tool-call wall time, warm, unbatched:
+
+| Model | `add` | `get_time` |
+|---|---|---|
+| `qwen3.5:9b` | ~5.2 s | ~3.5 s |
+| `qwen3.5:2b` | ~2.8 s | ~1.8 s |
+
+Roughly a 2× gap, which is what motivated pulling the smaller tag. These are **not** the
+SPIKE-08 numbers — no warmup discipline (Pitfall 10), n=5, and the think tokens are
+included. They only confirm the latency model is worth having.
+
+### 3.7 Artifacts and how to run
+
+| File | Role |
+|---|---|
+| `spike/bakeoff/tool_call_sanity.py` | tools, cases, validator, both probes, env assertions, CLI report |
+| `spike/bakeoff/test_tool_call_sanity.py` | 39 tests — 32 fast (env + negative controls), 7 slow (live gate) |
+| `spike/bakeoff/conftest.py` | interpreter-keyed collection guard (01-03 pattern) |
+| `spike/bakeoff/__init__.py` | stops this dir's conftest shadowing `spike/conftest.py` — see SUMMARY deviation 3 |
+
+```bash
+# the gate
+uv run --python spike/bakeoff/.venv/bin/python pytest spike/bakeoff/ -q          # 39 passed, 88s
+# fast layer only
+uv run --python spike/bakeoff/.venv/bin/python pytest spike/bakeoff/ -q -m "not slow"
+# standalone report at higher n
+SPIKE_TOOL_TRIALS=5 spike/bakeoff/.venv/bin/python spike/bakeoff/tool_call_sanity.py
+```
+
+Suite status across all three venvs after this plan: base **61 passed**, voice **70 passed**
+(fast), bake-off **39 passed** (full).
+
+### 3.8 Model swaps
+
+**None.** No swap was needed; both pulled tags cleared the gate at 100% on the first
+attempt. Had either failed, the plan's remedy — swap the model now and record the reason
+here, rather than let SPIKE-06 misattribute the failure to the framework — would have
+applied. The assertion message inside `test_capability_model_emits_well_formed_tool_calls`
+carries that instruction, so a future re-run that goes red says what to do.
