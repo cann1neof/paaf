@@ -72,6 +72,7 @@ __all__ = [
     "naive_stream_usage",
     "naive_tool_output",
     "split_tool_output",
+    "structured_content_matches",
 ]
 
 
@@ -366,12 +367,48 @@ def split_tool_output(name: str, output: Any) -> ToolResult:
             structured_content=structured,
         )
 
+    if isinstance(output, Mapping):
+        # A bare mapping with no wrapper key: the structured payload IS the result.
+        #
+        # This branch exists because the first version of this function did not have it,
+        # and it produced a false negative for the Pydantic AI adapter — whose
+        # `after_tool_execute` hook hands over the MCP server's `structuredContent` as a
+        # plain `dict`, with no content/artifact split at all. Reported as
+        # `artifact_present: false`, which reads as "the structured half was lost" when the
+        # truth is the opposite: nothing was ever wrapped, so nothing could be lost.
+        #
+        # Getting this wrong would have rejected a framework on a defect in the
+        # instrument — which is the exact failure this whole plan exists to prevent, so it
+        # is recorded here rather than quietly patched.
+        return ToolResult(
+            name=name,
+            content=output,
+            artifact=output,
+            artifact_present=True,
+            structured_content=output,
+        )
+
     return ToolResult(name=name, content=output, artifact=None, artifact_present=False)
 
 
 def naive_tool_output(name: str, output: Any) -> ToolResult:
     """The WRONG capture Pitfall 9 describes: stringify and drop the structured half."""
     return ToolResult(name=name, content=str(output), artifact=None, artifact_present=False)
+
+
+def structured_content_matches(result: ToolResult, expected: Mapping[str, Any]) -> bool:
+    """Does the captured structured payload equal what the MCP server is known to have sent?
+
+    ``artifact_present`` alone is too weak to carry SPIKE-06 once bare mappings count as
+    structured — every dict would satisfy it, and the requirement would be met by any tool
+    that returned anything. This compares against the server's frozen fixture instead, so
+    the check fails if a single field was dropped, renamed, or stringified. It is also the
+    one assertion that reads identically across both frameworks despite their different
+    result shapes, which is what makes the two answers comparable.
+    """
+    if result.structured_content is None:
+        return False
+    return dict(result.structured_content) == dict(expected)
 
 
 # ======================================================================================

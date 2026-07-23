@@ -58,7 +58,18 @@ from bakeoff.port import (
     missing_hooks,
     naive_tool_output,
     split_tool_output,
+    structured_content_matches,
 )
+
+#: What `mcp_server/server.py` is known to send for `room_status("kitchen")`. Comparing
+#: against it — rather than against "an artifact was present" — is what keeps SPIKE-06
+#: from passing for any tool that returns anything.
+EXPECTED_STRUCTURED = {
+    "room": "kitchen",
+    "temperature_c": 21.5,
+    "humidity_pct": 44,
+    "devices": ["kettle", "ceiling-lamp"],
+}
 
 __all__ = ["LangChainAdapter", "LangChainTrace", "trace_handler_gaps"]
 
@@ -259,6 +270,11 @@ class LangChainAdapter:
         #: Set by :meth:`stream`; SPIKE-05's streaming-path answer.
         self.stream_usage: TokenUsage | None = None
         self.stream_chunk_usages: list[TokenUsage | None] = []
+        #: Ollama's ``done_reason`` off the last chunk. ``"length"`` means the answer was
+        #: cut off — see the shared-conditions note in raw/bakeoff-results.md. Captured
+        #: because the Pydantic AI side *raises* on this and LangChain does not, so
+        #: comparing the two without measuring it would compare different runs.
+        self.stream_finish_reason: str | None = None
 
     # -- 1. model loading from a named profile ---------------------------------------
     async def load_profile(self, profile: ModelProfile) -> ModelHandle:
@@ -294,11 +310,16 @@ class LangChainAdapter:
         """Yield text tokens; read usage only once the stream is closed (Pitfall 8)."""
         aggregator = UsageAggregator()
         self.stream_chunk_usages = []
+        self.stream_finish_reason = None
         config = {"callbacks": [self._handler]}
         async for chunk in self._model.astream(prompt, config=config):
             usage = _usage_from_metadata(getattr(chunk, "usage_metadata", None), "chunk")
             aggregator.add_chunk(usage)
             self.stream_chunk_usages.append(usage)
+            metadata = getattr(chunk, "response_metadata", None) or {}
+            reason = metadata.get("done_reason") or metadata.get("finish_reason")
+            if reason:
+                self.stream_finish_reason = str(reason)
             text = _text_of(chunk)
             if text:
                 yield text
@@ -368,7 +389,12 @@ MCP_SPEC = McpServerSpec(
     args=("spike/bakeoff/mcp_server/server.py",),
 )
 
-STREAM_PROMPT = "Reply with exactly the words: hello from the port."
+# "Reply with exactly the words: X" was the original prompt and it was a bad one: the
+# model overthinks literal-compliance instructions, and its reasoning then collides with
+# Ollama's default 4096-token context. Measured truncation at that ceiling on BOTH routes
+# (native /api/chat 1/3, OpenAI-compat 2/4), so it is a daemon+model property, not a
+# framework one. A plain greeting reasons for 285-598 tokens and completed 3/3.
+STREAM_PROMPT = "Say hello."
 TOOL_PROMPT = "What is the current status of the kitchen? Use the room_status tool."
 
 
@@ -404,6 +430,11 @@ async def run_probe() -> dict[str, Any]:
             1 for u in adapter.stream_chunk_usages if u is not None and u.is_populated
         ),
         "chunk_usages_total": len(adapter.stream_chunk_usages),
+        "finish_reason": adapter.stream_finish_reason,
+        # LangChain does not raise on a truncated answer; it hands back whatever text
+        # exists. Pydantic AI raises. Recording it on both sides keeps the comparison honest.
+        "truncated_by_context_window": adapter.stream_finish_reason == "length",
+        "text_is_empty_despite_completing": not "".join(chunks).strip(),
     }
     evidence["spike_05"] = {
         "streaming_usage_after_aggregation": _usage_dict(adapter.stream_usage),
@@ -452,6 +483,16 @@ async def run_probe() -> dict[str, Any]:
         ],
         "naive_capture_artifact_present": [
             naive_tool_output("room_status", o).artifact_present
+            for o in handler.raw_tool_end_outputs
+        ],
+        # The assertion that can fail: byte-for-byte against the server's frozen fixture.
+        "structured_content_matches_server_fixture": [
+            structured_content_matches(r, EXPECTED_STRUCTURED) for r in recorder.tool_results
+        ],
+        "naive_capture_matches_server_fixture": [
+            structured_content_matches(
+                naive_tool_output("room_status", o), EXPECTED_STRUCTURED
+            )
             for o in handler.raw_tool_end_outputs
         ],
     }

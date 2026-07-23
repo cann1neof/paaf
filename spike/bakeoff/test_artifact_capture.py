@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from conftest import FakeTool
 
 from bakeoff.port import (
@@ -27,6 +28,7 @@ from bakeoff.port import (
     TraceRecorder,
     naive_tool_output,
     split_tool_output,
+    structured_content_matches,
 )
 
 # --------------------------------------------------------------------------------------
@@ -116,13 +118,66 @@ def test_naive_capture_reduces_the_mcp_artifact_to_a_repr():
 
 
 def test_split_handles_the_raw_mcp_mapping_shape():
-    """The Pydantic AI / raw-CallToolResult shape uses camelCase ``structuredContent``."""
+    """The raw ``CallToolResult`` shape uses camelCase ``structuredContent``."""
     output = {"content": "kitchen is 21.5C", "structuredContent": STRUCTURED}
     result = split_tool_output("room_status", output)
 
     assert result.artifact_present is True
     assert result.structured_content == STRUCTURED
     assert result.content == "kitchen is 21.5C"
+
+
+def test_split_handles_the_unwrapped_dict_pydantic_ai_delivers():
+    """Regression test for a bug in the *instrument*, not in either framework.
+
+    Pydantic AI's ``after_tool_execute`` hook hands over the MCP server's
+    ``structuredContent`` as a plain ``dict`` — no content/artifact split at all. The first
+    version of ``split_tool_output`` had no branch for that, so it reported
+    ``artifact_present: false``, which reads as "the structured half was lost". The truth
+    was the opposite: nothing was ever wrapped, so nothing could be lost.
+
+    That would have been a false negative against Pydantic AI on SPIKE-06 — a framework
+    rejected for a defect in the measuring device.
+    """
+    result = split_tool_output("room_status", dict(STRUCTURED))
+
+    assert result.artifact_present is True
+    assert result.structured_content == STRUCTURED
+
+
+# --------------------------------------------------------------------------------------
+# The check that carries SPIKE-06 once bare dicts count as structured
+# --------------------------------------------------------------------------------------
+
+
+def test_fixture_match_is_the_assertion_that_can_actually_fail():
+    """``artifact_present`` is too weak on its own; the payload must equal what was sent."""
+    wrapped = split_tool_output("room_status", ToolMessageLike("p", MCPToolArtifactLike(STRUCTURED)))
+    unwrapped = split_tool_output("room_status", dict(STRUCTURED))
+
+    # Both shapes, one assertion — which is what makes the two frameworks comparable.
+    assert structured_content_matches(wrapped, STRUCTURED)
+    assert structured_content_matches(unwrapped, STRUCTURED)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "why"),
+    [
+        ({**STRUCTURED, "temperature_c": 99.9}, "a changed value"),
+        ({k: v for k, v in STRUCTURED.items() if k != "devices"}, "a dropped field"),
+        ({**STRUCTURED, "devices": "kettle, ceiling-lamp"}, "a stringified list"),
+    ],
+    ids=["changed-value", "dropped-field", "stringified-list"],
+)
+def test_fixture_match_rejects_a_payload_that_lost_something(mutation, why):
+    """Negative controls: the check must notice each way a payload can be degraded."""
+    degraded = split_tool_output("room_status", dict(mutation))
+    assert not structured_content_matches(degraded, STRUCTURED), why
+
+
+def test_fixture_match_rejects_the_naive_capture_of_both_shapes():
+    for output in (ToolMessageLike("p", MCPToolArtifactLike(STRUCTURED)), dict(STRUCTURED)):
+        assert not structured_content_matches(naive_tool_output("room_status", output), STRUCTURED)
 
 
 # --------------------------------------------------------------------------------------

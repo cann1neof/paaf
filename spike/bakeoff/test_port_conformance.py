@@ -25,6 +25,11 @@ from typing import Any, AsyncIterator
 
 import pytest
 
+# Module-scope so `framework_types_in_signature` can resolve it out of these globals; see
+# `test_the_leak_detector_finds_a_real_framework_type`. Safe at module scope because this
+# file is already bake-off-venv-only (see conftest.BAKEOFF_ONLY_MODULES).
+from langchain_core.messages import BaseMessage as Aliased
+
 from bakeoff.port import (
     PORT_METHODS,
     AgentPort,
@@ -143,22 +148,30 @@ def test_isinstance_alone_would_have_passed_a_broken_adapter():
     assert not conformance_report(_WrongSignatureAdapter).conforms
 
 
+def _leaky_method(self, messages: list[Aliased]) -> None: ...
+
+
+def _clean_method(self, spec: McpServerSpec) -> tuple[ToolSpec, ...]: ...
+
+
 def test_the_leak_detector_finds_a_real_framework_type():
     """A control for ``framework_types_in_signature``, using a genuine framework class.
 
     Substring matching on the annotation *text* would both miss an aliased import and
-    false-positive on ``McpServerSpec``. Resolving to objects and reading ``__module__``
-    does neither — but only a live framework class can demonstrate that.
+    false-positive on ``McpServerSpec`` — a PAAF dataclass whose name contains "Mcp".
+    Resolving to objects and reading ``__module__`` does neither, but only a live
+    framework class imported under an alias can demonstrate it.
+
+    Both functions are defined at module scope on purpose: ``from __future__ import
+    annotations`` turns annotations into strings, and ``eval_str=True`` resolves them
+    against the function's *globals*, so a locally-imported alias would come back
+    unresolvable and the control would pass for the wrong reason.
     """
-    from langchain_core.messages import BaseMessage as Aliased
-
-    def leaky(self, messages: list[Aliased]) -> None: ...
-
-    def clean(self, spec: McpServerSpec) -> tuple[ToolSpec, ...]: ...
-
-    leaked = framework_types_in_signature(leaky)
-    assert leaked and any("langchain" in name for name in leaked)
-    assert framework_types_in_signature(clean) == ()
+    leaked = framework_types_in_signature(_leaky_method)
+    assert leaked, "the detector saw nothing at all"
+    assert "<unresolvable-annotations>" not in leaked, "annotations must actually resolve"
+    assert any("langchain" in name for name in leaked)
+    assert framework_types_in_signature(_clean_method) == ()
 
 
 # --------------------------------------------------------------------------------------
