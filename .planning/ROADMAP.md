@@ -42,7 +42,18 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Running LangChain/LangGraph and Pydantic AI against the same sketched port shows which is easier to hide behind it, and Ollama token counts and MCP tool args/results are confirmed either visible or not visible through callbacks.
   4. `DECISIONS.md` states the measured multilingual reality in plain language, and no claim anywhere in the repo — README included — exceeds it.
   5. No code written in this phase survives into any shipped package.
-**Plans**: TBD
+**Plans**: 10 plans
+Plans:
+- [ ] 01-01-PLAN.md — System toolchain (uv/3.12/ffmpeg) + `spike/` quarantine scaffold + pytest inside spike/
+- [ ] 01-02-PLAN.md — Failure-grid corpus fixture + grid tests + blind-shuffle harness (D-01/02/03/14)
+- [ ] 01-03-PLAN.md — Voice venv + GATE 0 engine readiness (dicta-onnx checkpoint, Hebrew/device/seed)
+- [ ] 01-04-PLAN.md — Bake-off venv + Ollama daemon + tool-call sanity gate + telemetry-off
+- [ ] 01-05-PLAN.md — Corpus render (SPIKE-01): ~40 clips matrix+embedded+None-control, seeded, leak-isolated
+- [ ] 01-06-PLAN.md — Framework bake-off: one PAAF port × two adapters + trace/MCP (SPIKE-05/06/07)
+- [ ] 01-07-PLAN.md — Whisper transcription (SPIKE-04): lock-on / transliterate / translate, D-05 caveat
+- [ ] 01-08-PLAN.md — Blind native-ear Hebrew verdict + ru/es spot-check (SPIKE-02, D-13/14/20)
+- [ ] 01-09-PLAN.md — Latency: TTFA (MPS+CPU) + round-trip walking skeleton per-stage budget (SPIKE-03/08)
+- [ ] 01-10-PLAN.md — RESULTS.md (raw, first) + DECISIONS.md + SC#4 claim audit (SPIKE-09)
 **UI hint**: no
 
 ### Phase 2: Foundation
@@ -206,7 +217,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spike Gate | 0/TBD | Not started | - |
+| 1. Spike Gate | 0/10 | Not started | - |
 | 2. Foundation | 0/TBD | Not started | - |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
