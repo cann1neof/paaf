@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Spike Gate
+current_phase: 01
+current_phase_name: spike-gate
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-07-23T10:07:05.876Z"
-last_activity: 2026-07-19
-last_activity_desc: Roadmap created; 110 v1 requirements mapped across 12 phases
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-07-23T10:21:10.034Z"
+last_activity: 2026-07-23
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 10
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 1 — Spike Gate
+**Current focus:** Phase 01 — spike-gate
 
 ## Current Position
 
-Phase: 1 of 12 (Spike Gate)
-Plan: 0 of TBD in current phase
+Phase: 01 (spike-gate) — EXECUTING
+Plan: 2 of 10
 Status: Ready to execute
-Last activity: 2026-07-19 — Roadmap created; 110 v1 requirements mapped across 12 phases
+Last activity: 2026-07-23 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01 P01 | 12min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ Recent decisions affecting current work:
 - [Roadmap]: Import contracts (FOUND-04), endpoint declaration (CORE-05) and the TTFA CI gate (TRACE-04) all land in Phase 2 — retrofitting any of them is an unwinnable audit.
 - [Roadmap]: `paaf-llm` ships to PyPI in Phase 5, mid-roadmap, as burnout mitigation — not at launch.
 - [Roadmap]: Only Phase 12 is hardware-gated. AEC quality, far-field accuracy, real-device latency, and GPIO are the only four things needing the target device.
+- [Phase ?]: [01-01] Phase 1 throwaway code is quarantined under spike/; SC#5 is enforceable by one 'ls'. Test config lives INSIDE spike/ — no root pyproject.toml, pytest.ini or .venv, since Phase 2 (FOUND-01) owns the uv workspace.
+- [Phase ?]: [01-01] Toolchain baseline: uv 0.11.31, CPython 3.12.13, ffmpeg 8.1.2, pytest 9.1.1 + pytest-asyncio 1.4.0 in spike/.venv. Canonical test command is 'uv run --python spike/.venv/bin/python pytest spike/ -q' — a bare 'uv run' cannot resolve without a root project.
+- [Phase ?]: [01-01] Shared spike fixtures import stdlib + pytest only, so they collect in both the voice and bake-off venvs. The device fixture yields the STRINGS 'cpu'/'mps' because Chatterbox compares device by string equality despite its torch.device type hint.
 
 ### Pending Todos
 
@@ -93,6 +97,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-20T09:48:49.548Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-spike-gate/01-CONTEXT.md
+Last session: 2026-07-23T10:20:57.455Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
