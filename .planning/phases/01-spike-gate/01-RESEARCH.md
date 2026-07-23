@@ -790,7 +790,9 @@ Probed on the actual dev machine, 2026-07-20.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All five were resolved during planning and threaded into the plans: Q1→01-04 (Ollama model gate), Q2→01-03 (seed-reproducibility check), Q3 no-halt→wave structure + 01-08/01-10, Q4→01-09 (budget-table shape), Q5→01-05 (`language_id=None` control). Retained below for provenance.
 
 1. **Which Ollama model for the bake-off?**
    - What we know: criterion is **tool-calling reliability**, not chat quality (CLAUDE.md §Decision 6). Qwen3 family sized to available memory is the standing default.
