@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `DECISIONS.md` states the measured multilingual reality in plain language, and no claim anywhere in the repo — README included — exceeds it.
   5. No code written in this phase survives into any shipped package.
 
-**Plans**: 5/10 plans executed
+**Plans**: 6/10 plans executed
 Plans:
 **Wave 1**
 
@@ -61,7 +61,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 01-05-PLAN.md — Corpus render (SPIKE-01): ~40 clips matrix+embedded+None-control, seeded, leak-isolated
-- [ ] 01-06-PLAN.md — Framework bake-off: one PAAF port × two adapters + trace/MCP (SPIKE-05/06/07)
+- [x] 01-06-PLAN.md — Framework bake-off: one PAAF port × two adapters + trace/MCP (SPIKE-05/06/07)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -272,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spike Gate | 5/10 | In Progress|  |
+| 1. Spike Gate | 6/10 | In Progress|  |
 | 2. Foundation | 0/TBD | Not started | - |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
