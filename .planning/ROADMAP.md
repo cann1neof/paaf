@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `DECISIONS.md` states the measured multilingual reality in plain language, and no claim anywhere in the repo — README included — exceeds it.
   5. No code written in this phase survives into any shipped package.
 
-**Plans**: 1/10 plans executed
+**Plans**: 2/10 plans executed
 Plans:
 **Wave 1**
 
@@ -54,7 +54,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Failure-grid corpus fixture + grid tests + blind-shuffle harness (D-01/02/03/14)
+- [x] 01-02-PLAN.md — Failure-grid corpus fixture + grid tests + blind-shuffle harness (D-01/02/03/14)
 - [ ] 01-03-PLAN.md — Voice venv + GATE 0 engine readiness (dicta-onnx checkpoint, Hebrew/device/seed)
 - [ ] 01-04-PLAN.md — Bake-off venv + Ollama daemon + tool-call sanity gate + telemetry-off
 
@@ -272,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spike Gate | 1/10 | In Progress|  |
+| 1. Spike Gate | 2/10 | In Progress|  |
 | 2. Foundation | 0/TBD | Not started | - |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |

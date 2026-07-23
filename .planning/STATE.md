@@ -6,14 +6,14 @@ current_phase: 01
 current_phase_name: spike-gate
 status: executing
 stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-07-23T10:21:10.034Z"
+last_updated: "2026-07-23T10:33:07.099Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 10
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 01 (spike-gate) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 01 execution started
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 12min | 2 tasks | 7 files |
+| Phase 01 P02 | 6min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [01-01] Phase 1 throwaway code is quarantined under spike/; SC#5 is enforceable by one 'ls'. Test config lives INSIDE spike/ — no root pyproject.toml, pytest.ini or .venv, since Phase 2 (FOUND-01) owns the uv workspace.
 - [Phase ?]: [01-01] Toolchain baseline: uv 0.11.31, CPython 3.12.13, ffmpeg 8.1.2, pytest 9.1.1 + pytest-asyncio 1.4.0 in spike/.venv. Canonical test command is 'uv run --python spike/.venv/bin/python pytest spike/ -q' — a bare 'uv run' cannot resolve without a root project.
 - [Phase ?]: [01-01] Shared spike fixtures import stdlib + pytest only, so they collect in both the voice and bake-off venvs. The device fixture yields the STRINGS 'cpu'/'mps' because Chatterbox compares device by string equality despite its torch.device type hint.
+- [Phase 01]: Corpus same-script category uses Cyrillic/Latin homoglyph pairs (РЕСТОРАН vs PECTOPAH), never Latin transliteration of Russian — Transliteration bypasses Chatterbox's russian_text_stresser / add_hebrew_diacritics paths entirely, so the spike would measure a pipeline it never ran (01-RESEARCH Pitfall 1)
+- [Phase 01]: D-14 blindness is enforced structurally: shuffle_blind refuses to write mapping.json inside the directory being judged, and seed is keyword-only with no default — A mapping next to the clips defeats the blind pass in the most banal way; an unseeded shuffle makes the listening order unreproducible for Phase 7's re-run-and-diff (D-07)
+- [Phase 01]: SPIKE-01 left unchecked after 01-02 — this plan builds the measuring instrument, plan 01-05 takes the measurement — SPIKE-01 says 'Measure whether Chatterbox handles intra-sentence code-switching'; no model was loaded here, and a premature checkbox is exactly what the SC#4 claim audit exists to catch
 
 ### Pending Todos
 
@@ -97,6 +101,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-23T10:20:57.455Z
+Last session: 2026-07-23T10:33:07.094Z
 Stopped at: Completed 01-01-PLAN.md
 Resume file: None
