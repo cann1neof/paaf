@@ -21,7 +21,9 @@ Naming convention (shared with the 01-05 render)
 Rendered clips are named ``{clip_id}__{language_id}{suffix}`` — e.g. ``c08__he.wav``.
 D-06 renders each corpus sentence twice, once tagged with its matrix language and once
 with its embedded language, so ``c08`` yields ``c08__he.wav`` and ``c08__en.wav`` and the
-corpus's 20 sentences yield ~40 clips.
+corpus's 20 sentences yield ~40 clips. A labeled subset gets a third, *untagged* render
+(``language_id=None``, RESEARCH Open Q5) written as ``c08__none.wav`` — see
+``UNTAGGED_TAG``.
 
 Reproducibility
 ---------------
@@ -48,6 +50,8 @@ from typing import Any, NamedTuple
 
 __all__ = [
     "LANGUAGES",
+    "UNTAGGED_TAG",
+    "JUDGABLE_TAGS",
     "ClipTag",
     "clip_filename",
     "parse_clip_name",
@@ -60,6 +64,18 @@ __all__ = [
 #: The four languages this phase measures. A clip tagged anything else is a typo, and a
 #: typo'd tag that is silently accepted would be judged as if it were real.
 LANGUAGES: frozenset[str] = frozenset({"en", "ru", "he", "es"})
+
+#: The untagged control condition (RESEARCH Open Q5): ``generate()`` guards with
+#: ``if language_id and ...``, so ``language_id=None`` skips both the language-token
+#: prepend and the per-language normalization. That third condition is what separates
+#: "the tag did nothing" from "the tag did the wrong thing", so it has to be renderable,
+#: nameable and judgeable — which means the shared filename convention must carry it.
+#: ``None`` is not expressible in a filename, so it is spelled ``none`` on disk.
+UNTAGGED_TAG = "none"
+
+#: Every tag a rendered clip may legitimately carry. ``LANGUAGES`` alone is deliberately
+#: kept as the set of *languages*; this is the set of *conditions*.
+JUDGABLE_TAGS: frozenset[str] = LANGUAGES | {UNTAGGED_TAG}
 
 #: ``{clip_id}__{language_id}``. The double underscore keeps clip ids free to contain a
 #: single underscore without making the split ambiguous.
@@ -86,11 +102,15 @@ class ClipTag(NamedTuple):
 # --------------------------------------------------------------------------------------
 
 
-def clip_filename(clip_id: str, language_id: str, suffix: str = ".wav") -> str:
+def clip_filename(clip_id: str, language_id: str | None, suffix: str = ".wav") -> str:
     """Build the tagged clip filename the renderer should write.
 
     Exposed so the 01-05 render and this harness cannot drift apart: there is exactly one
     definition of the convention and both sides call it.
+
+    ``language_id=None`` — the untagged control condition Chatterbox accepts — is written
+    as ``{clip_id}__none.wav``. Passing the string ``"none"`` is equivalent, so a renderer
+    that has already stringified its condition does not have to convert back.
     """
     if _SEPARATOR in clip_id:
         raise ValueError(
@@ -99,15 +119,18 @@ def clip_filename(clip_id: str, language_id: str, suffix: str = ".wav") -> str:
         )
     if not clip_id.strip():
         raise ValueError("clip_id must be a non-empty string")
-    if language_id not in LANGUAGES:
+    tag = UNTAGGED_TAG if language_id is None else language_id
+    if tag not in JUDGABLE_TAGS:
         raise ValueError(
-            f"language_id {language_id!r} is not one of {sorted(LANGUAGES)}; refusing to "
-            "name a clip after a tag this phase does not measure."
+            f"language_id {language_id!r} is not one of {sorted(JUDGABLE_TAGS)}; refusing "
+            "to name a clip after a tag this phase does not measure."
         )
-    return f"{clip_id}{_SEPARATOR}{language_id}{suffix}"
+    return f"{clip_id}{_SEPARATOR}{tag}{suffix}"
 
 
-def parse_clip_name(name: str | Path, *, allowed_languages: frozenset[str] = LANGUAGES) -> ClipTag:
+def parse_clip_name(
+    name: str | Path, *, allowed_languages: frozenset[str] = JUDGABLE_TAGS
+) -> ClipTag:
     """Recover ``(clip_id, language_id)`` from a rendered clip filename.
 
     Raises ``ValueError`` on anything that does not conform. This is deliberately strict:
@@ -143,7 +166,7 @@ def shuffle_blind(
     seed: int,
     pattern: str = "*.wav",
     mapping_path: str | Path | None = None,
-    allowed_languages: frozenset[str] = LANGUAGES,
+    allowed_languages: frozenset[str] = JUDGABLE_TAGS,
     overwrite: bool = False,
 ) -> Path:
     """Copy every clip in ``src_dir`` to an opaque name in ``blind_dir`` and record the map.

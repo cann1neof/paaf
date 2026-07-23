@@ -101,6 +101,63 @@ def test_parse_clip_name_rejects_an_unknown_tag() -> None:
 
 
 # --------------------------------------------------------------------------------------
+# The untagged control condition (RESEARCH Open Q5) — 01-05 renders it, so the shared
+# naming convention has to carry it or the renderer would have to re-implement the
+# convention, which is the one thing clip_filename() exists to prevent.
+# --------------------------------------------------------------------------------------
+
+
+def test_none_language_id_names_the_untagged_control() -> None:
+    assert sb.clip_filename("c08", None) == f"c08__{sb.UNTAGGED_TAG}.wav"
+
+
+def test_the_untagged_tag_round_trips_like_any_language() -> None:
+    name = sb.clip_filename("c08", None)
+    assert sb.parse_clip_name(name) == sb.ClipTag("c08", sb.UNTAGGED_TAG)
+
+
+def test_passing_the_untagged_tag_as_a_string_is_equivalent_to_none() -> None:
+    """A renderer that has already stringified its condition must not have to convert back."""
+    assert sb.clip_filename("c08", sb.UNTAGGED_TAG) == sb.clip_filename("c08", None)
+
+
+def test_untagged_is_a_condition_not_a_language() -> None:
+    """`LANGUAGES` must stay the set of languages: downstream code counts languages with it."""
+    assert sb.UNTAGGED_TAG not in sb.LANGUAGES
+    assert sb.JUDGABLE_TAGS == sb.LANGUAGES | {sb.UNTAGGED_TAG}
+
+
+def test_widening_the_tag_set_did_not_widen_it_to_typos() -> None:
+    """The guard's whole purpose survives: 'none' is admitted, 'nonw' still is not."""
+    for bad in ("nonw", "non", "null", "xx", "iw"):
+        with pytest.raises(ValueError, match="not one of|typo"):
+            sb.clip_filename("c01", bad)
+        with pytest.raises(ValueError, match="not one of|typo"):
+            sb.parse_clip_name(f"c01__{bad}.wav")
+
+
+def test_untagged_clips_shuffle_and_join_back_alongside_tagged_ones(tmp_path: Path) -> None:
+    """The blind pass must judge the control clips too, or the control is not blind."""
+    tags = [
+        sb.ClipTag("c08", "he"),
+        sb.ClipTag("c08", "en"),
+        sb.ClipTag("c08", sb.UNTAGGED_TAG),
+        sb.ClipTag("c01", "en"),
+        sb.ClipTag("c01", "ru"),
+        sb.ClipTag("c01", sb.UNTAGGED_TAG),
+    ]
+    src = tmp_path / "clips"
+    contents = _make_clips(src, tags)
+    mapping_path = sb.shuffle_blind(src, tmp_path / "clips_blind", seed=SEED)
+
+    records = sb.join_back(mapping_path)
+    assert {sb.ClipTag(r["clip_id"], r["language_id"]) for r in records} == set(contents)
+    # No blind name may leak the condition it is hiding.
+    for name in (tmp_path / "clips_blind").iterdir():
+        assert sb.UNTAGGED_TAG not in name.stem
+
+
+# --------------------------------------------------------------------------------------
 # The core property: bijection + exact inversion
 # --------------------------------------------------------------------------------------
 
