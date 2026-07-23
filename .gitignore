@@ -1,0 +1,30 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# --- Virtualenvs ---
+# Phase 1 creates two multi-GB venvs under spike/ (voice + bake-off, plans 01-03/01-04).
+# Never commit them; `spike/` is throwaway anyway (SC#5).
+.venv/
+spike/**/.venv/
+
+# --- Model weights and caches ---
+# Chatterbox ~3.2 GB + Whisper ~3 GB. If a harness points HF_HOME / TORCH_HOME inside
+# the repo, the download must still stay out of git.
+.cache/
+**/huggingface/hub/
+**/torch/hub/
+*.safetensors
+*.ckpt
+*.pt
+*.onnx
+*.gguf
+
+# NOTE: rendered corpus WAVs under .planning/phases/01-spike-gate/corpus/clips/ ARE
+# committed on purpose (D-07: ~3-5 MB of declared data, no git-lfs). Do not add a
+# blanket *.wav rule here.
+
+# --- OS ---
+.DS_Store
