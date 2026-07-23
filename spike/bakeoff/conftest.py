@@ -43,7 +43,18 @@ class BakeoffGateNotEvaluated(UserWarning):
 
 
 #: Modules requiring the bake-off venv (langchain / pydantic-ai / ollama) at import time.
-BAKEOFF_ONLY_MODULES = ("test_tool_call_sanity.py",)
+#:
+#: ``test_port_conformance.py`` (01-06) joins the list because it imports the two adapters,
+#: which import langchain and pydantic_ai. It defers those imports into the test bodies so a
+#: missing adapter is a red *test* rather than a fatal collection error — but under the base
+#: venv the imports would fail for an uninteresting reason and report a framework verdict
+#: that was never measured. Same reasoning as the gate: keyed on the interpreter, not on
+#: whether the import happens to work.
+#:
+#: ``test_trace_handler.py`` and ``test_artifact_capture.py`` are deliberately NOT here.
+#: They import only ``bakeoff.port``, which is stdlib-only, so they run under every venv —
+#: which is the point of having written the Pitfall 8/9 contracts framework-free.
+BAKEOFF_ONLY_MODULES = ("test_tool_call_sanity.py", "test_port_conformance.py")
 
 #: The bake-off venv provisioned by 01-04, relative to this file.
 BAKEOFF_VENV = Path(__file__).resolve().parent / ".venv"
