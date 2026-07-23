@@ -1,0 +1,20 @@
+{"id": "c01", "text": "Can you add кефир to the shopping list before we leave?", "matrix_lang": "en", "embedded_lang": "ru", "category": "single-foreign-noun-in-english-frame"}
+{"id": "c02", "text": "She brought a whole tray of סופגניות to the office this morning.", "matrix_lang": "en", "embedded_lang": "he", "category": "single-foreign-noun-in-english-frame"}
+{"id": "c03", "text": "We stayed for the sobremesa long after the plates were cleared.", "matrix_lang": "en", "embedded_lang": "es", "category": "single-foreign-noun-in-english-frame"}
+{"id": "c04", "text": "Я уже отправил отчёт, but the attachment never went through.", "matrix_lang": "ru", "embedded_lang": "en", "category": "mid-clause-switch"}
+{"id": "c05", "text": "אני יוצא מהבית עכשיו and I will call you from the car.", "matrix_lang": "he", "embedded_lang": "en", "category": "mid-clause-switch"}
+{"id": "c06", "text": "Estaba a punto de salir cuando the power went out again.", "matrix_lang": "es", "embedded_lang": "en", "category": "mid-clause-switch"}
+{"id": "c07", "text": "I told him it was fine, а он всё равно перезвонил три раза.", "matrix_lang": "en", "embedded_lang": "ru", "category": "mid-clause-switch"}
+{"id": "c08", "text": "הפגישה נקבעה ל-15:00 in the small conference room.", "matrix_lang": "he", "embedded_lang": "en", "category": "hebrew-rtl-adjacent-to-latin-digits"}
+{"id": "c09", "text": "תזכיר לי לקחת את הכדור ב-8:45 tomorrow morning.", "matrix_lang": "he", "embedded_lang": "en", "category": "hebrew-rtl-adjacent-to-latin-digits"}
+{"id": "c10", "text": "The label said 250 מ״ל, which is less than I expected.", "matrix_lang": "en", "embedded_lang": "he", "category": "hebrew-rtl-adjacent-to-latin-digits"}
+{"id": "c11", "text": "The bottle is marked 1.5 ליטר and costs 12 שקלים.", "matrix_lang": "en", "embedded_lang": "he", "category": "hebrew-rtl-adjacent-to-latin-digits"}
+{"id": "c12", "text": "Мы встретились с Алехандро возле Plaza Mayor в субботу.", "matrix_lang": "ru", "embedded_lang": "es", "category": "proper-nouns"}
+{"id": "c13", "text": "Alejandro dijo que Дмитрий llega el martes por la mañana.", "matrix_lang": "es", "embedded_lang": "ru", "category": "proper-nouns"}
+{"id": "c14", "text": "We are meeting on רחוב דיזנגוף near the Tel Aviv promenade.", "matrix_lang": "en", "embedded_lang": "he", "category": "proper-nouns"}
+{"id": "c15", "text": "Necesito 500 gramos de harina and about two cups of water.", "matrix_lang": "es", "embedded_lang": "en", "category": "numbers-and-units"}
+{"id": "c16", "text": "Поставь таймер на 20 минут and let the dough rest.", "matrix_lang": "ru", "embedded_lang": "en", "category": "numbers-and-units"}
+{"id": "c17", "text": "The bag weighs 4 kilos y medio, no more than that.", "matrix_lang": "en", "embedded_lang": "es", "category": "numbers-and-units"}
+{"id": "c18", "text": "На вывеске было написано РЕСТОРАН, but my phone read it as PECTOPAH.", "matrix_lang": "ru", "embedded_lang": "en", "category": "same-script-russian-english-pair"}
+{"id": "c19", "text": "The carton just said СОК, which the scanner rendered as COK.", "matrix_lang": "en", "embedded_lang": "ru", "category": "same-script-russian-english-pair"}
+{"id": "c20", "text": "Он выбрал пароль ТОРТ, and the form rejected it as TOPT.", "matrix_lang": "ru", "embedded_lang": "en", "category": "same-script-russian-english-pair"}
