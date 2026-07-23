@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: spike-gate
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-07-23T10:33:07.099Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-07-23T11:11:41.623Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 10
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 01 (spike-gate) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 01 execution started
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01 P01 | 12min | 2 tasks | 7 files |
 | Phase 01 P02 | 6min | 3 tasks | 4 files |
+| Phase 01 P03 | 35min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Corpus same-script category uses Cyrillic/Latin homoglyph pairs (РЕСТОРАН vs PECTOPAH), never Latin transliteration of Russian — Transliteration bypasses Chatterbox's russian_text_stresser / add_hebrew_diacritics paths entirely, so the spike would measure a pipeline it never ran (01-RESEARCH Pitfall 1)
 - [Phase 01]: D-14 blindness is enforced structurally: shuffle_blind refuses to write mapping.json inside the directory being judged, and seed is keyword-only with no default — A mapping next to the clips defeats the blind pass in the most banal way; an unseeded shuffle makes the listening order unreproducible for Phase 7's re-run-and-diff (D-07)
 - [Phase 01]: SPIKE-01 left unchecked after 01-02 — this plan builds the measuring instrument, plan 01-05 takes the measurement — SPIKE-01 says 'Measure whether Chatterbox handles intra-sentence code-switching'; no model was loaded here, and a premature checkbox is exactly what the SC#4 claim audit exists to catch
+- [Phase 01]: GATE 0 is GREEN: Hebrew is synthesized WITH diacritics, usable device is mps, and seeded synthesis is bitwise identical so D-07's re-run-and-diff promise holds — Gate 0 must pass before any Hebrew clip reaches a native ear (Pitfall 1); MPS working contradicts the pessimistic prior and removes the expected CPU fallback
+- [Phase 01]: UPSTREAM DEFECT: chatterbox-tts 0.1.7 calls Dicta() with no args while every dicta-onnx release requires model_path, and swallows the TypeError — 'pip install dicta-onnx' alone does NOT fix Pitfall 1 — The TypeError falls to except Exception, not except ImportError, so a different warning fires than Pitfall 1 says to watch for while Hebrew still reaches the model unvocalized; the repair seeds chatterbox's _dicta global so the measured pipeline stays the intended one
+- [Phase 01]: Every Hebrew result must be attributed to CONFIG_REPAIRED, with CONFIG_DEFAULT reported separately as what a plain pip install yields — D-05: what an ordinary user gets is itself a finding; naming both configurations stops any result being quoted without its assembly
 
 ### Pending Todos
 
@@ -88,6 +92,7 @@ None yet.
 - **Highest-risk unverified claim:** Chatterbox intra-sentence code-switching and Hebrew quality. Phase 1 exists to measure it. If it fails, the founding language promise needs its fallback ladder *before* Phase 6 begins.
 - **Hardware not yet owned.** Budget is being saved. Phase 1 measurements determine what class of machine to buy; no phase before 12 may gate on it.
 - **`langchain-mcp-adapters` is 0.x** and carries a core user-facing feature outside LangChain's 1.0 stability policy. SPIKE-06 is the falsification test.
+- dicta-onnx is now on the CRITICAL PATH for Hebrew (Gate 0 proved Hebrew needs it plus a manually-supplied weights file), yet it declares NO LICENSE on PyPI or GitHub and is thinly maintained (9 stars, single individual, no release since 2025-05-31). An unlicensed transitive dep is a real distribution problem for an Apache-2.0 framework — must be resolved before Phase 6 / packaging.
 
 ## Deferred Items
 
@@ -101,6 +106,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-23T10:33:07.094Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-07-23T11:11:41.618Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
