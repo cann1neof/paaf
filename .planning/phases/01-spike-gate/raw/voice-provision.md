@@ -485,3 +485,79 @@ zipp==4.1.0
 - generate times: [19.89, 19.984] s
 - consequence: D-07's re-run-and-diff promise holds on this backend.
 
+---
+
+## Announced model downloads (PRIV-06 rehearsal, RESEARCH §Security V12)
+
+Every weight fetch in this plan is listed here as an **explicit, announced step**, which is
+the whole point of the rehearsal: a user of the shipped product must be told when their
+machine reaches the network, and the framework's offline claim has to be *verifiable*, not
+asserted. `HF_TOKEN` was deliberately **never** set — all three artifacts are public, and the
+HF Hub's own `You are sending unauthenticated requests` notice is the standing proof of it.
+
+| # | Artifact | Source | Size | When |
+|---|---|---|---:|---|
+| 1 | Chatterbox Multilingual V3 checkpoint | HF `ResembleAI/chatterbox` | ~3.0 GB (HF cache) | Task 2, first `from_pretrained` |
+| 2 | `dicta-1.0.onnx` (fp32 diacritizer) | GitHub release `thewh1teagle/dicta-onnx@model-files-v1.0` | **1,222,572,597 B (1.22 GB)** | Task 2, Gate 0 repair |
+| 3 | Whisper `large-v3` | HF `Systran/faster-whisper-large-v3` | **3,090,839,273 B (3.09 GB)** | Task 1 completion (below) |
+
+Total on-disk weights for the voice half: **≈7.3 GB**. None of it is in git — `.gitignore`
+covers `*.onnx` and `**/huggingface/hub/`, verified with `git check-ignore`.
+
+Note on artifact 2: `dicta-onnx` **ships no weights**, and chatterbox has no way to supply the
+path (that is the defect above). The fp32 export was chosen over the int8 one deliberately, so
+that quantization artifacts in *diacritization* can never be misread as a Chatterbox Hebrew
+failure — the same reasoning RESEARCH uses to prefer `large-v3` over the community turbo build.
+
+### Task 1 completion — Whisper `large-v3` fetch
+
+Task 1's action requires the Whisper fetch to be an announced download; it was not performed
+in the original Task 1 pass, so it was completed here and is recorded as part of Task 1's
+baseline rather than as new scope.
+
+```
+Fetching 7 files: 100%|██████████| 7/7 [00:31<00:00,  4.56s/it]
+Warning: You are sending unauthenticated requests to the HF Hub.   <- no HF_TOKEN, as intended
+PATH .../hub/models--Systran--faster-whisper-large-v3/snapshots/edaa852ec7e145841d8ffdb056a99866b5f0a478
+SECONDS 32.3
+```
+
+| File | Bytes |
+|---|---:|
+| `model.bin` | 3,087,284,237 |
+| `tokenizer.json` | 2,480,617 |
+| `vocabulary.json` | 1,068,114 |
+| `config.json` | 2,394 |
+| `preprocessor_config.json` | 340 |
+| `README.md` / `.gitattributes` | 2,052 / 1,519 |
+| **total** | **3,090,839,273** |
+
+Load verified (the fetch is usable, not merely present):
+
+```
+faster_whisper 1.2.1   ctranslate2 4.8.1
+large-v3 resolves to: Systran/faster-whisper-large-v3      <- FIRST-PARTY, per RESEARCH's preference
+WhisperModel('large-v3', device='cpu', compute_type='int8') loaded OK in 1.8 s
+```
+
+`large-v3` was chosen over `large-v3-turbo` because turbo resolves to the community conversion
+`mobiuslabsgmbh/faster-whisper-large-v3-turbo`; in a *measurement* phase that would risk
+attributing a conversion's flaws to Whisper itself (RESEARCH §Alternatives Considered).
+
+### ⚠️ Correction to RESEARCH §Pitfall 7 — `vad_filter` default
+
+RESEARCH states: *"`vad_filter` defaults to **`True`** in 1.2.1 — on short synthetic clips this
+can trim audio and be misread as transcription failure."* Checked against the installed wheel,
+that is true for only one of the two transcribe APIs:
+
+| API | `vad_filter` default | `multilingual` default |
+|---|---|---|
+| `WhisperModel.transcribe` (the API RESEARCH's own code example uses) | **`False`** | `False` |
+| `BatchedInferencePipeline.transcribe` | `True` | `False` |
+
+So the SPIKE-04 harness (01-06) does **not** need `vad_filter=False` defensively if it uses
+`WhisperModel.transcribe` — it is already off — but it **must** pass it explicitly if it ever
+switches to the batched pipeline. The `multilingual=True` half of Pitfall 7 is confirmed on both
+APIs: it defaults to `False`, so the per-segment language-detection instrument must be turned on
+deliberately or SPIKE-04 measures the wrong thing.
+
