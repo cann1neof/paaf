@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: spike-gate
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-07-23T11:11:41.623Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-07-23T11:41:54.594Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 10
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 01 (spike-gate) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 01 execution started
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 12min | 2 tasks | 7 files |
 | Phase 01 P02 | 6min | 3 tasks | 4 files |
 | Phase 01 P03 | 35min | 3 tasks | 5 files |
+| Phase 01 P04 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,11 @@ Recent decisions affecting current work:
 - [Phase 01]: GATE 0 is GREEN: Hebrew is synthesized WITH diacritics, usable device is mps, and seeded synthesis is bitwise identical so D-07's re-run-and-diff promise holds — Gate 0 must pass before any Hebrew clip reaches a native ear (Pitfall 1); MPS working contradicts the pessimistic prior and removes the expected CPU fallback
 - [Phase 01]: UPSTREAM DEFECT: chatterbox-tts 0.1.7 calls Dicta() with no args while every dicta-onnx release requires model_path, and swallows the TypeError — 'pip install dicta-onnx' alone does NOT fix Pitfall 1 — The TypeError falls to except Exception, not except ImportError, so a different warning fires than Pitfall 1 says to watch for while Hebrew still reaches the model unvocalized; the repair seeds chatterbox's _dicta global so the measured pipeline stays the intended one
 - [Phase 01]: Every Hebrew result must be attributed to CONFIG_REPAIRED, with CONFIG_DEFAULT reported separately as what a plain pip install yields — D-05: what an ordinary user gets is itself a finding; naming both configurations stops any result being quoted without its assembly
+- [Phase 01]: Ollama model default RE-CHECKED and CHANGED: plain qwen3 is no longer in the top-20 tool-capable models, and qwen3.6 is disqualified because its ladder starts at 27b/17GB on an 18GB machine. Chose qwen3.5:9b (capability, SPIKE-05/06/07) + qwen3.5:2b (latency, SPIKE-08), both tools-capable and Apache-2.0, pinned by explicit tag never latest
+- [Phase 01]: TOOL-CALL GATE GREEN: 30/30 well-formed calls, 100% in every condition, both models, via both the raw ollama client and init_chat_model
+- [Phase 01]: PRIVACY BUG: the ollama python client 0.6.2 list() pydantic schema silently drops capabilities, so the PRIV-02 no-cloud check passed VACUOUSLY for every tag including the real qwen3.5:cloud. capabilities_of now reads /api/show and treats an empty list as an error
+- [Phase 01]: Telemetry-off is enforced at TWO levels: langsmith and logfire-api ship as hard transitive deps of langchain and pydantic-ai, so env vars alone cannot establish PRIV-02. Runtime state is asserted and the plan's four vars were extended to nine incl. OTEL_EXPORTER_OTLP_ENDPOINT
+- [Phase 01]: Held pydantic-ai-slim at 2.13.0 rather than today's 2.16.0. Cadence recorded as Decision-1 evidence: pydantic-ai shipped 7 minors in 9 days, langchain 8 patches in 43 days and is still on 1.3.x
 
 ### Pending Todos
 
@@ -93,6 +99,7 @@ None yet.
 - **Hardware not yet owned.** Budget is being saved. Phase 1 measurements determine what class of machine to buy; no phase before 12 may gate on it.
 - **`langchain-mcp-adapters` is 0.x** and carries a core user-facing feature outside LangChain's 1.0 stability policy. SPIKE-06 is the falsification test.
 - dicta-onnx is now on the CRITICAL PATH for Hebrew (Gate 0 proved Hebrew needs it plus a manually-supplied weights file), yet it declares NO LICENSE on PyPI or GitHub and is thinly maintained (9 stars, single individual, no release since 2025-05-31). An unlicensed transitive dep is a real distribution problem for an Apache-2.0 framework — must be resolved before Phase 6 / packaging.
+- The conftest-shadowing trap is only half closed: spike/voice/ avoids it purely because 'voice' sorts after test_fixtures_smoke.py. Any future spike/<earlier-sorting-dir>/conftest.py will break the base suite collection entirely. Durable fix is moving 01-01's FakeModel/FakeTool into spike/fakes.py
 
 ## Deferred Items
 
@@ -106,6 +113,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-23T11:11:41.618Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-07-23T11:41:54.526Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
