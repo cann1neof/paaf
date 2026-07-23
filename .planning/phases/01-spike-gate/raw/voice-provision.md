@@ -176,3 +176,255 @@ repo absent, version absent/yanked, or the chatterbox import path not referencin
 on **L1** (the missing license) before anything shippable depends on it.
 
 ---
+
+## Task 1 — voice venv provisioning
+
+**Network activity was announced before it happened (PRIV-06 rehearsal, RESEARCH §Security V12).**
+Two announced network steps in this task: (a) PyPI wheel downloads (~1.3 GB installed, dominated by
+`torch`/`torchaudio`), (b) nothing else — model weights are a *separate* announced fetch in Task 2.
+`HF_TOKEN` was deliberately **not** set; all models used are public.
+
+### Venv identity
+
+| Property | Value |
+|---|---|
+| Path | `spike/voice/.venv` |
+| Interpreter | **CPython 3.12.13**, `arm64`, `macOS-26.5.2-arm64-arm-64bit` |
+| Created by | `uv venv --python 3.12 spike/voice/.venv` (uv 0.11.31) |
+| Installed size | **1.3 GB** |
+| Git status | **ignored** — `git check-ignore -v` → `.gitignore:11:spike/**/.venv/`; `git status --porcelain` shows no venv path |
+| Separate from | `spike/.venv` (base test env, 01-01) and the future `spike/bakeoff/.venv` (01-04) |
+
+The SEPARATE-venv rule was honoured for the reason RESEARCH gives: `chatterbox-tts` hard-pins
+`torch==2.6.0`, `transformers==5.2.0`, `diffusers==0.29.0`, `numpy<2.0.0`, `safetensors==0.5.3`,
+`gradio==6.8.0`, and `dicta-onnx` pins `onnxruntime==1.21.1`. Resolving that against the
+LangChain / Pydantic-AI trees is a resolver fight with no upside — the two halves never import
+each other.
+
+### Install commands, in the order RESEARCH specifies
+
+```bash
+uv venv --python 3.12 spike/voice/.venv
+# 1. TTS + the two undeclared language deps -- ONE resolve, deliberately (see A2 below)
+uv pip install "chatterbox-tts==0.1.7" "dicta-onnx==1.0.9"
+# 2. STT
+uv pip install "faster-whisper==1.2.1" soundfile
+# 3. test runner
+uv pip install pytest pytest-asyncio
+```
+
+Steps 2 and 3 installed **only** their own new packages and downgraded/changed nothing from
+step 1 — so the TTS pin set survived the STT install intact.
+
+### Version re-verification at install time
+
+RESEARCH carries `valid-until: 2026-08-03`. Every pin was independently re-checked against the
+PyPI JSON API on **2026-07-23** before installing. All three primary pins are still the **latest**
+release of their project, so no pin is holding back a newer version:
+
+| Package | RESEARCH pin | Latest on PyPI 2026-07-23 | Drift |
+|---|---|---|---|
+| `chatterbox-tts` | 0.1.7 | **0.1.7** (2026-03-26) | none |
+| `dicta-onnx` | 1.0.9 | **1.0.9** (2025-05-31) | none |
+| `faster-whisper` | 1.2.1 | **1.2.1** (2025-10-31) | none |
+| `soundfile` | 0.14.0 (unpinned in the install) | resolved to **0.14.0** | none |
+
+### Assumption A2 — dicta-onnx pins vs chatterbox's transformers ✅ RESOLVED, NO CONFLICT
+
+> *A2: `dicta-onnx`'s `onnxruntime==1.21.1` and `tokenizers>=0.21.1` pins co-resolve with
+> chatterbox's `transformers==5.2.0`. Risk: Medium — this is the first thing likely to break.*
+
+`chatterbox-tts==0.1.7` and `dicta-onnx==1.0.9` were installed in a **single `uv pip install`
+invocation** specifically so the resolver had to satisfy both constraint sets simultaneously.
+Installing them sequentially would have let a later install silently clobber an earlier pin and
+would not have tested the assumption at all.
+
+**Result: resolved cleanly, first attempt, no backtracking error, no workaround needed.**
+
+| Constraint | Source | Resolved |
+|---|---|---|
+| `onnxruntime==1.21.1` | dicta-onnx (exact) | **1.21.1** ✅ |
+| `tokenizers>=0.21.1` | dicta-onnx (floor) | **0.22.2** ✅ |
+| `transformers==5.2.0` | chatterbox (exact) | **5.2.0** ✅ |
+| `torch==2.6.0` | chatterbox (exact, py<3.14) | **2.6.0** ✅ |
+| `numpy<2.0.0,>=1.24.0` | chatterbox (py<3.13) | **1.26.4** ✅ |
+| `safetensors==0.5.3` | chatterbox (exact) | **0.5.3** ✅ |
+| `diffusers==0.29.0` | chatterbox (exact) | **0.29.0** ✅ |
+| `gradio==6.8.0` | chatterbox (exact) | **6.8.0** ✅ |
+
+The one thing worth noting: `transformers==5.2.0` is satisfied alongside `tokenizers==0.22.2`,
+i.e. transformers 5.x's tokenizers floor is *above* dicta's `>=0.21.1` floor, so the two
+constraints are compatible rather than merely coincidentally satisfiable. **A2 is closed.**
+
+### Assumption A3 — transformers 5.2.0 + diffusers 0.29.0 at runtime ✅ RESOLVED, NO CONFLICT
+
+> *A3: `transformers==5.2.0` and `diffusers==0.29.0` (a mid-2024 release) actually work together
+> at runtime. Risk: Medium — an import error here blocks all voice spikes.*
+
+Resolver success is not the same as runtime success, so both were imported in the same process
+and a symbol was touched in each (a bare `import` can succeed while lazy submodule loading fails
+later):
+
+```
+transformers 5.2.0
+diffusers 0.29.0
+OK    transformers.AutoTokenizer: AutoTokenizer
+OK    diffusers.DDPMScheduler: DDPMScheduler
+OK    chatterbox import: 0.1.7          <- imports BOTH transitively
+```
+
+`import chatterbox` is itself the strongest A3 evidence available: `chatterbox/__init__.py`
+pulls `ChatterboxTTS`, `ChatterboxVC` and `ChatterboxMultilingualTTS`, which between them import
+the transformers and diffusers surfaces the model actually uses. It succeeded. **A3 is closed.**
+
+### Import verification — every required package imports
+
+```
+python: 3.12.13 arm64 macOS-26.5.2-arm64-arm-64bit
+torch 2.6.0  torchaudio 2.6.0  numpy 1.26.4
+torch.backends.mps.is_built() = True   torch.backends.mps.is_available() = True
+chatterbox 0.1.7   SUPPORTED_LANGUAGES n=23   {en,ru,he,es} present = True
+onnxruntime 1.21.1  tokenizers 0.22.2
+dicta_onnx -> Dicta  (class resolves)
+faster_whisper 1.2.1  soundfile 0.14.0  ctranslate2 4.8.1  av 18.0.0
+russian_text_stresser -> ImportError: No module named 'russian_text_stresser'   (EXPECTED, Pitfall 2)
+```
+
+Two incidental confirmations of RESEARCH claims:
+
+- **`ctranslate2==4.8.1` installed from a macOS arm64 cp312 wheel** — no source build. This
+  confirms RESEARCH's correction to CLAUDE.md: arm64 wheels do exist (they are still CPU-only;
+  CTranslate2 has no Metal backend).
+- **MPS is both built and available** on this machine, so the Task 2 device probe is a real test
+  of chatterbox-on-MPS rather than a test of "does this Mac have MPS".
+
+### Full resolved freeze — 121 packages
+
+This is the provisioning baseline of record for `01-RESULTS.md`. Any later voice measurement in
+this phase is a property of *this exact* set.
+
+```
+aiofiles==24.1.0
+annotated-doc==0.0.4
+annotated-types==0.7.0
+antlr4-python3-runtime==4.9.3
+anyio==4.14.2
+audioread==3.1.0
+av==18.0.0
+brotli==1.2.0
+catalogue==2.0.10
+certifi==2026.7.22
+cffi==2.1.0
+cfgv==3.5.0
+charset-normalizer==3.4.9
+chatterbox-tts==0.1.7
+click==8.4.2
+coloredlogs==15.0.1
+conformer==0.3.2
+ctranslate2==4.8.1
+decorator==5.3.1
+deprecated==1.3.1
+dicta-onnx==1.0.9
+diffusers==0.29.0
+distlib==0.4.3
+einops==0.8.2
+fastapi==0.139.2
+faster-whisper==1.2.1
+ffmpy==1.0.0
+filelock==3.32.0
+flatbuffers==25.12.19
+fsspec==2026.6.0
+gradio-client==2.2.0
+gradio==6.8.0
+groovy==0.1.2
+h11==0.16.0
+hf-xet==1.5.2
+httpcore==1.0.9
+httpx==0.28.1
+huggingface-hub==1.24.0
+humanfriendly==10.0
+identify==2.6.19
+idna==3.18
+importlib-metadata==9.0.0
+iniconfig==2.3.0
+jaconv==0.5.0
+jinja2==3.1.6
+joblib==1.5.3
+lazy-loader==0.5
+librosa==0.11.0
+llvmlite==0.48.0
+markdown-it-py==4.2.0
+markupsafe==3.0.3
+mdurl==0.1.2
+ml-dtypes==0.5.4
+mpmath==1.3.0
+msgpack==1.2.1
+narwhals==2.24.0
+networkx==3.6.1
+nodeenv==1.10.0
+numba==0.66.0
+numpy==1.26.4
+omegaconf==2.3.1
+onnx==1.22.0
+onnxruntime==1.21.1
+orjson==3.11.9
+packaging==26.2
+pandas==3.0.5
+pillow==12.3.0
+platformdirs==4.11.0
+pluggy==1.6.0
+pooch==1.9.0
+pre-commit==4.6.1
+protobuf==7.35.1
+pycparser==3.0
+pydantic-core==2.46.4
+pydantic==2.13.4
+pydub==0.25.1
+pygments==2.20.0
+pykakasi==2.3.0
+pyloudnorm==0.2.0
+pytest-asyncio==1.4.0
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+python-discovery==1.5.0
+python-multipart==0.0.32
+pytz==2026.2
+pyyaml==6.0.3
+regex==2026.7.19
+requests==2.34.2
+resemble-perth==1.0.1
+rich==15.0.0
+s3tokenizer==0.3.0
+safehttpx==0.1.7
+safetensors==0.5.3
+scikit-learn==1.9.0
+scipy==1.17.1
+semantic-version==2.10.0
+setuptools==83.0.0
+shellingham==1.5.4
+six==1.17.0
+soundfile==0.14.0
+soxr==1.1.0
+spacy-pkuseg==1.0.1
+srsly==2.5.3
+starlette==0.52.1
+sympy==1.13.1
+threadpoolctl==3.6.0
+tokenizers==0.22.2
+tomlkit==0.13.3
+torch==2.6.0
+torchaudio==2.6.0
+tqdm==4.69.0
+transformers==5.2.0
+typer-slim==0.24.0
+typer==0.27.0
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+urllib3==2.7.0
+uvicorn==0.51.0
+virtualenv==21.7.0
+wrapt==2.2.2
+zipp==4.1.0
+```
+
+---
