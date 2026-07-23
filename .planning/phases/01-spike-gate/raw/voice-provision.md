@@ -428,3 +428,60 @@ zipp==4.1.0
 ```
 
 ---
+
+## Task 2 — GATE 0 readiness outcomes
+
+**GATE 0: GREEN** (configuration: `repaired`)
+
+| Environment | Value |
+|---|---|
+| `python` | `3.12.13` |
+| `platform` | `macOS-26.5.2-arm64-arm-64bit` |
+| `machine` | `arm64` |
+| `torch` | `2.6.0` |
+| `mps_is_built` | `True` |
+| `mps_is_available` | `True` |
+| `chatterbox` | `0.1.7` |
+| `hf_token_set` | `False` |
+
+### Upstream defect — chatterbox's own `Dicta()` call
+
+- chatterbox's zero-arg `Dicta()` works: **False**
+- exception (verbatim): `TypeError: Dicta.__init__() missing 1 required positional argument: 'model_path'`
+
+### Check 1 — Hebrew diacritics MUTATE the input (hard assert)
+
+- input : `שלום עולם`
+- output: `שְׁלוֹם עוֹלָם`
+- mutated: **True**
+- dicta model: `/Users/alexanderikonnikov/Documents/repos/paaf/spike/voice/.models/dicta-1.0.onnx`
+
+### Check 2 — no degradation warning during a real Hebrew probe render
+
+- probe text: `שלום, מה שלומך היום` (`language_id=he`)
+- generate: **41.105 s**, 269760 samples
+- chatterbox degradation warnings: **[]**
+- non-blocking warning (recorded, not a gate failure): `chatterbox.models.t3.inference.alignment_stream_analyzer: forcing EOS token, long_tail=tensor(False), alignment_repetition=tensor(False), token_repetition=True`
+- non-blocking warning (recorded, not a gate failure): `chatterbox.models.t3.inference.alignment_stream_analyzer: 🚨 Detected 2x repetition of token 6486`
+
+### Check 3 — Russian stress labeling
+
+- `russian_text_stresser` present: **False**
+- exception (verbatim): `ModuleNotFoundError: No module named 'russian_text_stresser'`
+- consequence: Russian is measured WITHOUT stress labeling. This is what a user gets from a default install; it is not fixable by pip (permanent PyPI 404). Carry this caveat into any D-20 Russian spot-check.
+
+### Check 4 — usable inference device
+
+- **usable device: `mps`**
+
+- `mps`: constructed=True generated=True in 60.933 s
+
+### Check 5 — seed reproducibility (Open Question 2)
+
+- seed `1234` on `mps`, same sentence rendered twice
+- shapes: `(1, 269760)` vs `(1, 269760)` (same_shape=True)
+- **bitwise identical: True**
+- allclose(atol=1e-6): True; max |diff|: 0.0
+- generate times: [19.89, 19.984] s
+- consequence: D-07's re-run-and-diff promise holds on this backend.
+
