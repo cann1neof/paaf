@@ -175,3 +175,55 @@ def test_a_device_failure_is_recorded_as_data_with_the_verbatim_exception() -> N
     assert row["ok"] is False
     assert "Placeholder storage" in row["exception_verbatim"]
     assert row["device"] == "mps"
+
+
+# --------------------------------------------------------------------------------------
+# Degradation classification — the render must stop for a FIXABLE degradation and must
+# NOT stop for the one the phase has already measured and accepted.
+# --------------------------------------------------------------------------------------
+
+RUSSIAN_WARNING = (
+    "chatterbox.models.tokenizers.tokenizer: russian_text_stresser not available - "
+    "Russian stress labeling skipped"
+)
+HEBREW_WARNING = (
+    "chatterbox.models.tokenizers.tokenizer: Hebrew diacritization failed: "
+    "Dicta.__init__() missing 1 required positional argument: 'model_path'"
+)
+
+
+def test_the_known_unfixable_russian_warning_is_recorded_not_fatal() -> None:
+    """It 404s on PyPI (01-03 Check 3); every Russian clip emits it. Aborting on it would
+    abort the render on a condition the phase already measured and attached D-20 to."""
+    expected, blocking = rc.classify_degradation([RUSSIAN_WARNING])
+    assert expected == [RUSSIAN_WARNING]
+    assert blocking == []
+
+
+def test_the_hebrew_diacritization_warning_is_fatal() -> None:
+    """This one is repairable, and unrepaired Hebrew clips look exactly like good ones."""
+    expected, blocking = rc.classify_degradation([HEBREW_WARNING])
+    assert blocking == [HEBREW_WARNING]
+    assert expected == []
+
+
+def test_an_unrecognised_degradation_warning_is_fatal_by_default() -> None:
+    """Fail closed: a warning nobody has classified yet is not evidence of safety."""
+    _, blocking = rc.classify_degradation(["chatterbox.x: some new path was skipped"])
+    assert blocking
+
+
+def test_a_mixed_batch_of_warnings_is_split_not_collapsed() -> None:
+    expected, blocking = rc.classify_degradation([RUSSIAN_WARNING, HEBREW_WARNING])
+    assert expected == [RUSSIAN_WARNING] and blocking == [HEBREW_WARNING]
+
+
+def test_an_integrity_abort_is_a_different_outcome_from_a_device_crash() -> None:
+    """Conflating them is how an invalid render gets silently retried on another backend,
+    producing a mixed-device series that looks complete."""
+    assert rc.EXIT_INTEGRITY != 0 and rc.EXIT_INTEGRITY != 1
+    crash = rc._failure_row(JOBS[:1], "mps", 1, "boom", 0)
+    abort = rc._failure_row(JOBS[:1], "mps", 1, "boom", 0, integrity=True)
+    assert crash["condition"] != abort["condition"]
+    assert "NOT retried" in abort["note"]
+    assert "falls to the next device" in crash["note"]

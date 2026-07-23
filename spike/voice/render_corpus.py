@@ -122,6 +122,39 @@ CONDITION_NONE = "none"
 #: Hebrew consonant probe used to prove the Dicta repair is live in THIS process.
 HEBREW_REPAIR_PROBE = "שלום עולם"
 
+#: Degradation warnings that are EXPECTED, KNOWN and unfixable, and must therefore be
+#: RECORDED per clip rather than abort the render.
+#:
+#: ``russian_text_stresser`` 404s on PyPI under every name variant (01-03 Check 3), so no
+#: install can silence it and every Russian-bearing clip in the corpus will emit it. It
+#: matches ``gate_readiness.DEGRADATION_MARKERS`` ("not available", "skipped") because
+#: those markers are deliberately generic shapes, and GATE 0 never met this one — its
+#: probe clip was Hebrew-only. Treating it as fatal would abort the render on a condition
+#: the phase has already measured, accepted, and attached a consequence to (D-05/D-20:
+#: Russian is measured WITHOUT stress labeling).
+#:
+#: Everything NOT on this list — the Hebrew diacritics path above all — is fatal, because
+#: it is repairable and because unrepaired Hebrew clips look exactly like good ones.
+EXPECTED_DEGRADATION_SUBSTRINGS = ("russian_text_stresser",)
+
+#: Worker exit code meaning "the render is INVALID", as distinct from "this device died".
+#: The two demand opposite responses and conflating them is how a data-integrity abort
+#: gets silently retried on another backend, producing a mixed-device timing series.
+EXIT_INTEGRITY = 2
+
+
+def classify_degradation(messages: Iterable[str]) -> tuple[list[str], list[str]]:
+    """Split degradation warnings into ``(expected, blocking)``.
+
+    Expected ones are carried in the record as findings. Blocking ones stop the render:
+    a clip rendered through an active, *fixable* degradation path is worse than a missing
+    clip, because it will be judged as if it were the real engine.
+    """
+    expected, blocking = [], []
+    for message in messages:
+        (expected if any(s in message for s in EXPECTED_DEGRADATION_SUBSTRINGS) else blocking).append(message)
+    return expected, blocking
+
 
 # --------------------------------------------------------------------------------------
 # Job planning (no torch — the parent process must stay light)
@@ -284,6 +317,7 @@ def run_worker(jobs_path: Path, out_path: Path, device: str, seed: int, model_pa
                 synth_seconds = time.perf_counter() - t0
 
             degraded = [f"{r.name}: {r.getMessage()}" for r in gr.degradation_records(records)]
+            expected_degradation, blocking_degradation = classify_degradation(degraded)
             others = sorted({f"{r.name}: {r.getMessage()}" for r in gr.other_warnings(records)})
 
             samples = wav.squeeze(0).detach().float().cpu().numpy()
@@ -312,6 +346,8 @@ def run_worker(jobs_path: Path, out_path: Path, device: str, seed: int, model_pa
                 "watermarked": True,  # Pitfall 11 / VOICE-12: no flag exists to disable it
                 "watermark_inside_timed_region": True,
                 "degradation_warnings": degraded,
+                "degradation_expected": sorted(set(expected_degradation)),
+                "degradation_blocking": sorted(set(blocking_degradation)),
                 "other_warnings": others,
                 "configuration": repair["configuration"],
                 "native_zero_arg_dicta_works": repair["native_zero_arg_dicta_works"],
@@ -322,17 +358,23 @@ def run_worker(jobs_path: Path, out_path: Path, device: str, seed: int, model_pa
             }
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
             fh.flush()
+            note = ""
+            if expected_degradation:
+                note = "  (expected, recorded: no Russian stress labeling)"
+            if blocking_degradation:
+                note = f"  ⚠ BLOCKING {blocking_degradation}"
             print(
                 f"    [{device}] {job['filename']:<16} "
-                f"{row['duration_seconds']:>6.2f}s audio in {synth_seconds:>6.1f}s"
-                + (f"  ⚠ {degraded}" if degraded else ""),
+                f"{row['duration_seconds']:>6.2f}s audio in {synth_seconds:>6.1f}s" + note,
                 flush=True,
             )
 
-            if degraded:
+            if blocking_degradation:
                 raise gr.GateFailure(
-                    f"chatterbox degradation warning fired while rendering {job['filename']}: "
-                    f"{degraded}. Refusing to continue — the remaining clips would be suspect."
+                    f"a FIXABLE chatterbox degradation path fired while rendering "
+                    f"{job['filename']}: {blocking_degradation}. Refusing to continue — the "
+                    "remaining clips would be suspect, and a suspect clip that looks fine is "
+                    "worse than a missing one."
                 )
     return 0
 
@@ -342,12 +384,20 @@ def run_worker(jobs_path: Path, out_path: Path, device: str, seed: int, model_pa
 # --------------------------------------------------------------------------------------
 
 
-def _failure_row(batch: list[dict[str, Any]], device: str, seed: int, exc_text: str, batch_index: int) -> dict[str, Any]:
+def _failure_row(
+    batch: list[dict[str, Any]],
+    device: str,
+    seed: int,
+    exc_text: str,
+    batch_index: int,
+    *,
+    integrity: bool = False,
+) -> dict[str, Any]:
     """A device failure is a recorded MEASUREMENT (D-11/D-12), never a swallowed error."""
     return {
         "clip_id": None,
         "tag": None,
-        "condition": "batch-failure",
+        "condition": "integrity-abort" if integrity else "batch-failure",
         "language_id": None,
         "filename": None,
         "device": device,
@@ -358,15 +408,20 @@ def _failure_row(batch: list[dict[str, Any]], device: str, seed: int, exc_text: 
         "exception_verbatim": exc_text,
         "rendered_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "note": (
-            "Batch subprocess exited non-zero. Per D-11/D-12 the failure of a device is a "
-            "valid recorded outcome, not a phase blocker; the driver falls to the next "
-            "device in DEVICE_ORDER and continues."
+            "Render aborted because the batch would have produced INVALID clips. This is "
+            "not a device failure and was deliberately NOT retried on another backend — a "
+            "different device cannot repair a degradation path, and the retry would yield a "
+            "mixed-device series that looks complete."
+            if integrity
+            else "Batch subprocess crashed. Per D-11/D-12 the failure of a device is a valid "
+            "recorded outcome, not a phase blocker; the driver falls to the next device in "
+            "DEVICE_ORDER and continues."
         ),
     }
 
 
-def run_batch(batch: list[dict[str, Any]], batch_index: int, device: str, seed: int, model_path: str | None) -> tuple[bool, list[dict[str, Any]], str]:
-    """Spawn a fresh process for one batch. Returns ``(ok, rows, stderr_tail)``."""
+def run_batch(batch: list[dict[str, Any]], batch_index: int, device: str, seed: int, model_path: str | None) -> tuple[int, list[dict[str, Any]], str]:
+    """Spawn a fresh process for one batch. Returns ``(returncode, rows, stderr_tail)``."""
     with tempfile.TemporaryDirectory() as tmp:
         jobs_file = Path(tmp) / "jobs.json"
         rows_file = Path(tmp) / "rows.jsonl"
@@ -397,7 +452,7 @@ def run_batch(batch: list[dict[str, Any]], batch_index: int, device: str, seed: 
                 for line in rows_file.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
-        return proc.returncode == 0, rows, (proc.stderr or "")[-4000:]
+        return proc.returncode, rows, (proc.stderr or "")[-4000:]
 
 
 def drive(args: argparse.Namespace) -> int:
@@ -437,13 +492,30 @@ def drive(args: argparse.Namespace) -> int:
         )
         while True:
             device = DEVICE_ORDER[device_index]
-            ok, rows, stderr_tail = run_batch(batch, batch_index, device, args.seed, args.dicta_model)
+            code, rows, stderr_tail = run_batch(batch, batch_index, device, args.seed, args.dicta_model)
             append_rows(TIMINGS_PATH, rows)
             rendered += len(rows)
-            if ok:
+            if code == 0:
                 break
+
+            # An INTEGRITY abort is not a device failure and must never be retried on
+            # another backend: a different device cannot repair a degradation path, and
+            # the retry would silently produce a mixed-device series that looks complete.
+            if code == EXIT_INTEGRITY:
+                append_rows(
+                    TIMINGS_PATH,
+                    [_failure_row(batch, device, args.seed, stderr_tail, batch_index, integrity=True)],
+                )
+                print(
+                    "!! render ABORTED for a data-integrity reason (not a device failure). "
+                    "No fallback attempted — fix the cause and re-run.",
+                    file=sys.stderr,
+                )
+                print(stderr_tail, file=sys.stderr)
+                return EXIT_INTEGRITY
+
             append_rows(TIMINGS_PATH, [_failure_row(batch, device, args.seed, stderr_tail, batch_index)])
-            print(f"!! batch failed on device={device}; recorded verbatim as data", file=sys.stderr)
+            print(f"!! batch crashed on device={device}; recorded verbatim as data", file=sys.stderr)
             print(stderr_tail, file=sys.stderr)
             if device_index + 1 >= len(DEVICE_ORDER):
                 print("!! no device left to fall back to — stopping", file=sys.stderr)
@@ -480,9 +552,17 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.worker:
-        return run_worker(
-            Path(args.jobs_file), Path(args.rows_file), args.device, args.seed, args.dicta_model
-        )
+        import gate_readiness as gr
+
+        try:
+            return run_worker(
+                Path(args.jobs_file), Path(args.rows_file), args.device, args.seed, args.dicta_model
+            )
+        except gr.GateFailure as exc:
+            # Distinct exit code: the driver must NOT read this as "the device died" and
+            # retry the batch on another backend.
+            print(f"INTEGRITY ABORT: {exc}", file=sys.stderr)
+            return EXIT_INTEGRITY
     return drive(args)
 
 
