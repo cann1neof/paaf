@@ -166,7 +166,235 @@ regression test for it lives in `spike/bakeoff/test_tool_call_sanity.py`.
 
 ## Task 2 — Bake-off venv
 
-<!-- filled by Task 2 -->
+### 2.1 The venv
+
+| Property | Value |
+|---|---|
+| Path | `spike/bakeoff/.venv` |
+| Interpreter | **CPython 3.12.13**, arm64 (uv-managed, same build as `spike/.venv` and `spike/voice/.venv`) |
+| Created with | `uv venv --python 3.12 spike/bakeoff/.venv` |
+| `sys.prefix` | `/Users/…/paaf/spike/bakeoff/.venv` |
+| Git status | **ignored** — `git check-ignore` → `.gitignore:11:spike/**/.venv/`; `git status --porcelain -- spike/` is empty |
+| Total packages | 92 |
+
+### 2.2 Separation from the voice venv — proven in both directions
+
+RESEARCH mandates a SEPARATE venv because `chatterbox-tts` hard-pins `torch==2.6.0`,
+`transformers==5.2.0`, `diffusers==0.29.0`, `numpy<2.0.0`; resolving those against the
+LangChain / Pydantic-AI trees is a resolver fight with no upside. Asserted rather than
+assumed — the check runs each interpreter and asks it what it has:
+
+| Interpreter | `torch` | `chatterbox-tts` | `dicta-onnx` | `langchain` | `pydantic-ai-slim` |
+|---|---|---|---|---|---|
+| `spike/voice/.venv` | 2.6.0 | 0.1.7 | 1.0.9 | **absent** ✅ | **absent** ✅ |
+| `spike/bakeoff/.venv` | **absent** ✅ | **absent** ✅ | **absent** ✅ | 1.3.14 | 2.13.0 |
+
+Neither half can import the other. Three venvs now exist under `spike/`, all git-ignored:
+`spike/.venv` (base, stdlib-only suite), `spike/voice/.venv` (01-03), `spike/bakeoff/.venv` (this plan).
+
+### 2.3 Requested vs resolved — the pins that moved
+
+| Package | Requested (RESEARCH, verified 2026-07-20) | Resolved 2026-07-23 | Drift |
+|---|---|---|---|
+| `langchain` | 1.3.14 | **1.3.14** | none — still latest |
+| `langgraph` | 1.2.9 | **1.2.9** | none — still latest |
+| `langchain-ollama` | 1.1.0 | **1.1.0** | none — still latest |
+| `langchain-mcp-adapters` | 0.3.0 | **0.3.0** | none — still latest |
+| `pydantic-ai-slim[mcp]` | 2.13.0 | **2.13.0** (pin held) | ⚠️ **latest is now 2.16.0** — see §2.4 |
+| `ollama` | ~0.6.2 | **0.6.2** | none — still latest |
+| `langchain-core` | 1.4.9 *(transitive; RESEARCH read this wheel)* | **1.5.0** | ⚠️ minor bump — see §2.5 |
+| `pytest` / `pytest-asyncio` | 9.1.1 / 1.4.0 | **9.1.1 / 1.4.0** | none |
+
+Every requested version was confirmed present on PyPI and **not yanked** before installing.
+
+### 2.4 ⚠️ Finding: `pydantic-ai` shipped 3 minors in the 3 days since RESEARCH
+
+The plan anticipated this (*"pydantic-ai ships fast minors"*). The re-check quantifies it,
+and the number is itself evidence for the bake-off's stability axis:
+
+| `pydantic-ai-slim` | | `langchain` | |
+|---|---|---|---|
+| 2.10.0 | 2026-07-15 | 1.3.7 | 2026-06-10 |
+| 2.11.0 | 2026-07-16 | 1.3.8 | 2026-06-12 |
+| 2.12.0 | 2026-07-17 | 1.3.9 | 2026-06-12 |
+| **2.13.0** ← RESEARCH pin | 2026-07-18 | 1.3.10 | 2026-06-18 |
+| 2.14.0 | 2026-07-21 | 1.3.11 | 2026-06-22 |
+| 2.14.1 | 2026-07-21 | 1.3.12 | 2026-07-08 |
+| 2.15.0 | 2026-07-22 | 1.3.13 | 2026-07-10 |
+| **2.16.0** ← latest today | 2026-07-23 | **1.3.14** ← latest today | 2026-07-16 |
+
+**7 MINOR releases in 9 days** for pydantic-ai, versus **8 PATCH releases in 43 days** for
+LangChain, which has not left `1.3.x`. CLAUDE.md scores "API stability history" as a
+decision axis and records that pydantic-ai shortened its own no-breaking-change window from
+six months to three; this cadence is the same fact observed from the release feed rather than
+from the vendor's blog post. **Carry it into 01-10's DECISIONS.md** — it was obtained free,
+as a side effect of re-verifying a pin.
+
+**2.13.0 was installed, not 2.16.0**, deliberately: RESEARCH established the v2 MCP surface
+(`MCPToolset`, `MCPToolsetClient`, `_build_transport`, the capabilities primitive) by reading
+the **2.13.0 wheel source directly**. Installing 2.16.0 would mean SPIKE-07 runs against a
+surface nobody has verified, and any failure would be ambiguous between "the framework is
+awkward" and "our snippet is three minors stale". A measurement phase should measure the
+artifact it has read. 01-07 owns the judgement of whether the drift needs re-testing.
+
+### 2.5 ⚠️ `langchain-core` resolved to 1.5.0, not the 1.4.9 RESEARCH read — re-verified
+
+`langchain==1.3.14` does not pin `langchain-core` exactly, so it resolved forward to **1.5.0**
+(released 2026-07-21). RESEARCH's central SPIKE-05/06 finding — *"CHAT models fire
+`on_chat_model_start`, NOT `on_llm_start`; implement BOTH"* — was read from the **1.4.9**
+wheel. Silently accepting a different wheel would make that finding unverified at exactly the
+point SPIKE-05 depends on it. Re-checked against the installed 1.5.0:
+
+| Hook on `AsyncCallbackHandler` | Present in 1.5.0? | Signature matches RESEARCH? |
+|---|---|---|
+| `on_chat_model_start(serialized, messages, *, run_id, parent_run_id, tags, metadata, …)` | ✅ | ✅ |
+| `on_llm_start(serialized, prompts, *, run_id, parent_run_id, …)` | ✅ | ✅ |
+| `on_llm_new_token(token, *, chunk, run_id, …)` | ✅ | ✅ |
+| `on_llm_end(response, *, run_id, …)` | ✅ | ✅ |
+| `on_tool_start(serialized, input_str, *, run_id, inputs, …)` | ✅ | ✅ |
+| `on_tool_end(output, *, run_id, …)` | ✅ | ✅ |
+
+**All six survive the bump with the recorded signatures.** RESEARCH's §Code Examples
+`SpikeTrace` handler is valid against the installed tree. SPIKE-05/06 may proceed on it.
+
+### 2.6 ⚠️ Both telemetry exporters are physically present in the venv — and are inert
+
+An env-var audit alone would have missed this. `langchain` pulls **`langsmith==0.10.10`** and
+`pydantic-ai-slim` pulls **`logfire-api==4.38.0`** and **`opentelemetry-api==1.44.0`** as hard
+transitive dependencies. They are in the venv whether or not anyone wants them. PRIV-02 is
+about *egress*, not about absence, so the assertion has to be runtime state:
+
+| Check | Result |
+|---|---|
+| `langsmith.utils.tracing_is_enabled()` | **`False`** — no run tree is exported |
+| real `logfire` package installed? | **No** — only `logfire-api`, which is upstream's documented **no-op shim** when `logfire` is absent |
+| `langchain_core.globals.get_debug()` / `get_verbose()` | `False` / `False` |
+| `LANGSMITH_TRACING` / `LANGCHAIN_TRACING_V2` in `os.environ` | absent / absent |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset — `opentelemetry-api` has no exporter configured |
+
+`T-01-04-TEL` is mitigated in the venv as well as in the shell. The standing rule for
+01-05/06/07: **do not `pip install logfire`, and do not call `Agent(..., instrument=True)` /
+`logfire.configure()`.** Installing the real `logfire` package would convert a no-op shim into
+a live exporter without any env var changing.
+
+### 2.7 Full resolved freeze (92 packages)
+
+`uv pip freeze --python spike/bakeoff/.venv/bin/python`, 2026-07-23:
+
+```
+aiofile==3.11.1
+annotated-types==0.7.0
+anyio==4.14.2
+attrs==26.1.0
+authlib==1.7.2
+beartype==0.22.9
+cachetools==7.1.5
+caio==0.9.25
+certifi==2026.7.22
+cffi==2.1.0
+charset-normalizer==3.4.9
+click==8.4.2
+cryptography==49.0.0
+distro==1.9.0
+dnspython==2.8.0
+email-validator==2.3.0
+exceptiongroup==1.3.1
+fastmcp-slim==3.4.4
+genai-prices==0.0.72
+griffelib==2.1.0
+h11==0.16.0
+httpcore==1.0.9
+httpcore2==2.7.0
+httpx==0.28.1
+httpx-sse==0.4.3
+httpx2==2.7.0
+idna==3.18
+iniconfig==2.3.0
+jaraco-classes==3.4.0
+jaraco-context==6.1.2
+jaraco-functools==4.6.0
+joserfc==1.7.4
+jsonpatch==1.33
+jsonpointer==3.1.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+keyring==25.7.0
+langchain==1.3.14
+langchain-core==1.5.0
+langchain-mcp-adapters==0.3.0
+langchain-ollama==1.1.0
+langchain-protocol==0.0.18
+langgraph==1.2.9
+langgraph-checkpoint==4.1.1
+langgraph-prebuilt==1.1.0
+langgraph-sdk==0.4.2
+langsmith==0.10.10
+logfire-api==4.38.0
+markdown-it-py==4.2.0
+mcp==1.28.1
+mdurl==0.1.2
+more-itertools==11.1.0
+ollama==0.6.2
+opentelemetry-api==1.44.0
+orjson==3.11.9
+ormsgpack==1.12.2
+packaging==26.2
+platformdirs==4.11.0
+pluggy==1.6.0
+py-key-value-aio==0.4.5
+pycparser==3.0
+pydantic==2.13.4
+pydantic-ai-slim==2.13.0
+pydantic-core==2.46.4
+pydantic-graph==2.13.0
+pydantic-settings==2.14.2
+pygments==2.20.0
+pyjwt==2.13.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+python-dotenv==1.2.2
+python-multipart==0.0.32
+pyyaml==6.0.3
+referencing==0.37.0
+requests==2.34.2
+requests-toolbelt==1.0.0
+rich==15.0.0
+rpds-py==2026.6.3
+sniffio==1.3.1
+sse-starlette==3.4.6
+starlette==1.3.1
+tenacity==9.1.4
+truststore==0.10.4
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+urllib3==2.7.0
+uuid-utils==0.17.0
+uvicorn==0.51.0
+websockets==15.0.1
+xxhash==3.8.1
+zstandard==0.25.0
+```
+
+Notable transitives for later plans: **`mcp==1.28.1`** and **`fastmcp-slim==3.4.4`** (SPIKE-06
+runs both adapters against the same MCP protocol version — a fair comparison);
+**`pydantic==2.13.4`**, matching CLAUDE.md's stack pin exactly; **`langchain-protocol==0.0.18`**,
+a `0.0.x` package now inside the LangChain 1.x dependency tree, which is worth noting next to
+`langchain-mcp-adapters==0.3.0` when 01-10 weighs the "LangChain is the stable one" claim.
+
+### 2.8 Import smoke — every entry point the bake-off needs
+
+All eight pass under `spike/bakeoff/.venv/bin/python`:
+
+```
+OK  from langchain.chat_models import init_chat_model
+OK  from langgraph.graph import StateGraph
+OK  from langchain_ollama import ChatOllama
+OK  from langchain_core.callbacks import AsyncCallbackHandler
+OK  from langchain_mcp_adapters.client import MultiServerMCPClient
+OK  from pydantic_ai import Agent
+OK  from pydantic_ai.mcp import MCPToolset          # v2 surface; MCPServerStdio is GONE
+OK  import ollama
+```
 
 ---
 
