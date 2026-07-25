@@ -11,6 +11,7 @@ under test at module scope:
 
 * ``test_lang_ids.py``  — imports ``chatterbox`` for the SUPPORTED_LANGUAGES contract.
 * ``test_readiness.py`` — GATE 0; its fixtures load chatterbox and dicta_onnx.
+* ``test_transcribe_harness.py`` — SPIKE-04; its fixtures load faster-whisper (large-v3).
 
 Under the base venv those imports raise ``ModuleNotFoundError`` during *collection*,
 which pytest treats as a hard error that ABORTS THE ENTIRE RUN — the 61 stdlib-only
@@ -42,8 +43,9 @@ from pathlib import Path
 class VoiceGateNotEvaluated(UserWarning):
     """Emitted when GATE 0 modules are skipped because the voice venv is not active."""
 
-#: Modules that require the voice venv (chatterbox / dicta_onnx / torch) at import time.
-VOICE_ONLY_MODULES = ("test_lang_ids.py", "test_readiness.py")
+#: Modules that require the voice venv (chatterbox / dicta_onnx / torch / faster-whisper)
+#: at import time.
+VOICE_ONLY_MODULES = ("test_lang_ids.py", "test_readiness.py", "test_transcribe_harness.py")
 
 #: The voice venv provisioned by 01-03, relative to this file.
 VOICE_VENV = Path(__file__).resolve().parent / ".venv"
