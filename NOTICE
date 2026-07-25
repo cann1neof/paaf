@@ -1,0 +1,34 @@
+PAAF — Personalized Agentic Assistant Framework
+Copyright 2026 The PAAF Authors
+
+This product includes software developed by the PAAF project and its
+contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may
+not use this software except in compliance with the License. A copy of the
+License is distributed alongside this NOTICE in the file `LICENSE`, and is
+also available at http://www.apache.org/licenses/LICENSE-2.0.
+
+--------------------------------------------------------------------------
+Scope of this license
+--------------------------------------------------------------------------
+
+The Apache-2.0 license above covers the PAAF *framework* — the five Python
+packages under `packages/` (paaf-core, paaf-llm, paaf-voice, paaf-session,
+paaf-trace).
+
+The two applications (the embedded assistant process and the Electron
+desktop control panel) are not yet built. Their license defaults to
+Apache-2.0 for v1; whether the apps adopt AGPL for capture-resistance is
+recorded as an OPEN governance question in `DECISIONS.md` (it is NOT yet
+chosen). See `DECISIONS.md` → "App license — OPEN governance question".
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+PAAF consumes third-party open-source models and libraries at runtime
+(e.g. Chatterbox, Whisper via faster-whisper, LangChain/LangGraph, Silero
+VAD, Ollama). Each is distributed under its own license by its respective
+authors; PAAF does not relicense them. Their attribution travels with the
+dependency artifacts resolved by `uv`, not with this NOTICE.

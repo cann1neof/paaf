@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# DCO sign-off check (FOUND-07). PAAF uses the Developer Certificate of Origin
+# (https://developercertificate.org/) instead of a CLA: every commit in a pull
+# request must carry a valid `Signed-off-by:` trailer matching the DCO. This
+# job fails the PR if any commit is missing sign-off, so the licensing
+# provenance of every contribution is enforced, not trusted.
+#
+# Contributors sign off with `git commit -s`; see CONTRIBUTING.md.
+name: dco
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR range
+        uses: actions/checkout@v4
+        with:
+          # Fetch the full history so we can walk every commit the PR adds.
+          fetch-depth: 0
+
+      - name: Verify Developer Certificate of Origin sign-off
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "Checking commits in ${BASE_SHA}..${HEAD_SHA} for DCO sign-off"
+          missing=0
+          # Walk each commit the PR introduces. Merge commits are skipped
+          # (--no-merges): they are created by the forge, not the contributor.
+          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            # A commit passes if its message body carries at least one
+            # Signed-off-by trailer naming a real identity.
+            if git show -s --format='%B' "$sha" \
+                 | grep -Eiq '^Signed-off-by: .+ <.+@.+>'; then
+              echo "  ok   $sha  $author"
+            else
+              echo "  FAIL $sha  $author  (missing Signed-off-by)"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "One or more commits are missing a DCO sign-off."
+            echo "Fix with:  git commit --amend -s   (or rebase-and-sign), then force-push."
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
+          echo "All commits carry a DCO sign-off."
