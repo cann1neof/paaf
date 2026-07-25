@@ -6,14 +6,14 @@ current_phase: 02
 current_phase_name: foundation
 status: executing
 stopped_at: Completed 02-05-PLAN.md (encrypted secret store)
-last_updated: "2026-07-25T14:11:54.019Z"
+last_updated: "2026-07-25T18:31:36.437Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 8
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 02 (foundation) — EXECUTING
-Plan: 7 of 9
+Plan: 8 of 9
 Status: Ready to execute
 Last activity: 2026-07-25 — Phase 02 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P04 | 3min | 2 tasks | 8 files |
 | Phase 02 P05 | 3min | 2 tasks | 4 files |
 | Phase 02 P06 | 8min | 1 tasks | 3 files |
+| Phase 02 P07 | 25min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-04] Config subsystem: AppConfig (Pydantic v2, extra=forbid) validates on read/write; atomic_write_bytes does temp+fsync+os.replace+dirfsync; write_config gates a monotonic revision inside a FileLock and raises ConflictError on stale writes; reload_tiers() discovers per-field HOT/WARM/COLD/RESTART, unannotated fields default to RESTART
 - [Phase 02]: Master-key provisioning source = passphrase-at-boot (02-05) — Strongest option: key derived from passphrase via scrypt at unlock, never at rest (only per-store salt persisted). TRADEOFF: breaks unattended headless restart — every service (re)start needs the passphrase; Phase 9 (APP-*) owns boot-time delivery. key-file-0600/systemd-credential addable later without interface change.
 - [Phase 02]: CORE-05: network locality classified via stdlib ipaddress + .local/localhost suffix, never DNS (offline-safe under --disable-socket); EndpointRegistry.non_lan_endpoints() is the exact set Phase-9 APP-08 will refuse
+- [Phase ?]: Trace store: single _writer task owns the aiosqlite connection; emit() is synchronous put_nowait + drop-counter so audio never stalls (TRACE-01)
+- [Phase ?]: time_to_first_audio is a first-class REAL column on runs; recorded via TtfaUpdate through the writer (TRACE-03)
+- [Phase ?]: Added --allow-unix-socket to test addopts: asyncio self-pipe allowed, AF_INET egress still blocked (TRACE-05 preserved)
 
 ### Pending Todos
 
@@ -133,6 +137,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T14:11:14.130Z
+Last session: 2026-07-25T18:31:03.127Z
 Stopped at: Completed 02-05-PLAN.md (encrypted secret store)
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md
