@@ -13,6 +13,15 @@ package = false
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[tool.pytest.ini_options]
+# --disable-socket is the no-network default (FOUND-03 / PRIV-02): pytest-socket makes
+# ANY socket open fail the suite. It is the negative control other Phase-2 plans build on.
+# --import-mode=importlib lets identically-named test modules (test_smoke.py) coexist
+# across packages without __init__.py files or basename collisions.
+addopts = "--disable-socket --import-mode=importlib"
+testpaths = ["packages"]
+asyncio_mode = "auto"
+
 [dependency-groups]
 # Workspace-level dev/CI toolchain. Pinned where Phase-1 established a baseline
 # (pytest 9.1.1, pytest-asyncio 1.4.0); pytest-socket pinned to the version resolved
