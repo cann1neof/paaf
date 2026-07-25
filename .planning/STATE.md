@@ -6,14 +6,14 @@ current_phase: 02
 current_phase_name: foundation
 status: executing
 stopped_at: Completed 02-05-PLAN.md (encrypted secret store)
-last_updated: "2026-07-25T18:31:36.437Z"
+last_updated: "2026-07-25T18:40:23.299Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 8
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 02 (foundation) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-07-25 — Phase 02 execution started
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P05 | 3min | 2 tasks | 4 files |
 | Phase 02 P06 | 8min | 1 tasks | 3 files |
 | Phase 02 P07 | 25min | 3 tasks | 8 files |
+| Phase 02 P08 | 4min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Trace store: single _writer task owns the aiosqlite connection; emit() is synchronous put_nowait + drop-counter so audio never stalls (TRACE-01)
 - [Phase ?]: time_to_first_audio is a first-class REAL column on runs; recorded via TtfaUpdate through the writer (TRACE-03)
 - [Phase ?]: Added --allow-unix-socket to test addopts: asyncio self-pipe allowed, AF_INET egress still blocked (TRACE-05 preserved)
+- [Phase ?]: App license recorded as OPEN governance question — framework Apache-2.0 locked, apps default Apache-2.0 v1, AGPL not chosen (Plan 08)
+- [Phase ?]: Governance rot-guard (tests/test_governance.py) globs packages/*/src/**/*.py and fails CI on any source file missing the SPDX Apache-2.0 header (FOUND-07, Plan 08)
 
 ### Pending Todos
 
@@ -137,6 +140,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T18:31:03.127Z
+Last session: 2026-07-25T18:40:23.295Z
 Stopped at: Completed 02-05-PLAN.md (encrypted secret store)
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md

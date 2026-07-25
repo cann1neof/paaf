@@ -29,9 +29,9 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [x] **FOUND-02**: `paaf-llm` is independently `pip install`-able without pulling in voice or audio dependencies
 - [x] **FOUND-03**: CI runs the full test suite with no audio hardware and no network
 - [x] **FOUND-04**: import-linter forbidden contracts fail CI if `paaf-llm` imports `paaf-voice` (or vice versa), or if `langchain*` is imported outside the designated adapter package
-- [ ] **FOUND-05**: `DECISIONS.md` exists from the first commit and records the anti-feature list, the skills-security posture, and the injection-defense constraint
-- [ ] **FOUND-06**: `CONTRIBUTING.md` plus an architecture document that lets an outsider run the tests and find their way around
-- [ ] **FOUND-07**: Apache-2.0 on the framework, license headers, DCO, conventional commits, semver
+- [x] **FOUND-05**: `DECISIONS.md` exists from the first commit and records the anti-feature list, the skills-security posture, and the injection-defense constraint
+- [x] **FOUND-06**: `CONTRIBUTING.md` plus an architecture document that lets an outsider run the tests and find their way around
+- [x] **FOUND-07**: Apache-2.0 on the framework, license headers, DCO, conventional commits, semver
 
 ### Configuration & Secrets (CORE)
 
@@ -227,9 +227,9 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | FOUND-02 | Phase 2 — Foundation | Complete |
 | FOUND-03 | Phase 2 — Foundation | Complete |
 | FOUND-04 | Phase 2 — Foundation | Complete |
-| FOUND-05 | Phase 2 — Foundation | Pending |
-| FOUND-06 | Phase 2 — Foundation | Pending |
-| FOUND-07 | Phase 2 — Foundation | Pending |
+| FOUND-05 | Phase 2 — Foundation | Complete |
+| FOUND-06 | Phase 2 — Foundation | Complete |
+| FOUND-07 | Phase 2 — Foundation | Complete |
 | CORE-01 | Phase 2 — Foundation | Complete |
 | CORE-02 | Phase 2 — Foundation | Complete |
 | CORE-03 | Phase 2 — Foundation | Complete |
