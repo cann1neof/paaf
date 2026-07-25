@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+[project]
+name = "paaf-llm"
+version = "0.1.0"
+description = "PAAF LLM management (stub in Phase 2). Deliberately carries NO voice/core/audio deps."
+requires-python = ">=3.12"
+# FOUND-02: paaf-llm must be pip-installable with no voice/core/audio deps. This list
+# stays empty in Phase 2 so the Plan 03 clean-venv wheel job proves independence.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paaf_llm"]

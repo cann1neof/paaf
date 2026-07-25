@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+[project]
+name = "paaf-workspace"
+version = "0.1.0"
+description = "PAAF monorepo workspace root (virtual — not a distributable package)."
+requires-python = ">=3.12"
+
+[tool.uv]
+# The workspace root is a virtual project: it groups members and dev tooling but is
+# never built or published itself (D-07: no app packages; this root ships nothing).
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+# Workspace-level dev/CI toolchain. Pinned where Phase-1 established a baseline
+# (pytest 9.1.1, pytest-asyncio 1.4.0); pytest-socket pinned to the version resolved
+# by `uv sync` in this plan (RESEARCH Assumptions A3 — unpinned during research).
+dev = [
+    "import-linter",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-socket==0.7.0",
+    "ruff",
+    "mypy",
+]

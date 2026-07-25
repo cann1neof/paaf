@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+[project]
+name = "paaf-session"
+version = "0.1.0"
+description = "PAAF session / turn orchestrator (stub in Phase 2). No internal deps."
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paaf_session"]
