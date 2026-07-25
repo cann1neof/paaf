@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 02
 current_phase_name: foundation
-status: executing
+status: verifying
 stopped_at: Completed 02-05-PLAN.md (encrypted secret store)
-last_updated: "2026-07-25T18:40:23.299Z"
+last_updated: "2026-07-25T18:47:38.815Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 19
-  completed_plans: 18
-  percent: 8
+  completed_plans: 19
+  percent: 17
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 Phase: 02 (foundation) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-25 — Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P06 | 8min | 1 tasks | 3 files |
 | Phase 02 P07 | 25min | 3 tasks | 8 files |
 | Phase 02 P08 | 4min | 3 tasks | 7 files |
+| Phase 02 P09 | 12min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Added --allow-unix-socket to test addopts: asyncio self-pipe allowed, AF_INET egress still blocked (TRACE-05 preserved)
 - [Phase ?]: App license recorded as OPEN governance question — framework Apache-2.0 locked, apps default Apache-2.0 v1, AGPL not chosen (Plan 08)
 - [Phase ?]: Governance rot-guard (tests/test_governance.py) globs packages/*/src/**/*.py and fails CI on any source file missing the SPDX Apache-2.0 header (FOUND-07, Plan 08)
+- [Phase 02]: TTFA accuracy guard proven non-vacuous via constant + whole-round-trip negative controls (Pitfall 3); BUDGET is a measurement/overhead-regression guardrail, not a shipped-latency claim (D-09)
 
 ### Pending Todos
 
@@ -140,6 +142,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T18:40:23.295Z
+Last session: 2026-07-25T18:47:10.431Z
 Stopped at: Completed 02-05-PLAN.md (encrypted secret store)
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md

@@ -47,7 +47,7 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [x] **TRACE-01**: Local SQLite store in WAL mode with a single writer task fed by a bounded queue, never on the audio hot path
 - [x] **TRACE-02**: Every run records prompts, selected model, tool calls with arguments and results, timings, and token counts
 - [x] **TRACE-03**: `time_to_first_audio` is a first-class recorded metric
-- [ ] **TRACE-04**: Time-to-first-audio is asserted in CI against a regression threshold, measured cold, using a fake TTS
+- [x] **TRACE-04**: Time-to-first-audio is asserted in CI against a regression threshold, measured cold, using a fake TTS
 - [x] **TRACE-05**: Nothing in the trace store ever leaves the device
 
 ### Model Management (MODEL)
@@ -239,7 +239,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | TRACE-01 | Phase 2 — Foundation | Complete |
 | TRACE-02 | Phase 2 — Foundation | Complete |
 | TRACE-03 | Phase 2 — Foundation | Complete |
-| TRACE-04 | Phase 2 — Foundation | Pending |
+| TRACE-04 | Phase 2 — Foundation | Complete |
 | TRACE-05 | Phase 2 — Foundation | Complete |
 | MODEL-01 | Phase 3 — paaf-llm Core | Pending |
 | MODEL-02 | Phase 3 — paaf-llm Core | Pending |

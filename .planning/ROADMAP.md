@@ -18,7 +18,7 @@ Phases 6–8 build voice the same way, test doubles before engines, and then the
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Spike Gate** - Falsify the language promise, the stack, and the hardware assumption before writing any architecture (completed 2026-07-25)
-- [ ] **Phase 2: Foundation** - Workspace, CI-enforced contracts, config, secrets, and the latency regression gate
+- [x] **Phase 2: Foundation** - Workspace, CI-enforced contracts, config, secrets, and the latency regression gate (completed 2026-07-25)
 - [ ] **Phase 3: paaf-llm Core** - Ports and fake adapter first, then models, fallbacks, routing, and the verbatim prompt
 - [ ] **Phase 4: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
 - [ ] **Phase 5: Skills & PyPI Release** - Installable skills, and `paaf-llm` shipped publicly before voice exists
@@ -93,7 +93,7 @@ Plans:
   5. A run's prompts, model choice, tool calls with args and results, timings and token counts land in a local SQLite store off the hot path, `time_to_first_audio` is a first-class column, and a CI job asserts it cold against a regression threshold using a fake TTS — before any real audio engine exists.
   6. `DECISIONS.md`, `CONTRIBUTING.md`, the architecture doc, Apache-2.0 headers and DCO exist from the first commits, with the anti-feature list, the no-accounts/no-telemetry-ever commitment, the skills-security posture, and the permission-model-as-only-injection-defense constraint written down publicly.
 
-**Plans**: 8/9 plans executed
+**Plans**: 9/9 plans complete
 Plans:
 **Wave 1**
 
@@ -111,7 +111,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-09-PLAN.md — fake-TTS TTFA regression gate: accuracy + overhead + budget, cold in CI (SC#5; TRACE-04; D-08/09)
+- [x] 02-09-PLAN.md — fake-TTS TTFA regression gate: accuracy + overhead + budget, cold in CI (SC#5; TRACE-04; D-08/09)
 
 **UI hint**: no
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
-| 2. Foundation | 8/9 | In Progress|  |
+| 2. Foundation | 9/9 | Complete   | 2026-07-25 |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 5. Skills & PyPI Release | 0/TBD | Not started | - |
