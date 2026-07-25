@@ -199,8 +199,11 @@ def load_stt():  # noqa: ANN201
 
 
 def load_llm():  # noqa: ANN201
-    import ollama
-    return ollama.Client(host=LLM_HOST)
+    """No client object needed — the LLM stage talks to the Ollama daemon over its stable
+    REST API via stdlib ``urllib`` (the ``ollama`` package lives in 01-04's bake-off venv,
+    not this voice venv, and the framework will speak HTTP to Ollama anyway). Returns the
+    base host string so the stage function is self-contained."""
+    return LLM_HOST
 
 
 def load_tts():  # noqa: ANN201
@@ -223,21 +226,29 @@ def _strip_think(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-def llm_reply(client, user_text: str) -> str:
-    import ollama
+def llm_reply(host: str, user_text: str) -> str:
+    import urllib.request
 
-    messages = [
-        {"role": "system", "content": "You are a terse voice assistant. Reply in one short sentence."},
-        {"role": "user", "content": user_text or "Hello."},
-    ]
-    try:
-        resp = client.chat(model=LLM_MODEL, messages=messages, think=False,
-                           options={"num_predict": LLM_NUM_PREDICT, "temperature": 0.0})
-    except (TypeError, ollama.ResponseError):
-        # Older client without think= or a model that rejects it: fall back, then strip.
-        resp = client.chat(model=LLM_MODEL, messages=messages,
-                           options={"num_predict": LLM_NUM_PREDICT, "temperature": 0.0})
-    return _strip_think(resp["message"]["content"]) or "Okay."
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [
+            {"role": "system",
+             "content": "You are a terse voice assistant. Reply in one short sentence."},
+            {"role": "user", "content": user_text or "Hello."},
+        ],
+        "stream": False,
+        "think": False,  # qwen3.5 is a thinking model; disable so the stage measures reply latency
+        "options": {"num_predict": LLM_NUM_PREDICT, "temperature": 0.0},
+    }
+    req = urllib.request.Request(
+        f"{host}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    return _strip_think(body["message"]["content"]) or "Okay."
 
 
 def tts_speak(tts, text: str, out_path: Path):  # noqa: ANN201

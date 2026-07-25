@@ -26,5 +26,12 @@ spike/**/.venv/
 # committed on purpose (D-07: ~3-5 MB of declared data, no git-lfs). Do not add a
 # blanket *.wav rule here.
 
+# --- Transient measurement outputs (01-09) ---
+# measure_ttfa.py / roundtrip.py write raw JSON + stderr here as a working scratch; the
+# DURABLE evidence is .planning/phases/01-spike-gate/raw/ttfa.md and raw/roundtrip.md.
+spike/voice/.ttfa*.json
+spike/voice/.ttfa*.stderr
+spike/voice/.roundtrip.json
+
 # --- OS ---
 .DS_Store

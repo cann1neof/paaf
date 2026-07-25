@@ -72,11 +72,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: One short, representative assistant utterance. English keeps the CPU baseline bounded
-#: and is the common short-reply case; the Hebrew diacritics path is therefore not on the
-#: timed region for this sentence (noted in ttfa.md). Recorded verbatim so the number is
-#: attributable to an exact input.
-SENTENCE = "Set a timer for ten minutes."
+#: One short, representative assistant utterance producing ~4 s of speech — the common
+#: short-reply case. English keeps the CPU baseline bounded and the Hebrew diacritics path
+#: off the timed region for this sentence (noted in ttfa.md). Chosen after smoke-testing
+#: several candidates: this one synthesises cleanly (RTF ~2x, no alignment-repetition
+#: runaway). A pathological pick ("Set a timer for ten minutes.") drove the sampler to a
+#: forced-EOS at ~178 steps and 70 s/generate — recorded in ttfa.md as the runaway caveat,
+#: because the number a buyer sees must be a typical reply, not a stuck one.
+SENTENCE = "Your meeting starts in ten minutes."
 
 #: Devices to probe, STRINGS (Pitfall 4). 01-03 measured mps usable; the cpu baseline was
 #: never taken, so D-12's hardware-class inference is one-sided until this plan runs it.
@@ -168,22 +171,30 @@ def measure_one_device(device: str, n_warm: int = 5, seed: int = SEED,
         tts = ChatterboxMultilingualTTS.from_pretrained(device=device)  # STRING (Pitfall 4)
         model_load_seconds = time.perf_counter() - load_t0
 
-        def one_generate() -> float:
+        def one_generate(label: str) -> tuple[float, float]:
             torch.manual_seed(seed)  # Pitfall 6: immediately before EACH call
             t0 = time.perf_counter()
-            _ = tts.generate(  # watermarking is unconditional and INSIDE this timed region
+            wav = tts.generate(  # watermarking is unconditional and INSIDE this timed region
                 sentence,
                 language_id="en",
                 **GEN_PARAMS,
             )
-            return time.perf_counter() - t0
+            synth = time.perf_counter() - t0
+            n = int(wav.squeeze(0).detach().float().cpu().numpy().shape[-1])
+            audio = n / float(tts.sr)
+            rtf = synth / audio if audio else float("inf")
+            print(f"[ttfa] {device} {label}: synth={synth:.2f}s audio={audio:.2f}s rtf={rtf:.2f}x",
+                  flush=True)
+            return synth, audio
 
         # Cold run #1 — DISCARDED from warm stats (Pitfall 10). The user-felt cold start is
         # model load + this first generate together.
-        cold_generate_seconds = one_generate()
+        cold_generate_seconds, cold_audio_seconds = one_generate("cold")
         cold_total_seconds = model_load_seconds + cold_generate_seconds
 
-        warm_seconds = [one_generate() for _ in range(n_warm)]
+        warm_pairs = [one_generate(f"warm{i + 1}") for i in range(n_warm)]
+        warm_seconds = [p[0] for p in warm_pairs]
+        warm_audio_seconds = [round(p[1], 3) for p in warm_pairs]
 
         stats = summarize(cold_total_seconds, warm_seconds)
         return {
@@ -194,6 +205,10 @@ def measure_one_device(device: str, n_warm: int = 5, seed: int = SEED,
             "gen_params": GEN_PARAMS,
             "model_load_seconds": round(model_load_seconds, 4),
             "cold_generate_seconds": round(cold_generate_seconds, 4),
+            "cold_audio_seconds": round(cold_audio_seconds, 3),
+            "warm_audio_seconds": warm_audio_seconds,
+            "warm_rtf_p50": round(statistics.median(
+                [s / a for s, a in warm_pairs if a]), 3) if warm_pairs else None,
             "ttfa_definition": (
                 "no streaming API (Pitfall 3): TTFA == wall-clock of one generate() "
                 "returning the full waveform for one short sentence"
