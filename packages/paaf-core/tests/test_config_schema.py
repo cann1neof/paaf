@@ -5,9 +5,8 @@ The negative control is the load-bearing test here: an out-of-range / mistyped
 field MUST raise pydantic.ValidationError rather than being silently accepted.
 """
 import pytest
-from pydantic import ValidationError
-
 from paaf_core.config import AppConfig, ReloadTier
+from pydantic import ValidationError
 
 
 def _valid_config() -> dict:

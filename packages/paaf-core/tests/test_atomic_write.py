@@ -9,7 +9,6 @@ tree the user owns.
 import glob
 
 import pytest
-
 from paaf_core.config.store import atomic_write_bytes
 
 

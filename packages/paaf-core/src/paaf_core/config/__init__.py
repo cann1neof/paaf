@@ -6,12 +6,24 @@ untouched. Downstream code imports from ``paaf_core.config``.
 """
 from .reload_tiers import DEFAULT_TIER, reload_tiers
 from .schema import AppConfig, ModelConfig, ReloadTier, VoiceConfig
+from .store import (
+    ConflictError,
+    atomic_write_bytes,
+    dump_config,
+    load_config,
+    write_config,
+)
 
 __all__ = [
-    "AppConfig",
-    "ModelConfig",
-    "VoiceConfig",
-    "ReloadTier",
-    "reload_tiers",
     "DEFAULT_TIER",
+    "AppConfig",
+    "ConflictError",
+    "ModelConfig",
+    "ReloadTier",
+    "VoiceConfig",
+    "atomic_write_bytes",
+    "dump_config",
+    "load_config",
+    "reload_tiers",
+    "write_config",
 ]
