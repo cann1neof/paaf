@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# wheel-independence job (FOUND-02 / SC#2). This is the enforcement point for the
+# "a stranger can `pip install paaf-llm`" promise Phase 5 depends on:
+#   * It builds the paaf-llm wheel, installs it into a FRESH venv with no workspace
+#     present, and runs the wheel's smoke tests via `pytest --pyargs paaf_llm`.
+#   * Its load-bearing negative control asserts that `import paaf_voice` and
+#     `import paaf_core` both raise ModuleNotFoundError in that clean venv.
+#
+# WARNING SIGN (RESEARCH Pitfall 2): this job MUST turn RED the instant a hidden
+# coupling is introduced — e.g. if someone adds `import paaf_voice` to paaf_llm or
+# declares paaf-voice/paaf-core as a paaf-llm dependency. If you can add such a
+# coupling and this job still passes, the clean venv is not clean (editable install
+# or PYTHONPATH/cwd leak) and the guard is vacuous.
+#
+# Kept as a SEPARATE workflow file (not ci.yml) so wave-2 plans do not contend on
+# one file.
+name: wheel-independence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  wheel-independence:
+    runs-on: ubuntu-latest
+    env:
+      # Pin CPython 3.12 (the Phase-1 baseline; 3.13+ carries wheel-availability
+      # risk across the torch/audio-ML chain, per CLAUDE.md).
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build the paaf-llm wheel, install it into a clean venv, prove independence
+        # Builds the wheel, installs ONLY it into an off-repo venv, imports it via
+        # `pytest --pyargs paaf_llm`, and asserts paaf_voice/paaf_core are absent.
+        run: bash scripts/check_wheel_independence.sh
