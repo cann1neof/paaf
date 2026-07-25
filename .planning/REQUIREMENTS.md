@@ -13,8 +13,8 @@ Five framework packages — `paaf-core`, `paaf-llm` (Module 1), `paaf-voice` (Mo
 
 Throwaway code answering questions that cannot be settled by reading. Nothing here ships. Every result is recorded in `DECISIONS.md`.
 
-- [ ] **SPIKE-01**: Measure whether Chatterbox Multilingual V3 handles intra-sentence code-switching, using ≥20 real mixed-script sentences (en/ru/he/es) with varying `language_id`
-- [ ] **SPIKE-02**: Judge Chatterbox Hebrew output quality by native ear and record the verdict verbatim
+- [x] **SPIKE-01**: Measure whether Chatterbox Multilingual V3 handles intra-sentence code-switching, using ≥20 real mixed-script sentences (en/ru/he/es) with varying `language_id`
+- [x] **SPIKE-02**: Judge Chatterbox Hebrew output quality by native ear and record the verdict verbatim
 - [x] **SPIKE-03**: Measure Chatterbox time-to-first-audio for one short sentence on Mac (MPS and CPU-only) to establish whether it is realtime-feasible, and on what class of hardware
 - [x] **SPIKE-04**: Measure Whisper accuracy on the same mixed-script sentences — does it lock onto one language and transliterate or translate the rest?
 - [x] **SPIKE-05**: Verify Ollama token counts surface as non-`None` through LangChain callbacks
@@ -214,8 +214,8 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPIKE-01 | Phase 1 — Spike Gate | Pending |
-| SPIKE-02 | Phase 1 — Spike Gate | Pending |
+| SPIKE-01 | Phase 1 — Spike Gate | Complete |
+| SPIKE-02 | Phase 1 — Spike Gate | Complete |
 | SPIKE-03 | Phase 1 — Spike Gate | Complete |
 | SPIKE-04 | Phase 1 — Spike Gate | Complete |
 | SPIKE-05 | Phase 1 — Spike Gate | Complete |
