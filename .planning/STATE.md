@@ -6,14 +6,14 @@ current_phase: 02
 current_phase_name: foundation
 status: executing
 stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-07-25T13:29:34.438Z"
+last_updated: "2026-07-25T13:37:48.812Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 19
-  completed_plans: 12
+  completed_plans: 13
   percent: 8
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 02 (foundation) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
 Last activity: 2026-07-25 — Phase 02 execution started
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P10 | 15min | 2 tasks | 5 files |
 | Phase 02 P01 | 15min | 2 tasks | 20 files |
 | Phase 02 P02 | 12min | 3 tasks | 10 files |
+| Phase 02 P03 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [Phase 02]: [02-01] pytest-socket pinned to 0.7.0 (uv-resolved); closes RESEARCH A3 unpinned item and threat T-02-SC
 - [Phase 02]: [02-01] Added pytest --import-mode=importlib so five identically-named test_smoke.py modules coexist without __init__.py (Rule 3 blocking auto-fix)
 - [Phase 02]: [02-01] Virtual workspace root (tool.uv package=false); requires-python >=3.12 resolved to 3.12.13; apps not scaffolded (D-07)
+- [Phase ?]: Force-include the paaf-llm wheel-smoke test into the wheel so pytest --pyargs finds it in a clean venv (Plan 02-03)
+- [Phase ?]: Scope the isolation-only wheel-smoke test out of the workspace suite via conftest collect_ignore_glob (Plan 02-03)
 
 ### Pending Todos
 
@@ -124,6 +127,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T13:29:26.114Z
+Last session: 2026-07-25T13:37:12.948Z
 Stopped at: Completed 02-01-PLAN.md
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md

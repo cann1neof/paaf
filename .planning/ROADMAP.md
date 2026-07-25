@@ -93,7 +93,7 @@ Plans:
   5. A run's prompts, model choice, tool calls with args and results, timings and token counts land in a local SQLite store off the hot path, `time_to_first_audio` is a first-class column, and a CI job asserts it cold against a regression threshold using a fake TTS — before any real audio engine exists.
   6. `DECISIONS.md`, `CONTRIBUTING.md`, the architecture doc, Apache-2.0 headers and DCO exist from the first commits, with the anti-feature list, the no-accounts/no-telemetry-ever commitment, the skills-security posture, and the permission-model-as-only-injection-defense constraint written down publicly.
 
-**Plans**: 2/9 plans executed
+**Plans**: 3/9 plans executed
 Plans:
 **Wave 1**
 
@@ -102,7 +102,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 02-02-PLAN.md — import-linter contracts + deliberate-violation negative controls + suite CI (SC#1; FOUND-04/03)
-- [ ] 02-03-PLAN.md — paaf-llm wheel-independence CI job in a clean venv (SC#2; FOUND-02)
+- [x] 02-03-PLAN.md — paaf-llm wheel-independence CI job in a clean venv (SC#2; FOUND-02)
 - [ ] 02-04-PLAN.md — config: typed schema + atomic write + monotonic-revision conflict + reload tiers (SC#3/#4; CORE-01/02/03/06)
 - [ ] 02-05-PLAN.md — encrypted SecretStore (Fernet) + not-in-YAML/not-in-logs, master-key checkpoint (SC#3; CORE-04, PRIV-01/02; D-01..04)
 - [ ] 02-06-PLAN.md — network-endpoint declaration interface + LAN classification (SC#4; CORE-05)
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
-| 2. Foundation | 2/9 | In Progress|  |
+| 2. Foundation | 3/9 | In Progress|  |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 5. Skills & PyPI Release | 0/TBD | Not started | - |
