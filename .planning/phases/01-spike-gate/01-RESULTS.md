@@ -119,24 +119,34 @@ byte-identical to the sources (SHA-256 matched 46/46); zero blind names leak a c
 
 ## 2. SPIKE-02 — native-ear Hebrew verdict + D-20 ru/es spot-check
 
-### PENDING — awaiting human native-ear verdict (plan 01-08, not executed).
+### TAKEN 2026-07-25 — verbatim record in `raw/hebrew-verdict.md`.
 
-**There is no `raw/hebrew-verdict.md`.** Plan 01-08 (the blind native-ear Hebrew judgment,
-D-13/D-14, plus the D-20 Russian/Spanish spot-check) was **not executed**. The verbatim
-impressions this section is supposed to carry **do not exist yet**.
+Plan 01-08 (the blind native-ear Hebrew judgment, D-13/D-14, plus the D-20 Russian/Spanish
+spot-check) **was executed.** The human listened to all 46 blind-shuffled clips and typed verbatim
+impressions into `raw/hebrew-judgments.json` **before** any tag was visible; tags were joined back
+only afterward (`shuffle_blind.py join`) into `raw/hebrew-verdict.md`. Blind judgment preserved
+(D-14). The verbatim file governs; the extracts below are exact quotes, not paraphrase.
 
-Per project direction and D-13, **no Hebrew audio-quality property may be fabricated, inferred,
-or characterized from render statistics, Whisper transcripts, or any other proxy.** A blank here
-is the correct state; a guess would be a defect.
+**Hebrew (7 clips) — verbatim:**
+- c02: "very very good one mix of languages"
+- c05: "nothing noticable or signifant to notice: either good or ok"
+- c08: "I heard hebrew!! then i heard english and then I heard this pissing sounds psh phs phs bullshit"
+- c09: "goood hebrew!"
+- c10: "nothing noticable or signifant to notice: either good or ok"
+- c11: "nothing noticable or signifant to notice: either good or ok"
+- c14: "nothing noticable or signifant to notice: either good or ok"
 
-What is on disk and ready for the human pass (from 01-05-SUMMARY §"Deferred"):
-- **Listen to:** `corpus/clips_blind/blind_000.wav … blind_045.wav` (46 clips, ~194 s, no tags/ids/mapping visible).
-- Generate the blank judgment file via `shuffle_blind.judgment_template(...)`; record verbatim impressions per clip (no rating scale, D-13); join tags back only afterward via `shuffle_blind.py join`.
-- **D-20 caveat to carry when the ru spot-check happens:** all 9 Russian clips were rendered without stress labeling (permanent PyPI 404 — §6), so a Russian defect cannot be cleanly attributed to Chatterbox's voice vs the missing stress model.
+**Reading:** 2 explicitly good, 4 unremarkable-acceptable, 1 partial code-switch breakdown (c08 — Hebrew and English intelligible, embedded stretch degrades to non-word babble). No total Hebrew failure. **Chatterbox Hebrew is usable** — above the LOW-confidence prior. Bounds (D-13): one native listener, blind, ~4 s synthetic sentences, no rating scale, no cloud baseline.
 
-**Status of dependent conclusions:** the Hebrew fallback-ladder rung (D-10) cannot be selected
-until this verdict exists. SPIKE-01 (intelligibility of code-switched audio) and SPIKE-02 both
-remain open on this.
+**D-20 ru/es spot-check — two catastrophic clips surfaced (verbatim):**
+- c20 (ru): "wtf? bullshit it's not hebrew or anything close..." — catastrophic.
+- c03 (es): "looks like hebrew doesn't sound... it's like a shp psh hspsh sounds but not real words" — catastrophic, same babble mode as c08.
+- c16 (ru): "sounds like russian + englush, but russian got the very hard english accent... don't choose one accent for everything" — accent bleed, not a breakdown.
+- **D-20 caveat:** all 9 Russian clips were rendered without stress labeling (permanent PyPI 404 — §6), so a Russian defect cannot be cleanly attributed to Chatterbox's voice vs the missing stress model.
+
+**Status of dependent conclusions:** SPIKE-01 (intelligibility of code-switched audio) and
+SPIKE-02 (Hebrew quality) are now closeable. The Hebrew fallback-ladder rung (D-10) leans "none"
+(DECISIONS.md), confirmed in Phase 6.
 
 ---
 
@@ -302,8 +312,8 @@ LangGraph `interrupt()` → `confirm` tier; ordered fallback chains; multi-turn 
 
 | Requirement | Evidence in this file | Backed by real measurement? |
 |---|---|---|
-| SPIKE-01 (code-switching handled?) | §1 render inventory + §3 Whisper read | **Partial** — render + STT proxy exist; the intelligibility judgment is the pending native-ear pass (§2). NOT closeable here. |
-| SPIKE-02 (Hebrew quality verbatim) | §2 | **No** — PENDING, 01-08 not executed. |
+| SPIKE-01 (code-switching handled?) | §1 render inventory + §3 Whisper read + §2 native-ear | **Yes** — works often; embedded-segment babble is the breakdown mode (c08/c03). |
+| SPIKE-02 (Hebrew quality verbatim) | §2 | **Yes** — verdict taken 2026-07-25, usable. |
 | SPIKE-03 (TTFA mps+cpu) | §4 | Yes. |
 | SPIKE-04 (Whisper lock/transliterate/translate) | §3 | Yes (with D-05). |
 | SPIKE-05 (Ollama token counts non-None) | §7 | Yes. |

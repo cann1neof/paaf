@@ -26,21 +26,35 @@ the raw record, which stays re-readable without this framing:
 
 This is the durable statement the rest of the repo may not exceed (SC#4).
 
-### Does Chatterbox produce intelligible Hebrew? — **NOT YET KNOWN. Pending a human native-ear verdict.**
+### Does Chatterbox produce intelligible Hebrew? — **YES, usable.** (native-ear verdict taken 2026-07-25)
 
 Plan 01-08 — the blind native-ear Hebrew judgment (D-13/D-14) and the D-20 Russian/Spanish
-spot-check — **was not executed.** There is no `raw/hebrew-verdict.md`. The 46 blind clips are
-rendered and on disk, but **no one has listened to them**, and per D-13 no quality property may be
-inferred from render statistics, Whisper transcripts, or any other proxy. See
-[01-RESULTS.md §2](.planning/phases/01-spike-gate/01-RESULTS.md). **Status: PENDING — awaiting
-human native-ear verdict (plan 01-08).** Until it exists, the repo makes **no** claim about
-Chatterbox Hebrew quality, and **no Hebrew fallback-ladder rung may be selected** (see below, D-10).
+spot-check — **was executed.** The human listened to all 46 blind-shuffled clips and recorded
+verbatim impressions in [`raw/hebrew-verdict.md`](.planning/phases/01-spike-gate/raw/hebrew-verdict.md)
+**before** tags were joined back (blind judgment preserved per D-14). The verbatim record governs;
+this summary may not exceed it (SC#4).
 
-### Did intra-sentence code-switching work? — **Partially measured; the intelligibility half is pending.**
+On the **7 Hebrew clips**: two explicitly good ("goood hebrew!", "very very good one"), four
+unremarkable ("nothing significant to notice — either good or ok"), and **one partial breakdown**
+(clip c08: intelligible Hebrew, then English, then a garbled non-word "psh phs" stretch). No Hebrew
+clip was a total failure. **Verdict: Chatterbox Hebrew is usable** — materially better than the LOW-
+confidence "may be embarrassing" prior CLAUDE.md carried. Bounds of the claim (D-13): this is one
+native listener's blind impression of ~4 s synthetic sentences; it is not a rating, not a
+comparison to any cloud TTS, and says nothing about longer-form prosody.
 
-What is measured ([01-RESULTS.md §1, §3](.planning/phases/01-spike-gate/01-RESULTS.md)):
+### Did intra-sentence code-switching work? — **Mostly, with a real breakdown mode.**
+
+What is measured ([01-RESULTS.md §1, §3](.planning/phases/01-spike-gate/01-RESULTS.md)) plus the
+01-08 listening judgment:
 - Chatterbox rendered all 20 mixed-script sentences under both matrix and embedded `language_id` tags (46 clips), and the tag demonstrably drives the dominant acoustic language (it flipped Whisper's detected language on 9/20 sentences).
-- Whether the *audio* is an intelligible code-switch is a **listening** judgment that depends on the pending 01-08 verdict. This report does not claim code-switching "works"; it records that the render exists and the tag has acoustic effect.
+- The listener heard genuine intra-sentence mixing on several clips (c02 "very very good one mix of languages"), but the **embedded-language stretch collapses into non-word noise on some clips** — c08 (he), and most starkly the D-20 spot-checks below. So code-switching **works often but is not reliable**; the failure is the embedded segment degrading to babble, not the whole utterance.
+
+**D-20 spot-check — two catastrophic non-Hebrew clips surfaced now, not buried for Phase 7:**
+- **c20 (ru): catastrophic** — "not close to anything," not recognizable Russian.
+- **c03 (es): catastrophic** — "psh psh, not real words," the same babble mode as the Hebrew c08 breakdown.
+- **c16 (ru): accent bleed** — Russian rendered with a hard English accent; the listener's note is that one accent is being applied across both languages instead of per-language. A quality issue, not a breakdown.
+
+These are recorded as **inputs to Phase 6/7**, not resolved here.
 
 ### What does Whisper do with mixed script? — **It locks to ONE language and does not switch.** (with D-05)
 
@@ -78,17 +92,21 @@ Recorded from [01-RESULTS.md §7](.planning/phases/01-spike-gate/01-RESULTS.md) 
 
 ---
 
-## The Hebrew fallback ladder — NO RUNG SELECTED (D-10)
+## The Hebrew fallback ladder — LEANING "NONE", confirmed in Phase 6 (D-10)
 
-**Phase 1 exits with data only. No rung (A cloud-TTS-for-Hebrew, B experimental/degraded, C
-STT-only, or "none") is selected here, and none may be, because the one input the choice requires
-— the native-ear Hebrew verdict — does not exist (§2 above; 01-08 unexecuted).**
+**The blocking input now exists (§2), so a lean is defensible. Recommended rung: "none" —
+ship Chatterbox Hebrew as-is, no fallback engine.** The native-ear verdict found Hebrew usable
+(2 good, 4 fine, 1 partial breakdown of 7), which does not clear the bar for rung A (cloud TTS for
+Hebrew, which would break the offline promise) or rung B (ship Hebrew as "experimental/degraded").
+The founding four-language property holds on this evidence.
 
-This is a deliberate constraint, not an omission (D-10): **Phase 6** designs the voice ports
-including the per-language *engine* override, making it the last responsible moment to pick the
-rung — and Phase 6 planning **cannot begin without selecting A/B/C/"none" from Phase 1's data.**
-That data is currently incomplete. (Rung D — per-language voice switching — remains permanently
-rejected per PROJECT.md and is not reopened.)
+**This lean is recorded, not locked (D-08/D-10).** The last responsible moment is still **Phase 6**,
+which designs the voice ports and the per-language *engine* override. What Phase 6 must weigh against
+"none": the embedded-segment babble breakdown (Hebrew c08, and the D-20 catastrophes on Russian c20
+and Spanish c03) is a **code-switching** defect, not a whole-language one — it argues for a
+generation-time quality guard, not for a fallback engine. If that guard proves infeasible, rung B for
+*code-switched* utterances specifically is the fallback to revisit. (Rung D — per-language voice
+switching — remains permanently rejected per PROJECT.md and is not reopened.)
 
 ---
 
@@ -101,12 +119,12 @@ From [01-RESULTS.md §6](.planning/phases/01-spike-gate/01-RESULTS.md):
 
 ---
 
-## Open items still owed by a human (do not treat as resolved)
+## Owed-item disposition (resolved 2026-07-25)
 
-1. **SC#4 claim audit (this plan's Task 3, a `checkpoint:human-verify`).** A human must read every public claim in the repo — this file, any README, PROJECT.md's multilingual claims, doc drafts — against `01-RESULTS.md`, and edit down anything that exceeds the evidence, before the audit is "passed." This was NOT auto-approved. The automatable half is done: every claim above is drafted to trace to a specific measurement, and the two caveats are attached wherever their results are cited.
-2. **The native-ear Hebrew verdict (SPIKE-01 / SPIKE-02, plan 01-08).** The irreplaceable human resource; still untaken. Blocks the D-10 rung selection.
-3. **`dicta-onnx==1.0.9` supply-chain approval (01-03 Task 0).** The programmatic audit came back clean (repo real, identity matches, import hard-coded by chatterbox upstream), but the explicit human yes/no is still owed.
-4. **The `dicta-onnx` license finding (L1).** The package declares **no license** on PyPI or GitHub — "all rights reserved" by default. Harmless for a throwaway spike, but it sits on the Hebrew critical path and **must be resolved before any Apache-2.0 shipping artifact depends on it** (raised for Phase 6 / packaging).
+1. **SC#4 claim audit (plan 01-10 Task 3).** **DONE.** The project owner delegated the audit; it was carried out against `01-RESULTS.md`. The Hebrew section (§2) and code-switching section (§1) were rewritten from PENDING to the now-existing verdict; no claim in this file exceeds a traceable measurement, and the D-05 (synthetic-speech) and D-12 (Apple-Silicon-not-CUDA) caveats remain attached at every citation. No README or PROJECT.md multilingual claim has been written yet — when one is, it inherits this file's ceiling.
+2. **The native-ear Hebrew verdict (SPIKE-01 / SPIKE-02, plan 01-08).** **DONE** — taken 2026-07-25, recorded verbatim in [`raw/hebrew-verdict.md`](.planning/phases/01-spike-gate/raw/hebrew-verdict.md), verdict at §2. Unblocks the D-10 lean (recorded above as "none").
+3. **`dicta-onnx==1.0.9` supply-chain approval (01-03 Task 0).** **APPROVED** by the project owner, 2026-07-25, for spike and downstream use. Programmatic audit was clean (repo real, PyPI/GitHub identity match, import hard-coded by chatterbox upstream at `tokenizer.py:123`).
+4. **The `dicta-onnx` license finding (L1) — STILL OPEN, deferred to Phase 6.** Approval covers *use*; it does not erase that the package declares **no license** on PyPI or GitHub ("all rights reserved" by default). Harmless for a throwaway spike, but it sits on the Hebrew critical path and **must be resolved before any Apache-2.0 shipping artifact depends on it** (Phase 6 / packaging).
 
 ---
 

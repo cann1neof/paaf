@@ -17,7 +17,7 @@ Phases 6–8 build voice the same way, test doubles before engines, and then the
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Spike Gate** - Falsify the language promise, the stack, and the hardware assumption before writing any architecture
+- [x] **Phase 1: Spike Gate** - Falsify the language promise, the stack, and the hardware assumption before writing any architecture (completed 2026-07-25)
 - [ ] **Phase 2: Foundation** - Workspace, CI-enforced contracts, config, secrets, and the latency regression gate
 - [ ] **Phase 3: paaf-llm Core** - Ports and fake adapter first, then models, fallbacks, routing, and the verbatim prompt
 - [ ] **Phase 4: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `DECISIONS.md` states the measured multilingual reality in plain language, and no claim anywhere in the repo — README included — exceeds it.
   5. No code written in this phase survives into any shipped package.
 
-**Plans**: 9/10 plans executed
+**Plans**: 10/10 plans complete
 Plans:
 **Wave 1**
 
@@ -66,7 +66,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 01-07-PLAN.md — Whisper transcription (SPIKE-04): lock-on / transliterate / translate, D-05 caveat
-- [ ] 01-08-PLAN.md — Blind native-ear Hebrew verdict + ru/es spot-check (SPIKE-02, D-13/14/20)
+- [x] 01-08-PLAN.md — Blind native-ear Hebrew verdict + ru/es spot-check (SPIKE-02, D-13/14/20)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -272,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spike Gate | 9/10 | In Progress|  |
+| 1. Spike Gate | 10/10 | Complete   | 2026-07-25 |
 | 2. Foundation | 0/TBD | Not started | - |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
