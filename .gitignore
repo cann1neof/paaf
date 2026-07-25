@@ -43,5 +43,9 @@ spike/voice/.ttfa*.json
 spike/voice/.ttfa*.stderr
 spike/voice/.roundtrip.json
 
+# --- import-linter ---
+# grimp/import-linter graph cache; regenerated on every run.
+.import_linter_cache/
+
 # --- OS ---
 .DS_Store

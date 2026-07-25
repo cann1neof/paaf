@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# NEGATIVE-CONTROL config (NOT the real one). It maps the same three contract TYPES
+# onto deliberately-violating fixture packages so the paired test can prove each real
+# contract goes RED on its violation. Phase-1 caught two vacuous guards; a check that
+# cannot fail is not a check. The real `.importlinter` (repo root) stays green because
+# these fixtures live under tests/negcontrol/, never under packages/.
+#
+# The fixture packages resolve only when tests/negcontrol/ is on PYTHONPATH, which the
+# paired test sets for its subprocess. include_external_packages=True is required so the
+# forbidden externals (langchain*, httpx) resolve in the graph even though they are not
+# installed — import-linter is static AST analysis and never executes the imports.
+
+[importlinter]
+include_external_packages = True
+root_packages =
+    paaf_llm
+    paaf_voice_violation
+    paaf_llm_langchain_violation
+    paaf_trace_net_violation
+
+[importlinter:contract:independence]
+name = voice-and-llm-are-independent
+type = independence
+modules =
+    paaf_voice_violation
+    paaf_llm
+
+[importlinter:contract:langchain]
+name = langchain-confined-to-adapter
+type = forbidden
+source_modules =
+    paaf_llm_langchain_violation
+forbidden_modules =
+    langchain
+    langgraph
+    langchain_core
+    langchain_mcp_adapters
+
+[importlinter:contract:no-network]
+name = no-network-client-in-framework
+type = forbidden
+source_modules =
+    paaf_trace_net_violation
+forbidden_modules =
+    httpx
+    requests
+    aiohttp
+    socket
