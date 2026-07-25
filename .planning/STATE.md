@@ -6,14 +6,14 @@ current_phase: 01
 current_phase_name: spike-gate
 status: executing
 stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-07-25T07:57:11.171Z"
+last_updated: "2026-07-25T08:06:19.167Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 01 (spike-gate) — EXECUTING
-Plan: 8 of 10
+Plan: 9 of 10
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 01 execution started
 
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 26min | 2 tasks | 9 files |
 | Phase 01 P07 | 39min | 2 tasks | 5 files |
 | Phase 01 P09 | 37min | 2 tasks | 7 files |
+| Phase 01 P10 | 15min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Telemetry-off is enforced at TWO levels: langsmith and logfire-api ship as hard transitive deps of langchain and pydantic-ai, so env vars alone cannot establish PRIV-02. Runtime state is asserted and the plan's four vars were extended to nine incl. OTEL_EXPORTER_OTLP_ENDPOINT
 - [Phase 01]: Held pydantic-ai-slim at 2.13.0 rather than today's 2.16.0. Cadence recorded as Decision-1 evidence: pydantic-ai shipped 7 minors in 9 days, langchain 8 patches in 43 days and is still on 1.3.x
 - [Phase ?]: SPIKE-04: Whisper large-v3 locks to one language per clip; multilingual=True does not unlock code-switching (posterior identical 46/46). Embedded language transliterated/garbled into Latin unless locked to a non-Latin language; task=translate flattens to English. D-05 caveat binding: synthetic Chatterbox speech, Chatterbox/Whisper failures inseparable.
+- [Phase ?]: Phase 1 exits with data only: LangChain stands (MCP falsifier negative); Hebrew verdict + fallback rung PENDING (01-08 unexecuted)
 
 ### Pending Todos
 
@@ -117,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T07:57:02.138Z
+Last session: 2026-07-25T08:05:46.767Z
 Stopped at: Completed 01-04-PLAN.md
 Resume file: None
