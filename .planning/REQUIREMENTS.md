@@ -16,7 +16,7 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [ ] **SPIKE-01**: Measure whether Chatterbox Multilingual V3 handles intra-sentence code-switching, using ≥20 real mixed-script sentences (en/ru/he/es) with varying `language_id`
 - [ ] **SPIKE-02**: Judge Chatterbox Hebrew output quality by native ear and record the verdict verbatim
 - [ ] **SPIKE-03**: Measure Chatterbox time-to-first-audio for one short sentence on Mac (MPS and CPU-only) to establish whether it is realtime-feasible, and on what class of hardware
-- [ ] **SPIKE-04**: Measure Whisper accuracy on the same mixed-script sentences — does it lock onto one language and transliterate or translate the rest?
+- [x] **SPIKE-04**: Measure Whisper accuracy on the same mixed-script sentences — does it lock onto one language and transliterate or translate the rest?
 - [ ] **SPIKE-05**: Verify Ollama token counts surface as non-`None` through LangChain callbacks
 - [ ] **SPIKE-06**: Verify MCP tool call args and results surface through `langchain-mcp-adapters` callbacks — this is the falsification test for the agent-framework choice
 - [ ] **SPIKE-07**: Agent-framework bake-off (LangChain/LangGraph vs Pydantic AI) judged on one criterion: which is easier to hide behind a port
@@ -170,10 +170,12 @@ Narrow by design: only what requires knowing that time is passing and audio is p
 Acknowledged, deliberately deferred, not in this roadmap.
 
 ### Retrieval & Memory
+
 - **MEM-01**: Semantic search over user documents, exposed as a tool in `paaf-llm`
 - **MEM-02**: Long-term conversational memory — deferred because it is a research problem and it fights prompt inspectability
 
 ### Voice & Hardware
+
 - **HW-01**: Reference hardware build guide with photos and an assembly walkthrough
 - **HW-02**: Hardware mic-kill switch design with multimeter verification steps
 - **HW-03**: 3D-printable enclosure with published STL/STEP files
@@ -181,6 +183,7 @@ Acknowledged, deliberately deferred, not in this roadmap.
 - **VOICE-V2-01**: Custom branded wake word
 
 ### Platform
+
 - **RT-01**: Absorb a local speech-to-speech model behind the existing Voice interface
 - **ROUTE-01**: Sophisticated model routing beyond simple rules
 
@@ -214,7 +217,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | SPIKE-01 | Phase 1 — Spike Gate | Pending |
 | SPIKE-02 | Phase 1 — Spike Gate | Pending |
 | SPIKE-03 | Phase 1 — Spike Gate | Pending |
-| SPIKE-04 | Phase 1 — Spike Gate | Pending |
+| SPIKE-04 | Phase 1 — Spike Gate | Complete |
 | SPIKE-05 | Phase 1 — Spike Gate | Pending |
 | SPIKE-06 | Phase 1 — Spike Gate | Pending |
 | SPIKE-07 | Phase 1 — Spike Gate | Pending |
@@ -323,6 +326,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | OSS-06 | Phase 12 — Bring-Up & Launch | Pending |
 
 **Coverage:**
+
 - v1 requirements: 110 total
 - Mapped to phases: 110 ✓
 - Unmapped: 0

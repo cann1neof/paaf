@@ -6,14 +6,14 @@ current_phase: 01
 current_phase_name: spike-gate
 status: executing
 stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-07-23T12:11:46.994Z"
+last_updated: "2026-07-25T07:13:11.059Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 12
   completed_phases: 0
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 7
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 01 (spike-gate) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 01 execution started
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 35min | 3 tasks | 5 files |
 | Phase 01 P04 | 25min | 3 tasks | 5 files |
 | Phase 01 P05 | 26min | 2 tasks | 9 files |
+| Phase 01 P07 | 39min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,7 @@ Recent decisions affecting current work:
 - [Phase 01]: PRIVACY BUG: the ollama python client 0.6.2 list() pydantic schema silently drops capabilities, so the PRIV-02 no-cloud check passed VACUOUSLY for every tag including the real qwen3.5:cloud. capabilities_of now reads /api/show and treats an empty list as an error
 - [Phase 01]: Telemetry-off is enforced at TWO levels: langsmith and logfire-api ship as hard transitive deps of langchain and pydantic-ai, so env vars alone cannot establish PRIV-02. Runtime state is asserted and the plan's four vars were extended to nine incl. OTEL_EXPORTER_OTLP_ENDPOINT
 - [Phase 01]: Held pydantic-ai-slim at 2.13.0 rather than today's 2.16.0. Cadence recorded as Decision-1 evidence: pydantic-ai shipped 7 minors in 9 days, langchain 8 patches in 43 days and is still on 1.3.x
+- [Phase ?]: SPIKE-04: Whisper large-v3 locks to one language per clip; multilingual=True does not unlock code-switching (posterior identical 46/46). Embedded language transliterated/garbled into Latin unless locked to a non-Latin language; task=translate flattens to English. D-05 caveat binding: synthetic Chatterbox speech, Chatterbox/Whisper failures inseparable.
 
 ### Pending Todos
 
@@ -114,6 +116,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-23T12:11:46.989Z
+Last session: 2026-07-25T07:13:03.706Z
 Stopped at: Completed 01-04-PLAN.md
 Resume file: None
