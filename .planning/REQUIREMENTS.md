@@ -15,12 +15,12 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 
 - [ ] **SPIKE-01**: Measure whether Chatterbox Multilingual V3 handles intra-sentence code-switching, using ≥20 real mixed-script sentences (en/ru/he/es) with varying `language_id`
 - [ ] **SPIKE-02**: Judge Chatterbox Hebrew output quality by native ear and record the verdict verbatim
-- [ ] **SPIKE-03**: Measure Chatterbox time-to-first-audio for one short sentence on Mac (MPS and CPU-only) to establish whether it is realtime-feasible, and on what class of hardware
+- [x] **SPIKE-03**: Measure Chatterbox time-to-first-audio for one short sentence on Mac (MPS and CPU-only) to establish whether it is realtime-feasible, and on what class of hardware
 - [x] **SPIKE-04**: Measure Whisper accuracy on the same mixed-script sentences — does it lock onto one language and transliterate or translate the rest?
 - [ ] **SPIKE-05**: Verify Ollama token counts surface as non-`None` through LangChain callbacks
 - [ ] **SPIKE-06**: Verify MCP tool call args and results surface through `langchain-mcp-adapters` callbacks — this is the falsification test for the agent-framework choice
 - [ ] **SPIKE-07**: Agent-framework bake-off (LangChain/LangGraph vs Pydantic AI) judged on one criterion: which is easier to hide behind a port
-- [ ] **SPIKE-08**: End-to-end latency round-trip (WAV in → WAV out) establishing a real per-stage budget
+- [x] **SPIKE-08**: End-to-end latency round-trip (WAV in → WAV out) establishing a real per-stage budget
 - [ ] **SPIKE-09**: Record the measured multilingual reality in `DECISIONS.md`, and constrain every public claim to what was measured
 
 ### Foundation (FOUND)
@@ -216,12 +216,12 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 |-------------|-------|--------|
 | SPIKE-01 | Phase 1 — Spike Gate | Pending |
 | SPIKE-02 | Phase 1 — Spike Gate | Pending |
-| SPIKE-03 | Phase 1 — Spike Gate | Pending |
+| SPIKE-03 | Phase 1 — Spike Gate | Complete |
 | SPIKE-04 | Phase 1 — Spike Gate | Complete |
 | SPIKE-05 | Phase 1 — Spike Gate | Pending |
 | SPIKE-06 | Phase 1 — Spike Gate | Pending |
 | SPIKE-07 | Phase 1 — Spike Gate | Pending |
-| SPIKE-08 | Phase 1 — Spike Gate | Pending |
+| SPIKE-08 | Phase 1 — Spike Gate | Complete |
 | SPIKE-09 | Phase 1 — Spike Gate | Pending |
 | FOUND-01 | Phase 2 — Foundation | Pending |
 | FOUND-02 | Phase 2 — Foundation | Pending |

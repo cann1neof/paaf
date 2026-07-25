@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `DECISIONS.md` states the measured multilingual reality in plain language, and no claim anywhere in the repo — README included — exceeds it.
   5. No code written in this phase survives into any shipped package.
 
-**Plans**: 7/10 plans executed
+**Plans**: 8/10 plans executed
 Plans:
 **Wave 1**
 
@@ -70,7 +70,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-09-PLAN.md — Latency: TTFA (MPS+CPU) + round-trip walking skeleton per-stage budget (SPIKE-03/08)
+- [x] 01-09-PLAN.md — Latency: TTFA (MPS+CPU) + round-trip walking skeleton per-stage budget (SPIKE-03/08)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -272,7 +272,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spike Gate | 7/10 | In Progress|  |
+| 1. Spike Gate | 8/10 | In Progress|  |
 | 2. Foundation | 0/TBD | Not started | - |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
