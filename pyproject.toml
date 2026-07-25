@@ -15,10 +15,16 @@ members = ["packages/*"]
 
 [tool.pytest.ini_options]
 # --disable-socket is the no-network default (FOUND-03 / PRIV-02): pytest-socket makes
-# ANY socket open fail the suite. It is the negative control other Phase-2 plans build on.
+# ANY network (AF_INET/AF_INET6) socket open fail the suite. It is the negative control
+# other Phase-2 plans build on.
+# --allow-unix-socket permits ONLY local AF_UNIX sockets. asyncio's event-loop self-pipe
+# is a socketpair() (AF_UNIX on Unix); without this, every async test would fail at loop
+# construction. Unix sockets are local IPC and cannot leave the device, so the no-egress
+# guarantee (TRACE-05) is preserved — real network egress still opens an AF_INET socket
+# and is still blocked.
 # --import-mode=importlib lets identically-named test modules (test_smoke.py) coexist
 # across packages without __init__.py files or basename collisions.
-addopts = "--disable-socket --import-mode=importlib"
+addopts = "--disable-socket --allow-unix-socket --import-mode=importlib"
 testpaths = ["packages"]
 asyncio_mode = "auto"
 
