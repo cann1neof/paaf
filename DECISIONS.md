@@ -144,3 +144,130 @@ records, the raw write-ups, the corpus, and the bake-off findings — has been l
 
 *Interpretation recorded 2026-07-25 for plan 01-10 (SPIKE-09). Links back to `01-RESULTS.md`,
 committed first per D-09.*
+
+---
+---
+
+# Phase 2 — Foundation: public commitments (recorded 2026-07-25)
+
+The sections above interpret Phase-1 evidence. The sections below are the durable
+**public governance record** written in Phase 2. They are commitments an outsider may
+cite and hold the project to: the anti-feature list, the privacy guarantees, the
+skills-security posture, the injection-defense constraint, the open app-license question,
+and the master-key provisioning decision. These are written **now**, from the phase's
+first commits — not at launch — precisely so they are auditable and un-retrofittable.
+
+A governance test (`tests/test_governance.py`) asserts these sections stay present, and
+CI (`.github/workflows/ci.yml`) fails on their removal.
+
+## The anti-feature list (durable, public)
+
+These are things PAAF will **not** do. They are not omissions awaiting a future roadmap;
+they are deliberate boundaries. Each is transcribed from the REQUIREMENTS "Out of Scope"
+table and made a durable public anti-feature. A PR that reintroduces any of these is
+out of scope by definition.
+
+| Anti-feature | Why it is excluded |
+|--------------|--------------------|
+| **Telemetry of any kind** | Would falsify the project's only unassailable differentiator (see the no-telemetry commitment below). Non-negotiable. |
+| **Accounts, anywhere** | The user owns the assistant; there is nothing to sign into. Non-negotiable. |
+| **Hidden prompt-injection defenses** | Forbidden by "nothing hidden from the user." The permission model carries this weight instead (see the injection-defense constraint below). |
+| **Per-language voice switching** | Rejected by the user — it breaks on the exact code-switched case it would exist to solve. (Rung D of the Hebrew fallback ladder; permanently closed.) |
+| **A skills marketplace** | A moderation, security, and hosting obligation a solo maintainer cannot carry. |
+| **Home Assistant (or any product) as a dependency** | HA is exposed as a *tool package*, never required. PAAF's LLM layer must not become a peripheral to someone else's brain. |
+| **Wyoming / ESPHome inbound compatibility** | Looks like free distribution; actually inverts the architecture and makes PAAF a peripheral to Home Assistant. |
+| **Our own device protocol / microcontroller satellites** | Multi-room's honest answer is multiple cheap devices, not a new protocol. |
+| **Training our own STT/TTS/LLM models** | We consume open models. |
+| **A content-filtering layer of our own** | Strict neutrality: any model, any prompt, no platform-added filtering. |
+| **Selling hardware or cloud services** | Founding commitment against corporate capture. |
+| **Voice biometrics, emotion detection, avatars** | Not core to owning the assistant's mind. |
+| **A visual flow builder** | Configuration is YAML plus a control panel, not a node graph. |
+| **macOS/Windows as end-user targets** | Mac is a dev harness; Linux is the product. |
+| **Reference hardware build in this milestone** | No target hardware owned yet; deferred to v2. Scope creep into hardware is what killed Mycroft. |
+
+## No accounts (PRIV-01) and no telemetry, ever (PRIV-02) — non-negotiable
+
+These are **hard guarantees**, not defaults a user can accidentally erode:
+
+- **No accounts, anywhere (PRIV-01).** There is no sign-up, no login, no identity
+  service, no cloud account required to run any part of PAAF. The user owns the
+  assistant outright.
+- **No telemetry, ever (PRIV-02).** No usage reporting of any kind. **Not anonymous.
+  Not aggregated. Not opt-in.** There is no telemetry code path to enable, because
+  there is none to write. This is enforced architecturally: the framework carries **no
+  network client at all** (the `no-network-client-in-framework` import contract in
+  `.importlinter` fails CI on `httpx`/`requests`/`aiohttp`/`socket`), and the entire
+  test suite runs under `--disable-socket`, so any egress attempt fails the build.
+
+Telemetry is the one thing whose presence would falsify the project's founding claim.
+It is therefore excluded permanently and mechanically, not by policy alone.
+
+## Skills-security posture — honest disclosure, not sandboxed enforcement (SKILL-05 preview)
+
+PAAF states this plainly rather than implying a safety it does not provide:
+
+- **Skills run in-process, with no sandbox.** An installed skill is ordinary Python
+  executing with the assistant's full privileges. There is no isolation boundary between
+  a skill and the host process.
+- **The manifest is disclosure, not enforcement.** A skill's manifest *declares* its
+  name, version, requested permissions, persona fragment, and tools; the permissions it
+  lists are shown to the user and approved at install time. But the manifest **describes**
+  what a skill intends — it does not **contain** what the skill can do. Running untrusted
+  skill code is running untrusted code.
+- **Prefer MCP for unaudited code.** For third-party or untrusted capability, an MCP
+  server (a separate process behind a protocol boundary) is the safer integration path
+  than an in-process skill.
+
+Phase 5 (SKILL-05) implements and documents this posture in the shipping product; it is
+recorded here so the honesty is a day-one commitment, not a launch-day disclaimer.
+
+## Permission-model-as-the-only-injection-defense (TOOL-07 preview)
+
+PAAF's **only** documented defense against prompt injection via tool results is its
+**permission model** — the per-tool tiers `observe`, `act`, and `confirm`. A `confirm`-tier
+tool causes the assistant to ask out loud and wait for a spoken answer before it executes,
+so a malicious instruction smuggled through a tool result cannot silently trigger a
+consequential action.
+
+Critically: **there are NO hidden defensive instructions in any prompt, ever.** PAAF does
+not inject unseen "ignore malicious instructions" system text, does not add invisible
+guard rails the user cannot read, and does not filter content on the platform's behalf.
+This follows directly from "nothing hidden from the user" and from PERS-05 (PAAF never
+injects instructions the user did not write and cannot see). The permission model carries
+the entire weight of injection defense, in the open. Phase 4 (TOOL-07) enforces this; the
+constraint is written here first so later phases inherit it rather than invent a hidden
+defense.
+
+## App license — OPEN governance question (Apache-2.0 default, AGPL not chosen)
+
+- **The framework is Apache-2.0 — locked.** The five `packages/*` are licensed
+  Apache-2.0 (see `LICENSE`), maximizing reuse. This is settled (FOUND-07).
+- **The two apps default to Apache-2.0 for v1** — to minimize solo-maintainer friction
+  and ship early.
+- **AGPL for the apps (for capture-resistance) is recorded as an explicit OPEN
+  governance question — it is NOT chosen.** The apps do not yet exist (D-07); the
+  license decision is deferred to when they are built. No artifact may describe the apps
+  as AGPL, and no planner may treat AGPL as decided. When the apps are built, this
+  question is reopened deliberately.
+- **DCO, no CLA.** Contributions are accepted under the Developer Certificate of Origin
+  with per-commit sign-off; there is no CLA and no copyright assignment (see
+  `CONTRIBUTING.md`).
+
+## Master-key provisioning — passphrase-at-boot (from Plan 05's decision checkpoint)
+
+Recorded from the Plan 02-05 decision checkpoint (`02-05-SUMMARY.md`):
+
+- **The encrypted `SecretStore` master key is provisioned by passphrase-at-boot.** The
+  Fernet key is derived from a caller-supplied passphrase via scrypt at unlock, over a
+  persisted per-store salt. The **master key is never at rest on disk** — only the salt
+  is. This was the deliberately-strongest option chosen by the developer at the checkpoint.
+- **Flagged tradeoff:** passphrase-at-boot **breaks unattended restart** on a headless
+  box — every service (re)start needs the passphrase supplied by an operator or an
+  external secrets manager. **Phase 9 (the Linux service, APP-\*) must design boot-time
+  passphrase delivery.** The `SecretStore` interface keeps `key-file-0600` and
+  `systemd-credential` backends addable later **without an interface change**, so the
+  tradeoff is reversible at the backend level, not the contract level.
+
+---
+*Phase-2 public commitments recorded 2026-07-25 for plan 02-08 (FOUND-05, PRIV-01,
+PRIV-02). Extends — does not replace — the Phase-1 interpretation above.*
