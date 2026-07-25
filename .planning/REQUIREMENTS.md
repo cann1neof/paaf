@@ -35,12 +35,12 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 
 ### Configuration & Secrets (CORE)
 
-- [ ] **CORE-01**: Config is one YAML tree on disk, validated against a typed schema on every read and write
-- [ ] **CORE-02**: Config writes are atomic (temp file, fsync, rename) so a crash mid-write cannot corrupt it
-- [ ] **CORE-03**: Config carries a monotonic revision; concurrent edits are rejected with a conflict rather than silently overwriting
+- [x] **CORE-01**: Config is one YAML tree on disk, validated against a typed schema on every read and write
+- [x] **CORE-02**: Config writes are atomic (temp file, fsync, rename) so a crash mid-write cannot corrupt it
+- [x] **CORE-03**: Config carries a monotonic revision; concurrent edits are rejected with a conflict rather than silently overwriting
 - [ ] **CORE-04**: API keys live in a separate encrypted store, write-only over the API, never in the YAML tree, never logged
 - [ ] **CORE-05**: Every component declares its network endpoints through a common interface, so offline enforcement is architectural rather than a scattered set of checks
-- [ ] **CORE-06**: Config keys are classified into reload tiers — hot, warm, cold, restart-only — and the tier is discoverable
+- [x] **CORE-06**: Config keys are classified into reload tiers — hot, warm, cold, restart-only — and the tier is discoverable
 
 ### Trace Store (TRACE)
 
@@ -230,12 +230,12 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | FOUND-05 | Phase 2 — Foundation | Pending |
 | FOUND-06 | Phase 2 — Foundation | Pending |
 | FOUND-07 | Phase 2 — Foundation | Pending |
-| CORE-01 | Phase 2 — Foundation | Pending |
-| CORE-02 | Phase 2 — Foundation | Pending |
-| CORE-03 | Phase 2 — Foundation | Pending |
+| CORE-01 | Phase 2 — Foundation | Complete |
+| CORE-02 | Phase 2 — Foundation | Complete |
+| CORE-03 | Phase 2 — Foundation | Complete |
 | CORE-04 | Phase 2 — Foundation | Pending |
 | CORE-05 | Phase 2 — Foundation | Pending |
-| CORE-06 | Phase 2 — Foundation | Pending |
+| CORE-06 | Phase 2 — Foundation | Complete |
 | TRACE-01 | Phase 2 — Foundation | Pending |
 | TRACE-02 | Phase 2 — Foundation | Pending |
 | TRACE-03 | Phase 2 — Foundation | Pending |
