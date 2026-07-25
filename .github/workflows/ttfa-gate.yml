@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# ttfa-gate job (TRACE-04 / SC#5 CI half). This job makes time-to-first-audio a number CI
+# defends *before any real audio engine exists*, using a FAKE TTS on a deterministic clock.
+#
+# What turns it RED: a regression in how we MEASURE first-audio latency — i.e. the recorded
+# time_to_first_audio drifting from the injected delay (accuracy, D-08a/D-09, load-bearing),
+# framework/measurement overhead creeping past its ceiling, or the value breaching the fixed
+# budget. The negative control keeps the accuracy assertion non-vacuous (Pitfall 3).
+#
+# What it is NOT: a claim about shipped latency. Per D-09 / Phase-1 evidence (real TTFA was
+# 6.27 s on mps with a ~10x tail), the budget is a measurement/overhead-REGRESSION guardrail,
+# not a promise about the real engine's speed.
+#
+# "Cold": a fresh checkout each run with no warmed real-engine cache (there is none). No audio
+# system package is installed, and the run is offline (pytest-socket --disable-socket) — so
+# "no audio hardware, no network" holds by construction, not by mocking a device.
+#
+# Kept in its own workflow file so wave-2/3 plans never contend on a single CI file.
+name: ttfa-gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ttfa-gate:
+    runs-on: ubuntu-latest
+    env:
+      # Pin CPython 3.12 (the Phase-1 baseline; 3.13 carries wheel-availability risk
+      # across the torch/audio-ML chain).
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve workspace
+        run: uv sync --all-packages
+
+      - name: TTFA regression gate, cold + offline (TRACE-04)
+        # Fake TTS on a deterministic clock. --disable-socket => any socket open fails the
+        # build, so the gate is provably offline. No audio system dependency is installed.
+        run: uv run pytest packages/paaf-trace/tests/test_ttfa_regression.py --disable-socket
