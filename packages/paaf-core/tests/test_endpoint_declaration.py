@@ -12,8 +12,9 @@ that is the T-02-16 (no-DNS) guard, enforced mechanically.
 """
 from __future__ import annotations
 
-import pytest
+from dataclasses import FrozenInstanceError
 
+import pytest
 from paaf_core.net import Endpoint, EndpointRegistry, NetworkComponent
 
 
@@ -52,7 +53,7 @@ class TestEndpointClassification:
 
     def test_endpoint_is_frozen(self) -> None:
         ep = Endpoint("127.0.0.1", 8080, "http")
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             ep.host = "10.0.0.1"  # type: ignore[misc]
 
 
