@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
-| 2. Foundation | 9/9 | Complete   | 2026-07-25 |
+| 2. Foundation | 9/9 | Complete    | 2026-07-25 |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 5. Skills & PyPI Release | 0/TBD | Not started | - |
