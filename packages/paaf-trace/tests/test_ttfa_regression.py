@@ -20,8 +20,8 @@ guardrail, explicitly NOT a claim about shipped latency**. Real TTFA was 6.27 s 
 with a ~10x tail; a fixed cold ceiling is not a promise about the shipped engine, it is
 a tripwire for a regression in how we *account for* first-audio latency.
 
-No ``time.sleep`` and no wall-clock anywhere — the clock is driven explicitly so accuracy
-is deterministic (Anti-Pattern: flaky wall-clock accuracy test).
+Nothing sleeps and no wall-clock is read anywhere — the clock is driven explicitly so
+accuracy is deterministic (Anti-Pattern: flaky wall-clock accuracy test).
 """
 
 from __future__ import annotations
