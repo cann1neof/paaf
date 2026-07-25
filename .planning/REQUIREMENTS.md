@@ -25,9 +25,9 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 
 ### Foundation (FOUND)
 
-- [ ] **FOUND-01**: uv workspace monorepo with the five framework packages and two apps, each independently versioned
+- [x] **FOUND-01**: uv workspace monorepo with the five framework packages and two apps, each independently versioned
 - [ ] **FOUND-02**: `paaf-llm` is independently `pip install`-able without pulling in voice or audio dependencies
-- [ ] **FOUND-03**: CI runs the full test suite with no audio hardware and no network
+- [x] **FOUND-03**: CI runs the full test suite with no audio hardware and no network
 - [ ] **FOUND-04**: import-linter forbidden contracts fail CI if `paaf-llm` imports `paaf-voice` (or vice versa), or if `langchain*` is imported outside the designated adapter package
 - [ ] **FOUND-05**: `DECISIONS.md` exists from the first commit and records the anti-feature list, the skills-security posture, and the injection-defense constraint
 - [ ] **FOUND-06**: `CONTRIBUTING.md` plus an architecture document that lets an outsider run the tests and find their way around
@@ -223,9 +223,9 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | SPIKE-07 | Phase 1 — Spike Gate | Complete |
 | SPIKE-08 | Phase 1 — Spike Gate | Complete |
 | SPIKE-09 | Phase 1 — Spike Gate | Complete |
-| FOUND-01 | Phase 2 — Foundation | Pending |
+| FOUND-01 | Phase 2 — Foundation | Complete |
 | FOUND-02 | Phase 2 — Foundation | Pending |
-| FOUND-03 | Phase 2 — Foundation | Pending |
+| FOUND-03 | Phase 2 — Foundation | Complete |
 | FOUND-04 | Phase 2 — Foundation | Pending |
 | FOUND-05 | Phase 2 — Foundation | Pending |
 | FOUND-06 | Phase 2 — Foundation | Pending |

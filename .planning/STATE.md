@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_phase_name: Foundation
+current_phase: 02
+current_phase_name: foundation
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-07-25T09:03:11.252Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-07-25T13:18:41.536Z"
 last_activity: 2026-07-25
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
+last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
   completed_phases: 1
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 19
+  completed_plans: 11
   percent: 8
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 01 — spike-gate
+**Current focus:** Phase 02 — foundation
 
 ## Current Position
 
-Phase: 2 — Foundation
-Plan: Not started
+Phase: 02 (foundation) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-07-25 — Phase 01 complete, transitioned to Phase 2
+Last activity: 2026-07-25 — Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P07 | 39min | 2 tasks | 5 files |
 | Phase 01 P09 | 37min | 2 tasks | 7 files |
 | Phase 01 P10 | 15min | 2 tasks | 5 files |
+| Phase 02 P01 | 15min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Held pydantic-ai-slim at 2.13.0 rather than today's 2.16.0. Cadence recorded as Decision-1 evidence: pydantic-ai shipped 7 minors in 9 days, langchain 8 patches in 43 days and is still on 1.3.x
 - [Phase ?]: SPIKE-04: Whisper large-v3 locks to one language per clip; multilingual=True does not unlock code-switching (posterior identical 46/46). Embedded language transliterated/garbled into Latin unless locked to a non-Latin language; task=translate flattens to English. D-05 caveat binding: synthetic Chatterbox speech, Chatterbox/Whisper failures inseparable.
 - [Phase ?]: Phase 1 exits with data only: LangChain stands (MCP falsifier negative); Hebrew verdict + fallback rung PENDING (01-08 unexecuted)
+- [Phase 02]: [02-01] pytest-socket pinned to 0.7.0 (uv-resolved); closes RESEARCH A3 unpinned item and threat T-02-SC
+- [Phase 02]: [02-01] Added pytest --import-mode=importlib so five identically-named test_smoke.py modules coexist without __init__.py (Rule 3 blocking auto-fix)
+- [Phase 02]: [02-01] Virtual workspace root (tool.uv package=false); requires-python >=3.12 resolved to 3.12.13; apps not scaffolded (D-07)
 
 ### Pending Todos
 
@@ -119,6 +123,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T09:03:11.244Z
-Stopped at: Phase 2 context gathered
+Last session: 2026-07-25T13:18:41.532Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md

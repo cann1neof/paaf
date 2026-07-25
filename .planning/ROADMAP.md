@@ -93,11 +93,11 @@ Plans:
   5. A run's prompts, model choice, tool calls with args and results, timings and token counts land in a local SQLite store off the hot path, `time_to_first_audio` is a first-class column, and a CI job asserts it cold against a regression threshold using a fake TTS — before any real audio engine exists.
   6. `DECISIONS.md`, `CONTRIBUTING.md`, the architecture doc, Apache-2.0 headers and DCO exist from the first commits, with the anti-feature list, the no-accounts/no-telemetry-ever commitment, the skills-security posture, and the permission-model-as-only-injection-defense constraint written down publicly.
 
-**Plans**: 9 plans
+**Plans**: 1/9 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — uv workspace + five package skeletons + shared test fixtures + no-network default (FOUND-01/03; D-05/06/07)
+- [x] 02-01-PLAN.md — uv workspace + five package skeletons + shared test fixtures + no-network default (FOUND-01/03; D-05/06/07)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
-| 2. Foundation | 0/9 | Not started | - |
+| 2. Foundation | 1/9 | In Progress|  |
 | 3. paaf-llm Core | 0/TBD | Not started | - |
 | 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 5. Skills & PyPI Release | 0/TBD | Not started | - |
