@@ -81,7 +81,7 @@ It is for two audiences equally: self-hosters and privacy-minded people who want
 
 **Latency is the make-or-break.** Voice feels dead above ~1.5–2s to first audio. Streaming TTS and the long-request behaviors are core features, not polish. Time-to-first-audio on the reference config is a tracked number from the Voice phase onward.
 
-**Existing state.** Greenfield — no code written, no spikes run. `project-docs/` only.
+**Existing state.** Phase 1 (throwaway spike) measured the multilingual TTS/STT risk. Phase 2 (Foundation, complete 2026-07-25) shipped the uv-workspace monorepo with CI-enforced architectural contracts (voice↔llm independence, `langchain` confined to `_engine`, no-network-in-framework, wheel independence — each with a biting negative control), the atomic/validated config subsystem, the encrypted secret store (passphrase-at-boot), the endpoint-declaration interface, the SQLite WAL trace store with `time_to_first_audio` as a first-class column, the fake-TTS TTFA CI regression gate, and the Apache-2.0/DCO/SPDX governance substrate. `paaf-llm`/`paaf-voice`/`paaf-session` remain importable stubs pending later phases; the product-level Active requirements above are enabled but not yet exercised end-to-end.
 
 ## Constraints
 
@@ -129,4 +129,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 after research and requirements definition*
+*Last updated: 2026-07-25 after Phase 2 (Foundation) completion*
