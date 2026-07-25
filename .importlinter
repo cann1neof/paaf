@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Import-linter contracts (FOUND-04). These turn the architectural boundaries the
+# whole framework rests on into BUILD FAILURES, not intentions. A forbidden import
+# that erodes swappability turns CI red instead of rotting silently.
+#
+# Three contracts are declared over the five framework packages (exact names live in
+# the `name =` fields below; they are intentionally NOT repeated here so each name is
+# grep-unique in this file):
+#   1. independence  — paaf_voice and paaf_llm may not import each other (in either
+#      direction, even indirectly). Keeps the two swappable.
+#   2. langchain confinement — no framework package may import langchain*. PHASE 3
+#      will add the ONE allowed edge as an ignore_imports whitelist naming exactly the
+#      adapter subpackage, of the form:
+#          ignore_imports =
+#              paaf_llm._engine.* -> langchain*
+#      In Phase 2 NO exception is needed because the stubs import nothing forbidden,
+#      so all five packages are listed with no carve-out and the contract is green.
+#   3. no network client — no framework package may carry an outbound HTTP/socket
+#      client. Supports TRACE-05/PRIV-02 architecturally: nothing in the trace store
+#      (or anywhere in the framework graph) can phone home.
+#
+# include_external_packages = True is required because the forbidden contracts name
+# external modules (langchain*, httpx, ...) that must be resolvable in the graph.
+#
+# In Phase 2 all three contracts pass (green) against the real workspace because no
+# package imports a forbidden module yet. The paired negative controls that PROVE
+# each contract goes red on a deliberate violation live in tests/negcontrol/ (a
+# check that cannot fail is not a check — Phase-1's twice-caught lesson).
+
+[importlinter]
+include_external_packages = True
+root_packages =
+    paaf_core
+    paaf_trace
+    paaf_llm
+    paaf_voice
+    paaf_session
+
+[importlinter:contract:independence]
+name = voice-and-llm-are-independent
+type = independence
+modules =
+    paaf_voice
+    paaf_llm
+
+[importlinter:contract:langchain]
+name = langchain-confined-to-adapter
+type = forbidden
+source_modules =
+    paaf_core
+    paaf_trace
+    paaf_llm
+    paaf_voice
+    paaf_session
+forbidden_modules =
+    langchain
+    langgraph
+    langchain_core
+    langchain_mcp_adapters
+
+[importlinter:contract:no-network]
+name = no-network-client-in-framework
+type = forbidden
+source_modules =
+    paaf_core
+    paaf_trace
+    paaf_llm
+    paaf_voice
+    paaf_session
+forbidden_modules =
+    httpx
+    requests
+    aiohttp
+    socket
