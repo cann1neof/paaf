@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# suite job (FOUND-03 / FOUND-04 / FOUND-07). This job is the enforcement point for the
+# architectural boundaries and the offline posture:
+#   * A PR that adds a FORBIDDEN import (voice<->llm coupling, or langchain / an outbound
+#     network client escaping its adapter) must turn this job RED via `lint-imports`.
+#   * A PR whose source file is MISSING its SPDX license header — or that drops a required
+#     DECISIONS.md section — must turn this job RED via the root-level governance rot-guard
+#     (tests/test_governance.py, wired in Plan 08).
+# It runs the full suite with NO network (pytest-socket --disable-socket) and NO audio
+# hardware: no system audio libraries are installed, so "no audio hardware" holds by
+# construction (no such import exists anywhere in the framework graph).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    env:
+      # Pin the interpreter to CPython 3.12 (the Phase-1 baseline; 3.13 carries
+      # wheel-availability risk across the torch/audio-ML chain).
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve workspace
+        run: uv sync --all-packages
+
+      - name: Import-linter contracts (FOUND-04)
+        # voice<->llm independence, langchain confinement, no-network-client — a
+        # forbidden import fails here. Negative controls prove these contracts bite.
+        run: uv run lint-imports
+
+      - name: Full test suite, offline (FOUND-03)
+        # --disable-socket => any socket open fails the build. Collects only packages/
+        # (root testpaths = ["packages"]).
+        run: uv run pytest --disable-socket
+
+      - name: Root-level governance + import-boundary guards
+        # The default suite above collects ONLY packages/. These root-level files are
+        # NOT auto-collected, so they are named explicitly — otherwise the FOUND-07
+        # SPDX/DECISIONS rot-guard (Plan 08) and the FOUND-04 negative controls can
+        # never fail CI. Keep --disable-socket so the offline guarantee still holds.
+        run: uv run pytest tests/test_governance.py tests/negcontrol/test_import_boundary.py --disable-socket

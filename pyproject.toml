@@ -33,4 +33,5 @@ dev = [
     "pytest-socket==0.7.0",
     "ruff",
     "mypy",
+    "pyyaml>=6.0.3",
 ]
