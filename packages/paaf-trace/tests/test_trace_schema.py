@@ -12,7 +12,6 @@ desktop Logs page and the Plan 09 TTFA gate both depend on:
 from __future__ import annotations
 
 import aiosqlite
-
 from paaf_trace import read_schema
 
 

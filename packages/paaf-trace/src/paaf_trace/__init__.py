@@ -21,4 +21,4 @@ def read_schema() -> str:
     return SCHEMA_PATH.read_text(encoding="utf-8")
 
 
-__all__ = ["__version__", "SCHEMA_PATH", "read_schema"]
+__all__ = ["SCHEMA_PATH", "__version__", "read_schema"]
