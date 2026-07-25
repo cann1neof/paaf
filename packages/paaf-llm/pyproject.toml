@@ -14,3 +14,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/paaf_llm"]
+
+# FOUND-02 / Plan 03: ship the wheel smoke test INSIDE the package so the
+# clean-venv job can discover it with `pytest --pyargs paaf_llm` (RESEARCH
+# Pitfall 2). Only the independence smoke test is shipped — not the whole
+# workspace tests/ dir.
+[tool.hatch.build.targets.wheel.force-include]
+"tests/test_wheel_smoke.py" = "paaf_llm/tests/test_wheel_smoke.py"

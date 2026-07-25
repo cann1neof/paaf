@@ -20,6 +20,14 @@ from pathlib import Path
 
 import pytest
 
+# FOUND-02 / Plan 03: the wheel-independence smoke test asserts that paaf_voice /
+# paaf_core are NOT importable. That is only true inside the isolated clean venv
+# built by scripts/check_wheel_independence.sh (run via `pytest --pyargs paaf_llm`).
+# In THIS workspace those packages are installed, so the assertion would (correctly)
+# be false — exclude the file from the workspace suite. The clean venv never loads
+# this conftest, so `--pyargs paaf_llm` still discovers and runs the test there.
+collect_ignore_glob = ["**/test_wheel_smoke.py"]
+
 
 class FrozenClock:
     """A controllable monotonic clock backed by a settable counter.
