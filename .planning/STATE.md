@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: foundation
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-07-25T13:45:25.717Z"
+stopped_at: Completed 02-05-PLAN.md (encrypted secret store)
+last_updated: "2026-07-25T14:06:05.610Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 12
   completed_phases: 1
   total_plans: 19
-  completed_plans: 14
+  completed_plans: 15
   percent: 8
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 02 (foundation) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute
 Last activity: 2026-07-25 — Phase 02 execution started
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P02 | 12min | 3 tasks | 10 files |
 | Phase 02 P03 | 5min | 2 tasks | 5 files |
 | Phase 02 P04 | 3min | 2 tasks | 8 files |
+| Phase 02 P05 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Force-include the paaf-llm wheel-smoke test into the wheel so pytest --pyargs finds it in a clean venv (Plan 02-03)
 - [Phase ?]: Scope the isolation-only wheel-smoke test out of the workspace suite via conftest collect_ignore_glob (Plan 02-03)
 - [Phase 02]: [02-04] Config subsystem: AppConfig (Pydantic v2, extra=forbid) validates on read/write; atomic_write_bytes does temp+fsync+os.replace+dirfsync; write_config gates a monotonic revision inside a FileLock and raises ConflictError on stale writes; reload_tiers() discovers per-field HOT/WARM/COLD/RESTART, unannotated fields default to RESTART
+- [Phase 02]: Master-key provisioning source = passphrase-at-boot (02-05) — Strongest option: key derived from passphrase via scrypt at unlock, never at rest (only per-store salt persisted). TRADEOFF: breaks unattended headless restart — every service (re)start needs the passphrase; Phase 9 (APP-*) owns boot-time delivery. key-file-0600/systemd-credential addable later without interface change.
 
 ### Pending Todos
 
@@ -129,6 +131,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-25T13:44:28.276Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-07-25T14:05:55.705Z
+Stopped at: Completed 02-05-PLAN.md (encrypted secret store)
 Resume file: .planning/phases/02-foundation/02-CONTEXT.md

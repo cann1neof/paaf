@@ -38,7 +38,7 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [x] **CORE-01**: Config is one YAML tree on disk, validated against a typed schema on every read and write
 - [x] **CORE-02**: Config writes are atomic (temp file, fsync, rename) so a crash mid-write cannot corrupt it
 - [x] **CORE-03**: Config carries a monotonic revision; concurrent edits are rejected with a conflict rather than silently overwriting
-- [ ] **CORE-04**: API keys live in a separate encrypted store, write-only over the API, never in the YAML tree, never logged
+- [x] **CORE-04**: API keys live in a separate encrypted store, write-only over the API, never in the YAML tree, never logged
 - [ ] **CORE-05**: Every component declares its network endpoints through a common interface, so offline enforcement is architectural rather than a scattered set of checks
 - [x] **CORE-06**: Config keys are classified into reload tiers — hot, warm, cold, restart-only — and the tier is discoverable
 
@@ -148,8 +148,8 @@ Narrow by design: only what requires knowing that time is passing and audio is p
 
 ### Privacy (PRIV)
 
-- [ ] **PRIV-01**: No accounts, anywhere
-- [ ] **PRIV-02**: No telemetry, ever, not even anonymous or opt-in
+- [x] **PRIV-01**: No accounts, anywhere
+- [x] **PRIV-02**: No telemetry, ever, not even anonymous or opt-in
 - [ ] **PRIV-03**: A CI job runs a scripted offline session under packet capture and fails the build on any non-LAN packet
 - [ ] **PRIV-04**: Dependency network behavior is re-audited on every lockfile update and every Chromium bump
 - [ ] **PRIV-05**: Electron ships with auto-update and Chromium background services disabled
@@ -233,7 +233,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | CORE-01 | Phase 2 — Foundation | Complete |
 | CORE-02 | Phase 2 — Foundation | Complete |
 | CORE-03 | Phase 2 — Foundation | Complete |
-| CORE-04 | Phase 2 — Foundation | Pending |
+| CORE-04 | Phase 2 — Foundation | Complete |
 | CORE-05 | Phase 2 — Foundation | Pending |
 | CORE-06 | Phase 2 — Foundation | Complete |
 | TRACE-01 | Phase 2 — Foundation | Pending |
@@ -311,8 +311,8 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | DESK-11 | Phase 10 — Desktop Core | Pending |
 | DESK-12 | Phase 10 — Desktop Core | Pending |
 | DESK-13 | Phase 10 — Desktop Core | Pending |
-| PRIV-01 | Phase 2 — Foundation | Pending |
-| PRIV-02 | Phase 2 — Foundation | Pending |
+| PRIV-01 | Phase 2 — Foundation | Complete |
+| PRIV-02 | Phase 2 — Foundation | Complete |
 | PRIV-03 | Phase 9 — The Appliance | Pending |
 | PRIV-04 | Phase 12 — Bring-Up & Launch | Pending |
 | PRIV-05 | Phase 10 — Desktop Core | Pending |
