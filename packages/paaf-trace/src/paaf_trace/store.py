@@ -49,10 +49,12 @@ class RunEvent:
 
     def as_sql(self) -> tuple[str, tuple[object, ...]]:
         return (
-            "INSERT INTO runs "
-            "(id, prompts, model, started_at, ended_at, "
-            "prompt_tokens, completion_tokens, time_to_first_audio) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "INSERT INTO runs "
+                "(id, prompts, model, started_at, ended_at, "
+                "prompt_tokens, completion_tokens, time_to_first_audio) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
             (
                 self.id,
                 self.prompts,

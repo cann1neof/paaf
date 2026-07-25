@@ -19,7 +19,6 @@ from __future__ import annotations
 import sys
 
 import aiosqlite
-
 from paaf_trace.store import RunEvent, ToolCallEvent, TraceStore
 
 # HTTP/socket client modules that must never appear in the paaf_trace import graph.
@@ -35,19 +34,18 @@ async def test_full_path_runs_with_no_network(tmp_path) -> None:
     store.emit(ToolCallEvent(run_id=1, name="noop", args="{}", results="ok"))
     await store.stop()
 
-    async with aiosqlite.connect(str(db_path)) as db:
-        async with db.execute(
-            "SELECT prompts, time_to_first_audio FROM runs WHERE id = 1"
-        ) as cur:
-            row = await cur.fetchone()
+    async with aiosqlite.connect(str(db_path)) as db, db.execute(
+        "SELECT prompts, time_to_first_audio FROM runs WHERE id = 1"
+    ) as cur:
+        row = await cur.fetchone()
     # Reaching here under --disable-socket proves the path opened no network socket.
     assert row == ("audit me", 0.3)
 
 
 def test_no_http_client_in_import_graph() -> None:
     """Importing paaf_trace pulls in no outbound HTTP client module (TRACE-05)."""
-    import paaf_trace  # noqa: F401  (import for its side effect: populate sys.modules)
-    import paaf_trace.metrics  # noqa: F401
+    import paaf_trace
+    import paaf_trace.metrics
     import paaf_trace.store  # noqa: F401
 
     present = [name for name in _HTTP_CLIENTS if name in sys.modules]
