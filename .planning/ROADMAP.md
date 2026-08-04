@@ -4,9 +4,9 @@
 
 The journey starts by trying to break the project's own founding promise. Phase 1 is throwaway measurement code that answers, with evidence, whether a multilingual assistant that is never told which language it is hearing can actually be built with the only engines that cover Hebrew — and what hardware it would take. Nothing ships from it, and no public claim later in the project may exceed what it measured.
 
-From there the build runs in vertical slices along the dependency graph. Phase 2 lays a monorepo where the architectural rules are CI failures rather than good intentions: import contracts, endpoint declaration, atomic config, and a time-to-first-audio regression gate measured with a fake TTS before any audio exists. Phases 3–5 build `paaf-llm` fake-adapter-first until a stranger can `pip install paaf-llm`, write a persona, install a skill, and read the exact prompt the assistant sent — the framework standing alone, published mid-roadmap as the deliberate hedge against solo-maintainer burnout.
+From there the build runs in vertical slices along the dependency graph. Phase 2 lays a monorepo where the architectural rules are CI failures rather than good intentions: import contracts, endpoint declaration, atomic config, and a time-to-first-audio regression gate measured with a fake TTS before any audio exists. Phases 3–6 build `paaf-llm` fake-adapter-first — a single agent that talks, survives provider loss, and shows its exact prompt; then the automatic model-to-model handoff **mesh** that is the framework's spine (each model carries its own skills and a graph of peer agents it can hand off to, and the awake model decides the handoff itself — no hardcoded routing rules); then tools and installable skills — until a stranger can `pip install paaf-llm`, wire up a mesh of agents, install a skill, and read the exact prompt each agent sent. The framework stands alone and is published mid-roadmap, with the mesh in it, as the deliberate hedge against solo-maintainer burnout.
 
-Phases 6–8 build voice the same way, test doubles before engines, and then the hardest component in the system — the realtime turn loop with barge-in that truncates history to what actually left the speaker — entirely in CI on a machine with no audio hardware. Phases 9–11 turn that into an appliance with a control panel that holds no truth of its own. Phase 12 is the only hardware-gated work: real-device latency, echo cancellation, far-field accuracy, a packet-capture recipe a stranger can reproduce, and the launch.
+Phases 7–9 build voice the same way, test doubles before engines, and then the hardest component in the system — the realtime turn loop with barge-in that truncates history to what actually left the speaker — entirely in CI on a machine with no audio hardware. Phases 10–12 turn that into an appliance with a control panel that holds no truth of its own. Phase 13 is the only hardware-gated work: real-device latency, echo cancellation, far-field accuracy, a packet-capture recipe a stranger can reproduce, and the launch.
 
 ## Phases
 
@@ -19,16 +19,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Spike Gate** - Falsify the language promise, the stack, and the hardware assumption before writing any architecture (completed 2026-07-25)
 - [x] **Phase 2: Foundation** - Workspace, CI-enforced contracts, config, secrets, and the latency regression gate (completed 2026-07-25)
-- [ ] **Phase 3: paaf-llm Core** - Ports and fake adapter first, then models, fallbacks, routing, and the verbatim prompt
-- [ ] **Phase 4: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
-- [ ] **Phase 5: Skills & PyPI Release** - Installable skills, and `paaf-llm` shipped publicly before voice exists
-- [ ] **Phase 6: paaf-voice Ports & Fakes** - Test doubles and the language-agnostic sentence aggregator, before any engine
-- [ ] **Phase 7: Real Engines & Live Audio** - Whisper, Chatterbox, wake word and VAD behind the ports; the machine hears and speaks
-- [ ] **Phase 8: paaf-session** - The turn loop and truthful barge-in, hardened in CI with no audio hardware
-- [ ] **Phase 9: The Appliance** - One Linux process with a LAN API, mDNS, hot reload, and enforced offline mode
-- [ ] **Phase 10: Desktop Core** - Discovery, pairing, models, persona, and chat, with the device as the only truth
-- [ ] **Phase 11: Desktop Remaining Pages** - Skills, tools, behaviors, voice, traces, and privacy
-- [ ] **Phase 12: Bring-Up & Launch** - Real-device latency, a reproducible offline proof, docs, and going public
+- [ ] **Phase 3: paaf-llm Core (single agent)** - Ports and fake adapter first, then models, fallbacks, the manifest + peer-graph seam, and the verbatim prompt
+- [ ] **Phase 4: Agent Mesh** - Automatic LLM-driven handoff between models the awake one chooses, headless, with the full handoff chain in the trace
+- [ ] **Phase 5: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
+- [ ] **Phase 6: Skills & PyPI Release** - Installable skills, and `paaf-llm` — mesh included — shipped publicly before voice exists
+- [ ] **Phase 7: paaf-voice Ports & Fakes** - Test doubles and the language-agnostic sentence aggregator, before any engine
+- [ ] **Phase 8: Real Engines & Live Audio** - Whisper, Chatterbox, wake word and VAD behind the ports; the machine hears and speaks
+- [ ] **Phase 9: paaf-session** - The turn loop and truthful barge-in, hardened in CI with no audio hardware
+- [ ] **Phase 10: The Appliance** - One Linux process with a LAN API, mDNS, hot reload, and enforced offline mode
+- [ ] **Phase 11: Desktop Core** - Discovery, pairing, models, persona, and chat, with the device as the only truth
+- [ ] **Phase 12: Desktop Remaining Pages** - Skills, tools, behaviors, voice, traces, and privacy
+- [ ] **Phase 13: Bring-Up & Launch** - Real-device latency, a reproducible offline proof, docs, and going public
 
 ## Phase Details
 
@@ -115,28 +116,45 @@ Plans:
 
 **UI hint**: no
 
-### Phase 3: paaf-llm Core
+### Phase 3: paaf-llm Core (single agent)
 
-**Goal**: `paaf chat` holds a real conversation using a model the user named in YAML, survives losing its provider mid-sentence, and shows the user the exact prompt it sent.
+**Goal**: `paaf chat` holds a real single-agent conversation using a model the user named in YAML, survives losing its provider mid-sentence via a user-defined fallback chain, and shows the user the exact prompt it sent — while each profile also declares the capability manifest and peer-agent graph the mesh will later traverse.
 **Mode:** mvp
 **Depends on**: Phase 2
-**Requirements**: MODEL-01, MODEL-02, MODEL-03, MODEL-04, MODEL-05, MODEL-06, MODEL-08, PERS-01, PERS-02, PERS-03, PERS-04, PERS-05
+**Requirements**: MODEL-01, MODEL-02, MODEL-03, MODEL-04, MODEL-05, MODEL-06, MODEL-08, PERS-01, PERS-02, PERS-04, PERS-05
 **Success Criteria** (what must be TRUE):
 
   1. The `fake/` adapter is written and merged **before** the real adapter exists, and the entire `paaf-llm` test suite passes against it with the agent framework uninstalled — the proof that the port is a port and not a mirror.
   2. The user names model profiles across Ollama, OpenAI-compatible endpoints and Anthropic in YAML — including two separate local servers on the LAN as distinct profiles — and `paaf chat` uses them without a line of code.
-  3. Pulling the WAN mid-conversation moves the reply onto a local profile and the conversation continues; a degraded-but-reachable provider triggers the same chain, not just a hard connection error.
-  4. A user-written intent rule routes a request to a chosen profile, and the trace shows which profile actually served it and whether it was a fallback.
+  3. Pulling the WAN mid-conversation moves the reply onto a local profile and the conversation continues; a degraded-but-reachable provider — a timeout, a 5xx/429, or a first token that never arrives within the budget — triggers the same fallback chain, not just a hard connection error.
+  4. Each model profile declares, in YAML, a natural-language capability manifest and the peer agents it may hand off to; the schema validates them and `paaf chat` surfaces them, but no handoff behavior exists yet — the graph is inert data this phase, and Phase 4 makes it live.
   5. One command prints the final composed prompt verbatim — base prompt, skill fragments, runtime context — exactly as sent to the model, and it contains nothing the user did not write.
 
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 4: Tools, MCP & Permissions
+### Phase 4: Agent Mesh
+
+**Goal**: The model that is currently awake automatically hands control to a declared peer agent when the request fits that peer better, carrying the full conversation across, with no hardcoded routing rules anywhere — built headless (text-only, no audio) and proven in CI against the fake adapter.
+**Mode:** mvp
+**Depends on**: Phase 3
+**Requirements**: MESH-01, MESH-02, MESH-03, MESH-04, MESH-05, MESH-06
+**Success Criteria** (what must be TRUE):
+
+  1. The awake model decides handoffs itself; it may hand off only to peers named in its peer graph, and a handoff to an undeclared target is rejected as a catchable error rather than silently followed.
+  2. On handoff the receiving agent gets the full prior conversation, becomes the awake agent, and can later hand off again — including back to a previous agent — without the conversation restarting.
+  3. The handoff "explainer" each agent receives is generated from the user's capability manifest and peer graph and appears verbatim in the prompt inspector, so nothing steers the model that the user cannot see (PERS-05 preserved).
+  4. Each agent applies its own fallback chain, and the trace records the full handoff chain — who was awake each turn, every handoff, and whether a turn was served by a fallback — so a wrong reroute is observable after the fact.
+  5. Optional hard constraints declared on an agent are enforced by the system regardless of what the model attempts, and the entire mesh runs headless in CI against the fake adapter with the agent framework uninstalled and no audio present.
+
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 5: Tools, MCP & Permissions
 
 **Goal**: The assistant can act on the world through built-ins, a plain decorated Python function, and an MCP server — with every tool carrying a permission tier the user chose.
 **Mode:** mvp
-**Depends on**: Phase 3
+**Depends on**: Phase 4
 **Requirements**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-06, TOOL-07, TOOL-08
 **Success Criteria** (what must be TRUE):
 
@@ -149,24 +167,24 @@ Plans:
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 5: Skills & PyPI Release
+### Phase 6: Skills & PyPI Release
 
-**Goal**: A stranger `pip install`s `paaf-llm`, builds a text assistant with it, and installs a skill from a git URL — the framework standing alone and shipped publicly, well before voice exists.
+**Goal**: A stranger `pip install`s `paaf-llm`, builds a mesh of agents with it, and installs a skill from a git URL — the framework standing alone with the agent mesh in it and shipped publicly, well before voice exists.
 **Mode:** mvp
-**Depends on**: Phase 4
+**Depends on**: Phase 5
 **Requirements**: SKILL-01, SKILL-02, SKILL-03, SKILL-04, SKILL-05, OSS-01, OSS-02
 **Success Criteria** (what must be TRUE):
 
   1. Installing a skill from a git URL shows its manifest's requested permissions for explicit approval before anything is imported, and a failed dependency resolution refuses loudly and changes nothing.
   2. Enabling or disabling an installed skill changes the composed prompt and the tool registry without uninstalling it.
-  3. `paaf-llm` is live on PyPI and installs into a clean venv on a machine that has never seen this repo, with the verbatim prompt inspector working there.
-  4. A published docs site covers install, configuration, skill authoring and the framework API **for everything that exists at this point**, and is explicit about what does not exist yet rather than silent about it — the voice and appliance sections are added in Phase 12, not implied here.
+  3. `paaf-llm` is live on PyPI and installs into a clean venv on a machine that has never seen this repo, with the verbatim prompt inspector and the agent mesh working there.
+  4. A published docs site covers install, configuration, the agent mesh, skill authoring and the framework API **for everything that exists at this point**, and is explicit about what does not exist yet rather than silent about it — the voice and appliance sections are added in Phase 13, not implied here.
   5. The docs and the install prompt both state plainly that skills run in-process with no sandbox, that the manifest is disclosure rather than enforcement, and that MCP is the preferred path for anything the user has not audited.
 
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 6: paaf-voice Ports & Fakes
+### Phase 7: paaf-voice Ports & Fakes
 
 **Goal**: A voice module whose shape was set by its test doubles rather than by one engine, able to split a mixed-script token stream into speakable sentences with no language configuration anywhere in it.
 **Mode:** mvp
@@ -182,11 +200,11 @@ Plans:
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 7: Real Engines & Live Audio
+### Phase 8: Real Engines & Live Audio
 
 **Goal**: Real Whisper, real Chatterbox, real wake word and VAD sit behind the ports the fakes already defined, and the machine can actually hear and speak in four mixed languages.
 **Mode:** mvp
-**Depends on**: Phase 6
+**Depends on**: Phase 7
 **Requirements**: VOICE-03, VOICE-04, VOICE-05, VOICE-07, VOICE-08, VOICE-09, VOICE-10, VOICE-12, PRIV-06
 **Success Criteria** (what must be TRUE):
 
@@ -199,11 +217,11 @@ Plans:
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 8: paaf-session
+### Phase 9: paaf-session
 
-**Goal**: The hardest component in the system — the realtime turn loop with barge-in that tells the truth about what was actually heard — built and hardened in CI on a machine with no audio hardware.
+**Goal**: The hardest component in the system — the realtime turn loop with barge-in that tells the truth about what was actually heard — built and hardened in CI on a machine with no audio hardware. It wraps the Phase-4 headless conversation/handoff loop with audio, timing and barge-in; it does not reinvent the mesh.
 **Mode:** mvp
-**Depends on**: Phase 7
+**Depends on**: Phase 8
 **Requirements**: SESS-01, SESS-02, SESS-03, SESS-04, SESS-05, SESS-06, SESS-07, SESS-08, SESS-09
 **Success Criteria** (what must be TRUE):
 
@@ -216,12 +234,12 @@ Plans:
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 9: The Appliance
+### Phase 10: The Appliance
 
 **Goal**: One Linux process that owns the session's lifecycle, announces itself on the LAN, reloads config without restarting, and can prove it is offline.
 **Mode:** mvp
-**Depends on**: Phase 8
-**Requirements**: APP-01, APP-02, APP-03, APP-04, APP-05, APP-06, APP-07, APP-08, APP-09, APP-10, PRIV-03
+**Depends on**: Phase 9
+**Requirements**: APP-01, APP-02, APP-03, APP-04, APP-05, APP-06, APP-07, APP-08, APP-09, APP-10, PRIV-03, PERS-03
 **Success Criteria** (what must be TRUE):
 
   1. A single process wires the session to real audio devices, runs as a Linux service, and announces itself over mDNS so a client can find it without being told an address.
@@ -233,16 +251,16 @@ Plans:
 **Plans**: TBD
 **UI hint**: no
 
-### Phase 10: Desktop Core
+### Phase 11: Desktop Core
 
 **Goal**: An Electron control panel that finds the device, pairs with it, and lets the user pick a model and write a persona — with the device as the only source of truth and the assistant surviving the app's deletion.
 **Mode:** mvp
-**Depends on**: Phase 9
+**Depends on**: Phase 10
 **Requirements**: DESK-01, DESK-02, DESK-03, DESK-10, DESK-11, DESK-12, DESK-13, MODEL-07, PRIV-05
 **Success Criteria** (what must be TRUE):
 
   1. The app discovers the device on the LAN, pairs with the PIN the device shows, and stores nothing but the token in the OS keychain.
-  2. The Models page edits profiles, fallback chains and routing rules, and a test button runs a profile on the device and shows the actual result.
+  2. The Models page edits profiles, fallback chains and each agent's capability manifest and peer-agent graph, and a test button runs a profile on the device and shows the actual result.
   3. The Persona page shows the editor beside the verbatim composed prompt exactly as the device would send it, and a chat panel tests the assistant without speaking to it.
   4. A rejected setting never appears applied — the UI renders device state after the change lands, never its own prediction — and deleting the desktop app entirely leaves the assistant working unchanged.
   5. Hebrew and other right-to-left text renders correctly everywhere it can appear, and the Electron build ships with auto-update and Chromium background services disabled.
@@ -250,11 +268,11 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 11: Desktop Remaining Pages
+### Phase 12: Desktop Remaining Pages
 
 **Goal**: Every remaining thing the user owns about the assistant — its skills, its tools, what it does while it thinks, its voice, its history, and its privacy — is editable and inspectable from the control panel.
 **Mode:** mvp
-**Depends on**: Phase 10
+**Depends on**: Phase 11
 **Requirements**: DESK-04, DESK-05, DESK-06, DESK-07, DESK-08, DESK-09
 **Success Criteria** (what must be TRUE):
 
@@ -267,18 +285,18 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
-### Phase 12: Bring-Up & Launch
+### Phase 13: Bring-Up & Launch
 
 **Goal**: The assistant runs on the target Linux box with a measured latency number, a stranger can reproduce the offline claim themselves, and the project is public with claims that match what was measured.
 **Mode:** mvp
-**Depends on**: Phase 11
+**Depends on**: Phase 12
 **Requirements**: PRIV-04, PRIV-07, OSS-03, OSS-04, OSS-05, OSS-06
 **Success Criteria** (what must be TRUE):
 
   1. Time-to-first-audio is measured on the real device and published as a number, alongside echo-cancellation and far-field wake-word behavior on a documented reference microphone.
   2. A published verification recipe lets a user reproduce the offline claim with their own packet capture, including an explanation of the mDNS traffic they will see and why it is there.
   3. Dependency network behavior is re-audited against the current lockfile and Chromium build, with the result recorded and the audit wired to repeat on every future bump.
-  4. The Phase-5 docs site is extended to cover voice, the appliance and the desktop app, and a third-party example assistant that is not PAAF's own app is built on the framework alone.
+  4. The Phase-6 docs site is extended to cover voice, the appliance and the desktop app, and a third-party example assistant that is not PAAF's own app is built on the framework alone.
   5. The launch ships with a demo video, an honest comparison page that concedes Home Assistant's real strengths, and multilingual claims that match the Phase 1 measurements exactly.
 
 **Plans**: TBD
@@ -287,26 +305,27 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
-| 3. paaf-llm Core | 0/TBD | Not started | - |
-| 4. Tools, MCP & Permissions | 0/TBD | Not started | - |
-| 5. Skills & PyPI Release | 0/TBD | Not started | - |
-| 6. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
-| 7. Real Engines & Live Audio | 0/TBD | Not started | - |
-| 8. paaf-session | 0/TBD | Not started | - |
-| 9. The Appliance | 0/TBD | Not started | - |
-| 10. Desktop Core | 0/TBD | Not started | - |
-| 11. Desktop Remaining Pages | 0/TBD | Not started | - |
-| 12. Bring-Up & Launch | 0/TBD | Not started | - |
+| 3. paaf-llm Core (single agent) | 0/TBD | Not started | - |
+| 4. Agent Mesh | 0/TBD | Not started | - |
+| 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
+| 6. Skills & PyPI Release | 0/TBD | Not started | - |
+| 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
+| 8. Real Engines & Live Audio | 0/TBD | Not started | - |
+| 9. paaf-session | 0/TBD | Not started | - |
+| 10. The Appliance | 0/TBD | Not started | - |
+| 11. Desktop Core | 0/TBD | Not started | - |
+| 12. Desktop Remaining Pages | 0/TBD | Not started | - |
+| 13. Bring-Up & Launch | 0/TBD | Not started | - |
 
 ## Coverage
 
-All 110 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
+All 116 v1 requirements map to exactly one phase. See the Traceability table in `.planning/REQUIREMENTS.md`.
 
 | Category | Count | Phase(s) |
 |----------|-------|----------|
@@ -314,25 +333,28 @@ All 110 v1 requirements map to exactly one phase. See the Traceability table in 
 | FOUND (7) | 7 | 2 |
 | CORE (6) | 6 | 2 |
 | TRACE (5) | 5 | 2 |
-| MODEL (8) | 7 + 1 | 3 (MODEL-01..06, 08), 10 (MODEL-07) |
-| PERS (5) | 5 | 3 |
-| TOOL (8) | 8 | 4 |
-| SKILL (5) | 5 | 5 |
-| VOICE (12) | 4 + 8 | 6 (VOICE-01, 02, 06, 11), 7 (rest) |
-| SESS (9) | 9 | 8 |
-| APP (10) | 10 | 9 |
-| DESK (13) | 7 + 6 | 10 (DESK-01, 02, 03, 10, 11, 12, 13), 11 (DESK-04..09) |
-| PRIV (7) | 7 | 2 (01, 02), 7 (06), 9 (03), 10 (05), 12 (04, 07) |
-| OSS (6) | 6 | 5 (OSS-01, OSS-02), 12 (OSS-03..06) |
+| MODEL (8) | 7 + 1 | 3 (MODEL-01..06, 08), 11 (MODEL-07) |
+| PERS (5) | 4 + 1 | 3 (PERS-01, 02, 04, 05), 10 (PERS-03) |
+| MESH (6) | 6 | 4 |
+| TOOL (8) | 8 | 5 |
+| SKILL (5) | 5 | 6 |
+| VOICE (12) | 4 + 8 | 7 (VOICE-01, 02, 06, 11), 8 (rest) |
+| SESS (9) | 9 | 9 |
+| APP (10) | 10 | 10 |
+| DESK (13) | 7 + 6 | 11 (DESK-01, 02, 03, 10, 11, 12, 13), 12 (DESK-04..09) |
+| PRIV (7) | 7 | 2 (01, 02), 8 (06), 10 (03), 11 (05), 13 (04, 07) |
+| OSS (6) | 6 | 6 (OSS-01, OSS-02), 13 (OSS-03..06) |
 
 ## Notes on Structure
 
 **Why Phase 1 comes first and nothing ships from it.** Two of its measurements — Chatterbox's Hebrew quality and its realtime feasibility — determine both what gets built and what hardware gets bought. Its exit gate is a constraint on every later phase: no public claim about multilingual behavior may exceed what was measured here.
 
-**Fake-adapter-first survives the vertical slicing.** This is the specific risk the MVP structure introduces. `paaf-llm`'s `fake/` adapter (Phase 3) and `paaf-voice`'s `testing/` fakes (Phase 6) are written before the corresponding real implementations, never after. A port with only one implementation is a mirror, not a port, and MODEL-08's swappability guarantee depends entirely on this ordering.
+**Fake-adapter-first survives the vertical slicing.** This is the specific risk the MVP structure introduces. `paaf-llm`'s `fake/` adapter (Phase 3) and `paaf-voice`'s `testing/` fakes (Phase 7) are written before the corresponding real implementations, never after. A port with only one implementation is a mirror, not a port, and MODEL-08's swappability guarantee depends entirely on this ordering.
 
-**Nothing is gated on hardware except Phase 12.** Only four things genuinely need the target device: echo-cancellation quality, far-field wake-word accuracy, real-device latency numbers, and GPIO. Everything else — including the barge-in state machine, the hardest component in the system — is built and tested on the development machine.
+**The agent mesh is the framework's spine, and it is text-first.** Routing between models is not a set of user-written rules — it is the currently-awake model deciding, itself, to hand control to a declared peer (Phase 4). That handoff is a first-class primitive of the conversation loop, not an entry in the Phase-5 tool registry, so the mesh ships before tools and before voice. The loop is headless (no audio, no time) and therefore lives in `paaf-llm`; `paaf-session` (Phase 9) later wraps it with audio and barge-in. Because a model can always route wrong, v1 buys *observability*, not a guarantee: handoff is restricted to a peer's declared targets (a wrong target is a catchable error), and the full handoff chain lands in the trace so a mis-route is visible after the fact. A formal routing-quality eval is deferred (see REQUIREMENTS ROUTE-01).
 
-**`paaf-session` stays narrow.** It owns only what requires knowing that time is passing and audio is playing: turn state machine, barge-in, audio output arbitration, behaviors executor, turn-level metrics. Multi-endpoint routing (MODEL-06) lives in `paaf-llm` because it fails that test.
+**Nothing is gated on hardware except Phase 13.** Only four things genuinely need the target device: echo-cancellation quality, far-field wake-word accuracy, real-device latency numbers, and GPIO. Everything else — including the barge-in state machine, the hardest component in the system — is built and tested on the development machine.
 
-**Phase 5 is a dated public commitment, not a nice-to-have.** Shipping `paaf-llm` to PyPI mid-roadmap is the project's burnout mitigation and it lands as soon as the package stands alone, well before voice work completes.
+**`paaf-session` stays narrow.** It owns only what requires knowing that time is passing and audio is playing: turn state machine, barge-in, audio output arbitration, behaviors executor, turn-level metrics. Multi-endpoint routing (MODEL-06) and the model-to-model handoff mesh (MESH-\*) both live in `paaf-llm` because they are text loops that fail the time/audio test.
+
+**Phase 6 is a dated public commitment, not a nice-to-have.** Shipping `paaf-llm` to PyPI mid-roadmap — with the agent mesh in it — is the project's burnout mitigation, and it lands as soon as the package stands alone, well before voice work completes.

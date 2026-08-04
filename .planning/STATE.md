@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: paaf-llm Core
 status: verifying
-stopped_at: Completed 02-05-PLAN.md (encrypted secret store)
-last_updated: "2026-07-25T18:56:58.244Z"
+stopped_at: Phase 3 context gathered (single-agent); roadmap revised — inserted Phase 4 Agent Mesh
+last_updated: "2026-08-04T15:07:49.435Z"
 last_activity: 2026-07-25
 last_activity_desc: Phase 02 complete, transitioned to Phase 3
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 2
   total_plans: 19
   completed_plans: 19
-  percent: 17
+  percent: 15
 ---
 
 # Project State
@@ -131,6 +131,10 @@ None yet.
 - dicta-onnx is now on the CRITICAL PATH for Hebrew (Gate 0 proved Hebrew needs it plus a manually-supplied weights file), yet it declares NO LICENSE on PyPI or GitHub and is thinly maintained (9 stars, single individual, no release since 2025-05-31). An unlicensed transitive dep is a real distribution problem for an Apache-2.0 framework — must be resolved before Phase 6 / packaging.
 - The conftest-shadowing trap is only half closed: spike/voice/ avoids it purely because 'voice' sorts after test_fixtures_smoke.py. Any future spike/<earlier-sorting-dir>/conftest.py will break the base suite collection entirely. Durable fix is moving 01-01's FakeModel/FakeTool into spike/fakes.py
 
+### Roadmap Evolution
+
+- Phase 4 inserted after Phase 3: Agent Mesh (LLM-driven handoff); reframed MODEL-05 to capability manifest + peer graph; renumbered old 4-12 -> 5-13; pulled LLM routing into v1
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
@@ -139,10 +143,10 @@ Items acknowledged and carried forward from previous milestone close:
 |----------|------|--------|-------------|
 | Hardware | Reference build, enclosure, mic-kill switch | Deferred to v2 | Milestone start |
 | Memory | Semantic search, long-term conversational memory | Deferred to v2 | Milestone start |
-| Routing | Sophisticated LLM-based model routing | Deferred to v2 | Milestone start |
+| Routing | Automated mis-route detection / routing-quality eval (ROUTE-01). LLM-driven routing itself is now v1 core — Phase 4 Agent Mesh | Partially pulled into v1 | 2026-08-04 |
 
 ## Session Continuity
 
-Last session: 2026-07-25T18:47:10.431Z
-Stopped at: Completed 02-05-PLAN.md (encrypted secret store)
-Resume file: .planning/phases/02-foundation/02-CONTEXT.md
+Last session: 2026-08-04T15:07:49.426Z
+Stopped at: Phase 3 context gathered (single-agent); roadmap revised — inserted Phase 4 Agent Mesh
+Resume file: .planning/phases/03-paaf-llm-core/03-CONTEXT.md

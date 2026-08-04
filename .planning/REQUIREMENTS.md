@@ -56,7 +56,7 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [ ] **MODEL-02**: Providers supported at minimum: Ollama, OpenAI-compatible endpoints, Anthropic
 - [ ] **MODEL-03**: User configures an ordered fallback chain that survives an unreachable cloud provider mid-conversation
 - [ ] **MODEL-04**: Fallback also triggers on a degraded-but-reachable provider, not only on a hard connection error
-- [ ] **MODEL-05**: User writes simple rules routing an intent to a chosen model profile
+- [ ] **MODEL-05**: User declares each model profile's capability manifest — a natural-language description of what it handles — and its peer-agent graph, the profiles it may hand off to, in YAML with no code
 - [ ] **MODEL-06**: Multiple endpoints of the same provider are addressable as distinct profiles, so two local servers on the LAN can serve different roles
 - [ ] **MODEL-07**: User tests a model profile from the desktop app and sees the result
 - [ ] **MODEL-08**: The public API exposes only PAAF types — no agent-framework types leak, proven by the full `paaf-llm` suite passing against the fake adapter with the real framework uninstalled
@@ -68,6 +68,17 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 - [ ] **PERS-03**: Runtime context (time, device name, room) composes into the prompt
 - [ ] **PERS-04**: The final composed prompt is inspectable verbatim, exactly as sent to the model
 - [ ] **PERS-05**: PAAF never injects instructions the user did not write and cannot see
+
+### Agent Mesh (MESH)
+
+The framework is organized around skills and agents, where an agent is another model. Each model carries its own skills and a graph of peer agents it can hand off to. Routing is the currently-awake model deciding, itself, to transfer control — not a set of user-written rules. Built headless (text-only, no audio); it lives in `paaf-llm`.
+
+- [ ] **MESH-01**: Routing between models is decided by the currently-awake model itself (LLM-driven handoff); there are no deterministic, user-written routing rules anywhere in the system
+- [ ] **MESH-02**: A model may hand off only to peers declared in its peer graph; a handoff to an undeclared peer is rejected and recorded, never silently followed
+- [ ] **MESH-03**: A handoff transfers control and the full conversation context to the receiving agent, which becomes the awake agent until it hands off again — including handing back to a prior agent
+- [ ] **MESH-04**: Each agent's handoff explainer is generated from its capability manifest and peer graph and is present verbatim in the composed-prompt inspector — no hidden instructions steer the routing
+- [ ] **MESH-05**: The trace records every handoff, which agent was awake each turn, and whether each turn was served by a fallback, so a wrong reroute is observable after the fact
+- [ ] **MESH-06**: A user may declare optional hard constraints on an agent that the system enforces regardless of the model's choice
 
 ### Tools & MCP (TOOL)
 
@@ -133,7 +144,7 @@ Narrow by design: only what requires knowing that time is passing and audio is p
 ### Desktop App (DESK)
 
 - [ ] **DESK-01**: Discovers devices on the LAN and pairs with one
-- [ ] **DESK-02**: Models page — profiles, fallback chains, routing rules, test button
+- [ ] **DESK-02**: Models page — profiles, fallback chains, each agent's capability manifest and peer-agent graph, test button
 - [ ] **DESK-03**: Persona page — editor plus the verbatim composed prompt
 - [ ] **DESK-04**: Skills page — install from git URL, permission review, enable and disable
 - [ ] **DESK-05**: Tools & MCP page — registry, permission tiers, MCP server configuration
@@ -185,7 +196,7 @@ Acknowledged, deliberately deferred, not in this roadmap.
 ### Platform
 
 - **RT-01**: Absorb a local speech-to-speech model behind the existing Voice interface
-- **ROUTE-01**: Sophisticated model routing beyond simple rules
+- **ROUTE-01**: Automated mis-route detection and routing-quality eval. v1 ships *observability* (the full handoff chain in the trace, MESH-05); a formal eval that scores whether the awake model routed correctly is deferred. (The agent mesh itself — LLM-driven handoff — is v1 core in Phase 4, no longer deferred.)
 
 ## Out of Scope
 
@@ -241,94 +252,100 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | TRACE-03 | Phase 2 — Foundation | Complete |
 | TRACE-04 | Phase 2 — Foundation | Complete |
 | TRACE-05 | Phase 2 — Foundation | Complete |
-| MODEL-01 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-02 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-03 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-04 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-05 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-06 | Phase 3 — paaf-llm Core | Pending |
-| MODEL-07 | Phase 10 — Desktop Core | Pending |
-| MODEL-08 | Phase 3 — paaf-llm Core | Pending |
-| PERS-01 | Phase 3 — paaf-llm Core | Pending |
-| PERS-02 | Phase 3 — paaf-llm Core | Pending |
-| PERS-03 | Phase 3 — paaf-llm Core | Pending |
-| PERS-04 | Phase 3 — paaf-llm Core | Pending |
-| PERS-05 | Phase 3 — paaf-llm Core | Pending |
-| TOOL-01 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-02 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-03 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-04 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-05 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-06 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-07 | Phase 4 — Tools, MCP & Permissions | Pending |
-| TOOL-08 | Phase 4 — Tools, MCP & Permissions | Pending |
-| SKILL-01 | Phase 5 — Skills & PyPI Release | Pending |
-| SKILL-02 | Phase 5 — Skills & PyPI Release | Pending |
-| SKILL-03 | Phase 5 — Skills & PyPI Release | Pending |
-| SKILL-04 | Phase 5 — Skills & PyPI Release | Pending |
-| SKILL-05 | Phase 5 — Skills & PyPI Release | Pending |
-| VOICE-01 | Phase 6 — paaf-voice Ports & Fakes | Pending |
-| VOICE-02 | Phase 6 — paaf-voice Ports & Fakes | Pending |
-| VOICE-03 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-04 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-05 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-06 | Phase 6 — paaf-voice Ports & Fakes | Pending |
-| VOICE-07 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-08 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-09 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-10 | Phase 7 — Real Engines & Live Audio | Pending |
-| VOICE-11 | Phase 6 — paaf-voice Ports & Fakes | Pending |
-| VOICE-12 | Phase 7 — Real Engines & Live Audio | Pending |
-| SESS-01 | Phase 8 — paaf-session | Pending |
-| SESS-02 | Phase 8 — paaf-session | Pending |
-| SESS-03 | Phase 8 — paaf-session | Pending |
-| SESS-04 | Phase 8 — paaf-session | Pending |
-| SESS-05 | Phase 8 — paaf-session | Pending |
-| SESS-06 | Phase 8 — paaf-session | Pending |
-| SESS-07 | Phase 8 — paaf-session | Pending |
-| SESS-08 | Phase 8 — paaf-session | Pending |
-| SESS-09 | Phase 8 — paaf-session | Pending |
-| APP-01 | Phase 9 — The Appliance | Pending |
-| APP-02 | Phase 9 — The Appliance | Pending |
-| APP-03 | Phase 9 — The Appliance | Pending |
-| APP-04 | Phase 9 — The Appliance | Pending |
-| APP-05 | Phase 9 — The Appliance | Pending |
-| APP-06 | Phase 9 — The Appliance | Pending |
-| APP-07 | Phase 9 — The Appliance | Pending |
-| APP-08 | Phase 9 — The Appliance | Pending |
-| APP-09 | Phase 9 — The Appliance | Pending |
-| APP-10 | Phase 9 — The Appliance | Pending |
-| DESK-01 | Phase 10 — Desktop Core | Pending |
-| DESK-02 | Phase 10 — Desktop Core | Pending |
-| DESK-03 | Phase 10 — Desktop Core | Pending |
-| DESK-04 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-05 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-06 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-07 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-08 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-09 | Phase 11 — Desktop Remaining Pages | Pending |
-| DESK-10 | Phase 10 — Desktop Core | Pending |
-| DESK-11 | Phase 10 — Desktop Core | Pending |
-| DESK-12 | Phase 10 — Desktop Core | Pending |
-| DESK-13 | Phase 10 — Desktop Core | Pending |
+| MODEL-01 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-02 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-03 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-04 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-05 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-06 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MODEL-07 | Phase 11 — Desktop Core | Pending |
+| MODEL-08 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| PERS-01 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| PERS-02 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| PERS-03 | Phase 10 — The Appliance | Pending |
+| PERS-04 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| PERS-05 | Phase 3 — paaf-llm Core (single agent) | Pending |
+| MESH-01 | Phase 4 — Agent Mesh | Pending |
+| MESH-02 | Phase 4 — Agent Mesh | Pending |
+| MESH-03 | Phase 4 — Agent Mesh | Pending |
+| MESH-04 | Phase 4 — Agent Mesh | Pending |
+| MESH-05 | Phase 4 — Agent Mesh | Pending |
+| MESH-06 | Phase 4 — Agent Mesh | Pending |
+| TOOL-01 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-02 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-03 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-04 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-05 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-06 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-07 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-08 | Phase 5 — Tools, MCP & Permissions | Pending |
+| SKILL-01 | Phase 6 — Skills & PyPI Release | Pending |
+| SKILL-02 | Phase 6 — Skills & PyPI Release | Pending |
+| SKILL-03 | Phase 6 — Skills & PyPI Release | Pending |
+| SKILL-04 | Phase 6 — Skills & PyPI Release | Pending |
+| SKILL-05 | Phase 6 — Skills & PyPI Release | Pending |
+| VOICE-01 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-02 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-03 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-04 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-05 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-06 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-07 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-08 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-09 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-10 | Phase 8 — Real Engines & Live Audio | Pending |
+| VOICE-11 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-12 | Phase 8 — Real Engines & Live Audio | Pending |
+| SESS-01 | Phase 9 — paaf-session | Pending |
+| SESS-02 | Phase 9 — paaf-session | Pending |
+| SESS-03 | Phase 9 — paaf-session | Pending |
+| SESS-04 | Phase 9 — paaf-session | Pending |
+| SESS-05 | Phase 9 — paaf-session | Pending |
+| SESS-06 | Phase 9 — paaf-session | Pending |
+| SESS-07 | Phase 9 — paaf-session | Pending |
+| SESS-08 | Phase 9 — paaf-session | Pending |
+| SESS-09 | Phase 9 — paaf-session | Pending |
+| APP-01 | Phase 10 — The Appliance | Pending |
+| APP-02 | Phase 10 — The Appliance | Pending |
+| APP-03 | Phase 10 — The Appliance | Pending |
+| APP-04 | Phase 10 — The Appliance | Pending |
+| APP-05 | Phase 10 — The Appliance | Pending |
+| APP-06 | Phase 10 — The Appliance | Pending |
+| APP-07 | Phase 10 — The Appliance | Pending |
+| APP-08 | Phase 10 — The Appliance | Pending |
+| APP-09 | Phase 10 — The Appliance | Pending |
+| APP-10 | Phase 10 — The Appliance | Pending |
+| DESK-01 | Phase 11 — Desktop Core | Pending |
+| DESK-02 | Phase 11 — Desktop Core | Pending |
+| DESK-03 | Phase 11 — Desktop Core | Pending |
+| DESK-04 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-05 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-06 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-07 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-08 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-09 | Phase 12 — Desktop Remaining Pages | Pending |
+| DESK-10 | Phase 11 — Desktop Core | Pending |
+| DESK-11 | Phase 11 — Desktop Core | Pending |
+| DESK-12 | Phase 11 — Desktop Core | Pending |
+| DESK-13 | Phase 11 — Desktop Core | Pending |
 | PRIV-01 | Phase 2 — Foundation | Complete |
 | PRIV-02 | Phase 2 — Foundation | Complete |
-| PRIV-03 | Phase 9 — The Appliance | Pending |
-| PRIV-04 | Phase 12 — Bring-Up & Launch | Pending |
-| PRIV-05 | Phase 10 — Desktop Core | Pending |
-| PRIV-06 | Phase 7 — Real Engines & Live Audio | Pending |
-| PRIV-07 | Phase 12 — Bring-Up & Launch | Pending |
-| OSS-01 | Phase 5 — Skills & PyPI Release | Pending |
-| OSS-02 | Phase 5 — Skills & PyPI Release | Pending |
-| OSS-03 | Phase 12 — Bring-Up & Launch | Pending |
-| OSS-04 | Phase 12 — Bring-Up & Launch | Pending |
-| OSS-05 | Phase 12 — Bring-Up & Launch | Pending |
-| OSS-06 | Phase 12 — Bring-Up & Launch | Pending |
+| PRIV-03 | Phase 10 — The Appliance | Pending |
+| PRIV-04 | Phase 13 — Bring-Up & Launch | Pending |
+| PRIV-05 | Phase 11 — Desktop Core | Pending |
+| PRIV-06 | Phase 8 — Real Engines & Live Audio | Pending |
+| PRIV-07 | Phase 13 — Bring-Up & Launch | Pending |
+| OSS-01 | Phase 6 — Skills & PyPI Release | Pending |
+| OSS-02 | Phase 6 — Skills & PyPI Release | Pending |
+| OSS-03 | Phase 13 — Bring-Up & Launch | Pending |
+| OSS-04 | Phase 13 — Bring-Up & Launch | Pending |
+| OSS-05 | Phase 13 — Bring-Up & Launch | Pending |
+| OSS-06 | Phase 13 — Bring-Up & Launch | Pending |
 
 **Coverage:**
 
-- v1 requirements: 110 total
-- Mapped to phases: 110 ✓
+- v1 requirements: 116 total
+- Mapped to phases: 116 ✓
 - Unmapped: 0
 
 **Per-phase totals:**
@@ -337,17 +354,18 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 |-------|--------------|
 | Phase 1 — Spike Gate | 9 |
 | Phase 2 — Foundation | 20 |
-| Phase 3 — paaf-llm Core | 12 |
-| Phase 4 — Tools, MCP & Permissions | 8 |
-| Phase 5 — Skills & PyPI Release | 7 |
-| Phase 6 — paaf-voice Ports & Fakes | 4 |
-| Phase 7 — Real Engines & Live Audio | 9 |
-| Phase 8 — paaf-session | 9 |
-| Phase 9 — The Appliance | 11 |
-| Phase 10 — Desktop Core | 9 |
-| Phase 11 — Desktop Remaining Pages | 6 |
-| Phase 12 — Bring-Up & Launch | 6 |
+| Phase 3 — paaf-llm Core (single agent) | 11 |
+| Phase 4 — Agent Mesh | 6 |
+| Phase 5 — Tools, MCP & Permissions | 8 |
+| Phase 6 — Skills & PyPI Release | 7 |
+| Phase 7 — paaf-voice Ports & Fakes | 4 |
+| Phase 8 — Real Engines & Live Audio | 9 |
+| Phase 9 — paaf-session | 9 |
+| Phase 10 — The Appliance | 12 |
+| Phase 11 — Desktop Core | 9 |
+| Phase 12 — Desktop Remaining Pages | 6 |
+| Phase 13 — Bring-Up & Launch | 6 |
 
 ---
 *Requirements defined: 2026-07-19*
-*Last updated: 2026-07-19 after initial definition*
+*Last updated: 2026-08-04 — inserted Phase 4 (Agent Mesh, MESH-01..06); reframed MODEL-05 (capability manifest + peer graph) and DESK-02; renumbered Phases 4–12 → 5–13; pulled LLM-driven routing into v1 (see ROUTE-01)*
