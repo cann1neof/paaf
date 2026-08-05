@@ -488,6 +488,24 @@ requires-dist = [
 name = "paaf-llm"
 version = "0.1.0"
 source = { editable = "packages/paaf-llm" }
+dependencies = [
+    { name = "click" },
+    { name = "paaf-core" },
+    { name = "paaf-trace" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.4" },
+    { name = "paaf-core", editable = "packages/paaf-core" },
+    { name = "paaf-trace", editable = "packages/paaf-trace" },
+    { name = "pydantic", specifier = ">=2.13" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rich", specifier = ">=15" },
+]
 
 [[package]]
 name = "paaf-session"
