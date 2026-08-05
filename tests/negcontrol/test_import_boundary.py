@@ -2,18 +2,23 @@
 """Negative controls for the import-linter contracts (FOUND-04).
 
 A guard that cannot fail is not a guard — Phase 1 twice caught contracts passing
-vacuously. These tests are the load-bearing proof that each of the three contracts in
-the real root `.importlinter` actually turns RED on a deliberate violation, while the
-real workspace stays GREEN.
+vacuously. These tests are the load-bearing proof that each contract in the real root
+`.importlinter` actually turns RED on a deliberate violation, while the real workspace
+stays GREEN.
 
 Mechanism: each deliberately-violating fixture package under this directory
 (``paaf_voice_violation`` imports ``paaf_llm``; ``paaf_llm_langchain_violation`` imports
-``langchain``; ``paaf_trace_net_violation`` imports ``httpx``) is analyzed by a separate
-``.importlinter-negcontrol`` config that maps the same three contract types onto them.
+``langchain``; ``paaf_llm_provider_violation`` imports ``langchain_ollama``;
+``paaf_trace_net_violation`` imports ``httpx``) is analyzed by a separate
+``.importlinter-negcontrol`` config that maps the same contract types onto them.
 import-linter is static AST analysis, so the forbidden externals need not be installed
 and no socket is ever opened — the ``--disable-socket`` suite default is irrelevant to a
 subprocess anyway. The fixtures live OUTSIDE ``packages/`` so the real contract never
 sees them.
+
+``paaf_llm_provider_violation`` is the Phase-3 addition: the real contract now forbids
+the provider bindings everywhere and whitelists only ``paaf_llm._engine``, so this
+fixture proves the whitelist does not accidentally exempt the rest of the framework.
 """
 
 import os
@@ -36,6 +41,7 @@ LINT_IMPORTS = str(_LINT) if _LINT.exists() else (shutil.which("lint-imports") o
 VIOLATION_CASES = [
     ("independence", "voice-and-llm-are-independent"),
     ("langchain", "langchain-confined-to-adapter"),
+    ("langchain_provider", "langchain-providers-confined-to-adapter"),
     ("no-network", "no-network-client-in-framework"),
 ]
 
