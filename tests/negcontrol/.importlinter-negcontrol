@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# NEGATIVE-CONTROL config (NOT the real one). It maps the same three contract TYPES
-# onto deliberately-violating fixture packages so the paired test can prove each real
+# NEGATIVE-CONTROL config (NOT the real one). It maps the real contract TYPES onto
+# deliberately-violating fixture packages so the paired test can prove each real
 # contract goes RED on its violation. Phase-1 caught two vacuous guards; a check that
 # cannot fail is not a check. The real `.importlinter` (repo root) stays green because
 # these fixtures live under tests/negcontrol/, never under packages/.
+#
+# Phase 3 added a fourth contract, `langchain_provider`, covering the provider bindings
+# (langchain_ollama/_anthropic/_openai) the real contract now forbids everywhere except
+# inside the `paaf_llm._engine` adapter. Its fixture imports a provider binding from
+# outside that adapter — the exact leak the extension exists to catch.
 #
 # The fixture packages resolve only when tests/negcontrol/ is on PYTHONPATH, which the
 # paired test sets for its subprocess. include_external_packages=True is required so the
@@ -17,6 +22,7 @@ root_packages =
     paaf_llm
     paaf_voice_violation
     paaf_llm_langchain_violation
+    paaf_llm_provider_violation
     paaf_trace_net_violation
 
 [importlinter:contract:independence]
@@ -36,6 +42,19 @@ forbidden_modules =
     langgraph
     langchain_core
     langchain_mcp_adapters
+
+# The provider half of the same real contract. The fixture is NOT paaf_llm._engine, so
+# the real config's `paaf_llm._engine -> ...` whitelist must not rescue it: a provider
+# binding imported anywhere else is a leak and has to turn CI red.
+[importlinter:contract:langchain_provider]
+name = langchain-providers-confined-to-adapter
+type = forbidden
+source_modules =
+    paaf_llm_provider_violation
+forbidden_modules =
+    langchain_ollama
+    langchain_anthropic
+    langchain_openai
 
 [importlinter:contract:no-network]
 name = no-network-client-in-framework
