@@ -1,17 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# wheel-independence job (FOUND-02 / SC#2). This is the enforcement point for the
-# "a stranger can `pip install paaf-llm`" promise Phase 5 depends on:
-#   * It builds the paaf-llm wheel, installs it into a FRESH venv with no workspace
-#     present, and runs the wheel's smoke tests via `pytest --pyargs paaf_llm`.
+# wheel-independence job (FOUND-02 / SC#1 / SC#2). This is the enforcement point
+# for the "a stranger can `pip install paaf-llm`" promise Phase 5 depends on:
+#   * It builds the paaf-llm wheel together with its DECLARED workspace deps
+#     (paaf-core, paaf-trace — neither exists on PyPI), installs all three into a
+#     FRESH venv with no workspace present, and runs the wheel's smoke tests via
+#     `pytest --pyargs paaf_llm`.
+#   * It installs WITHOUT the `[engine]` extra, so LangChain is absent — that is
+#     the SC#1 proof that the shipped wheel runs framework-uninstalled.
 #   * Its load-bearing negative control asserts that `import paaf_voice` and
-#     `import paaf_core` both raise ModuleNotFoundError in that clean venv.
+#     `import langchain` both raise ModuleNotFoundError in that clean venv.
 #
-# WARNING SIGN (RESEARCH Pitfall 2): this job MUST turn RED the instant a hidden
-# coupling is introduced — e.g. if someone adds `import paaf_voice` to paaf_llm or
-# declares paaf-voice/paaf-core as a paaf-llm dependency. If you can add such a
-# coupling and this job still passes, the clean venv is not clean (editable install
-# or PYTHONPATH/cwd leak) and the guard is vacuous.
+# Phase 3 note: `paaf_core` used to be in that negative-control set. It no longer
+# is, because paaf-llm now legitimately depends on paaf-core and paaf-trace
+# (ModelProfile reuses paaf-core's ReloadTier and Endpoint). Their presence is
+# correct, and the script asserts it as a POSITIVE control instead — otherwise the
+# negative control could pass simply because nothing got installed at all.
+#
+# WARNING SIGN (RESEARCH Pitfall 2 / 4): this job MUST turn RED the instant a
+# hidden coupling is introduced — e.g. if someone adds `import paaf_voice` to
+# paaf_llm, or moves langchain out of the `[engine]` extra into the base
+# dependencies, or imports `paaf_llm._engine` eagerly from `paaf_llm/__init__.py`.
+# If you can add such a coupling and this job still passes, the clean venv is not
+# clean (editable install or PYTHONPATH/cwd leak) and the guard is vacuous.
 #
 # Kept as a SEPARATE workflow file (not ci.yml) so wave-2 plans do not contend on
 # one file.
@@ -38,7 +49,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build the paaf-llm wheel, install it into a clean venv, prove independence
-        # Builds the wheel, installs ONLY it into an off-repo venv, imports it via
-        # `pytest --pyargs paaf_llm`, and asserts paaf_voice/paaf_core are absent.
+      - name: Build the paaf-llm wheel, install it framework-free, prove independence
+        # Builds paaf-llm + its declared workspace deps (paaf-core, paaf-trace),
+        # installs them into an off-repo venv WITHOUT the [engine] extra, runs the
+        # smoke suite via `pytest --pyargs paaf_llm`, and asserts paaf_voice and
+        # langchain are both absent while the declared deps are present.
         run: bash scripts/check_wheel_independence.sh
