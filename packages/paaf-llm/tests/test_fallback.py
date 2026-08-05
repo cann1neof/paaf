@@ -21,6 +21,7 @@ in this file.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -34,9 +35,11 @@ from paaf_llm.ports import (
     AdapterError,
     ConnectionFailed,
     FallbackReason,
+    Message,
     RateLimited,
     RequestTimedOut,
     ServerError,
+    Usage,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
 from paaf_trace.store import TraceStore
@@ -211,3 +214,120 @@ def test_adapter_error_subclasses_are_all_exercised() -> None:
     """Control: every AdapterError subclass appears as a programmed trigger."""
     triggered = {t for t, _r in TRIGGERS if isinstance(t, type)}
     assert triggered == set(AdapterError.__subclasses__())
+
+
+# ------------------------------------------------------ the triggers (MODEL-) --
+
+
+async def test_fallback_connection(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """MODEL-03: an unreachable active profile moves the CONVERSATION, not just
+    the turn — the next turn still sees what was said before the hop."""
+    config = degrade_local(fake_adapter, make_profile, ConnectionFailed)
+    agent = Agent.build(config, fake_adapter)
+
+    first = await agent.turn("are you there?")
+
+    assert first.text == "from-cloud"
+    assert first.served_by == "cloud"
+    assert first.fallback_trail == [("local", "cloud", "connection")]
+
+    second = await agent.turn("still there?")
+
+    assert second.served_by == "cloud"
+    sent = fake_adapter.calls[-1][1]
+    assert Message("user", "are you there?") in sent
+    assert Message("assistant", "from-cloud") in sent
+    # The chain restarts from the user's ACTIVE profile every turn: a fallback
+    # is not sticky, so a provider that comes back is used again immediately.
+    assert [key for key, _msgs in fake_adapter.calls] == [
+        "local",
+        "cloud",
+        "local",
+        "cloud",
+    ]
+
+
+@pytest.mark.parametrize(("trigger", "reason"), TRIGGERS, ids=[r for _t, r in TRIGGERS])
+async def test_fallback_degraded(
+    fake_adapter: FakeAdapter,
+    make_profile: Callable[..., ModelProfile],
+    trigger: Any,
+    reason: str,
+) -> None:
+    """MODEL-04: timeout, 5xx, 429 and a missed first-token budget all hop."""
+    config = degrade_local(fake_adapter, make_profile, trigger)
+
+    result = await Agent.build(config, fake_adapter).turn("hi")
+
+    assert result.text == "from-cloud"
+    assert result.served_by == "cloud"
+    assert result.fallback_trail == [("local", "cloud", reason)]
+
+
+# ------------------------------------------------------------ the controls --
+
+
+async def test_healthy_no_fallback(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """NEGATIVE CONTROL: a healthy active profile serves, and nothing hops.
+
+    An engine that fell back unconditionally would satisfy every positive test
+    above. This is the one that stops it — and it also proves the fallback
+    profile is never even *contacted* when it is not needed.
+    """
+    config = chain_config(make_profile)
+    fake_adapter.program("local", tokens=["mine"])
+    fake_adapter.program("cloud", tokens=["not-", "mine"])
+
+    result = await Agent.build(config, fake_adapter).turn("hi")
+
+    assert result.text == "mine"
+    assert result.served_by == "local"
+    assert result.fallback_trail == []
+    assert [key for key, _msgs in fake_adapter.calls] == ["local"]
+
+
+class _SlowLaterTokensAdapter:
+    """Answers instantly, then pauses mid-reply for longer than the budget.
+
+    Not the shipped fake, because the fake only models a slow FIRST token —
+    and the point here is the opposite case. No socket is involved: the pause
+    is an ``asyncio.sleep``.
+    """
+
+    def __init__(self, gap_s: float) -> None:
+        self._gap = gap_s
+
+    async def stream(self, profile: Any, messages: Any) -> Any:
+        yield "first"
+        await asyncio.sleep(self._gap)
+        yield "-then-slow"
+
+    def last_usage(self) -> Usage:
+        return Usage(prompt_tokens=1, completion_tokens=2)
+
+
+async def test_no_mid_stream_fallback(
+    make_profile: Callable[..., ModelProfile],
+) -> None:
+    """NEGATIVE CONTROL (D-04): the deadline is time-to-FIRST-token only.
+
+    Once a token flows, the profile has committed and the rest of the reply is
+    never interrupted. An engine that wrapped the whole stream in the deadline
+    would abort this long-but-healthy answer — and would look correct in every
+    other test in this file, because the fake cannot be slow after its first
+    token.
+    """
+    config = LlmConfig(
+        active_profile="local",
+        profiles={"local": make_profile("local", first_token_budget_s=BUDGET_S)},
+    )
+
+    result = await Agent.build(config, _SlowLaterTokensAdapter(BUDGET_S * 5)).turn("hi")
+
+    assert result.text == "first-then-slow"
+    assert result.served_by == "local"
+    assert result.fallback_trail == []
