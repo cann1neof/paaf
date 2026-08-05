@@ -190,6 +190,12 @@ None — no external service configuration required. The DDL is applied automati
 - **Note for the consumer:** `fallback_trail` is JSON *text*, not a parsed structure — readers must `json.loads` it. Serialization is the writer's responsibility; the store deliberately stays schema-first raw SQL.
 - **No blockers.**
 
+## Self-Check: PASSED
+
+- All four claimed files exist on disk (`03-02-SUMMARY.md`, `test_trace_fallback_schema.py`, `schema.sql`, `store.py`).
+- All four claimed commits exist in git history (`33528ea`, `504a838`, `909175c`, `c411bc6`).
+- Working tree clean — nothing uncommitted.
+
 ---
 *Phase: 03-paaf-llm-core*
 *Completed: 2026-08-05*
