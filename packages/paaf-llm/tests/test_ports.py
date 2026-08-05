@@ -22,9 +22,8 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-import pytest
-
 import paaf_llm
+import pytest
 from paaf_llm import ports
 
 
@@ -118,7 +117,7 @@ def test_ports_source_imports_no_agent_framework() -> None:
 
 
 def test_public_surface_re_exports_paaf_types() -> None:
-    from paaf_llm import (  # noqa: PLC0415
+    from paaf_llm import (
         AdapterError,
         AllProvidersFailed,
         ChatAdapter,
