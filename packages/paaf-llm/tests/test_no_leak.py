@@ -158,10 +158,35 @@ def _framework_modules(modules: Mapping[str, Any]) -> set[str]:
     return {name for name in modules if name.startswith(_FRAMEWORK_PREFIXES)}
 
 
+def _framework_modules_after_a_clean_import() -> set[str]:
+    """Return the framework modules a FRESH interpreter loads for ``import paaf_llm``.
+
+    Measured in a child process rather than over this process's ``sys.modules``.
+    The process-wide reading answers "has anything in this pytest session imported
+    the framework?", which is a different question from "does importing
+    ``paaf_llm`` import the framework?" — and it turns red as soon as any sibling
+    legitimately imports it, which ``test_engine_adapter.py`` must do to test the
+    real adapter at all. The child process is immune to test ordering and answers
+    the question this module actually asks.
+
+    The child reports its WHOLE module list and the filtering happens here, on
+    purpose: ``_framework_modules`` stays the one detector, so the negative
+    control that proves it bites still guards the assertion below.
+    """
+    probe = "import sys, paaf_llm; print('\\n'.join(sys.modules))"
+    result = subprocess.run(
+        [sys.executable, "-c", probe], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    loaded = dict.fromkeys(result.stdout.split())
+    assert "paaf_llm" in loaded, "the probe did not import the package at all"
+    return _framework_modules(loaded)
+
+
 def test_import_paaf_llm_needs_no_framework() -> None:
     """``import paaf_llm`` must not drag in the agent framework (Pitfall 4)."""
     assert paaf_llm.FakeAdapter is not None  # the surface is fully importable
-    assert _framework_modules(sys.modules) == set()
+    assert _framework_modules_after_a_clean_import() == set()
 
 
 def test_framework_module_detector_is_not_vacuous() -> None:
