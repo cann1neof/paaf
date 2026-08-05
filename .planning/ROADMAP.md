@@ -130,7 +130,7 @@ Plans:
   4. Each model profile declares, in YAML, a natural-language capability manifest and the peer agents it may hand off to; the schema validates them and `paaf chat` surfaces them, but no handoff behavior exists yet — the graph is inert data this phase, and Phase 4 makes it live.
   5. One command prints the final composed prompt verbatim — base prompt, skill fragments, runtime context — exactly as sent to the model, and it contains nothing the user did not write.
 
-**Plans**: 5/9 plans executed
+**Plans**: 6/9 plans executed
 Plans:
 **Wave 1**
 
@@ -145,7 +145,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 03-06-PLAN.md — Agent engine: ordered fallback + first-token deadline + history + trace draining (MODEL-03/04/08)
+- [x] 03-06-PLAN.md — Agent engine: ordered fallback + first-token deadline + history + trace draining (MODEL-03/04/08)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -339,7 +339,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
-| 3. paaf-llm Core (single agent) | 5/9 | In Progress|  |
+| 3. paaf-llm Core (single agent) | 6/9 | In Progress|  |
 | 4. Agent Mesh | 0/TBD | Not started | - |
 | 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
