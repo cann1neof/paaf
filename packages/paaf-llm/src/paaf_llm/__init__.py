@@ -20,6 +20,7 @@ Two rules govern what may appear here:
 
 from __future__ import annotations
 
+from .fake import FakeAdapter
 from .ports import (
     AdapterError,
     AllProvidersFailed,
@@ -43,6 +44,7 @@ __all__ = [
     "AllProvidersFailed",
     "ChatAdapter",
     "ConnectionFailed",
+    "FakeAdapter",
     "FallbackReason",
     "LlmConfig",
     "Message",

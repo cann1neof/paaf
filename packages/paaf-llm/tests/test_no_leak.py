@@ -179,7 +179,7 @@ def test_import_paaf_llm_needs_no_framework_in_a_pristine_interpreter() -> None:
         "assert not leaked, leaked; "
         "assert paaf_llm.FakeAdapter and paaf_llm.ModelProfile"
     )
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-c", probe],
         check=False,
         capture_output=True,
