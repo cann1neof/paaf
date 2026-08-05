@@ -17,6 +17,33 @@ dependencies = [
     "rich>=15",
 ]
 
+# MODEL-01/02/08: the agent framework, and the ONLY place it appears. Installing
+# this extra is what turns `paaf_llm._engine.LangChainAdapter` from an import
+# error into a working binding for real Ollama / OpenAI-compatible / Anthropic
+# profiles. NOT installing it must leave the entire fake-adapter suite green with
+# `import langchain` raising ModuleNotFoundError — that is SC#1, and the
+# clean-venv wheel job asserts it.
+#
+# Versions are pinned EXACTLY, not to a compatible range (threat T-03-SC, supply
+# chain). The LangChain family is pre-approved by the phase's Package Legitimacy
+# Audit — real repos, MIT, selected via a Phase-1 spike — so no human-verify gate
+# applies, but the audit's other half does: an unpinned `~=` range would let a
+# future release enter a build nobody reviewed. Pins verified against the PyPI
+# JSON API on 2026-08-05.
+#
+# `langchain-anthropic` is held at the newest 1.4.x rather than the 1.5.4 that
+# published hours before this pin was chosen: same-day releases are exactly the
+# window a compromised publish is undetected in, and 1.4.x is the range the
+# phase's research recommended. Bumping it is a deliberate, reviewable edit.
+[project.optional-dependencies]
+engine = [
+    "langchain==1.3.14",
+    "langgraph==1.2.10",
+    "langchain-ollama==1.1.0",
+    "langchain-anthropic==1.4.8",
+    "langchain-openai==1.4.1",
+]
+
 [tool.uv.sources]
 paaf-core = { workspace = true }
 paaf-trace = { workspace = true }

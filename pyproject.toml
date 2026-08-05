@@ -24,7 +24,17 @@ members = ["packages/*"]
 # and is still blocked.
 # --import-mode=importlib lets identically-named test modules (test_smoke.py) coexist
 # across packages without __init__.py files or basename collisions.
-addopts = "--disable-socket --allow-unix-socket --import-mode=importlib"
+# -p no:langsmith_plugin refuses LangSmith's auto-registered pytest plugin. `langsmith`
+# arrives transitively with the optional `paaf-llm[engine]` extra, and its plugin is
+# loaded by pytest BEFORE any test runs — dragging httpx + requests + urllib3 into
+# sys.modules of every test process. That is (a) the LangSmith cloud machinery this
+# project explicitly refuses to carry, loaded without anyone asking for it, and (b) a
+# false red for paaf-trace's TRACE-05 no-egress control, which reads sys.modules to
+# prove no phone-home client is present. Blocking the plugin fixes the cause; making
+# that control tolerate an HTTP client instead would have weakened a privacy guard to
+# accommodate telemetry. A no-op when the extra is not installed (`-p no:` on an absent
+# plugin name is ignored), so the framework-uninstalled suite is unaffected.
+addopts = "--disable-socket --allow-unix-socket --import-mode=importlib -p no:langsmith_plugin"
 testpaths = ["packages"]
 asyncio_mode = "auto"
 
