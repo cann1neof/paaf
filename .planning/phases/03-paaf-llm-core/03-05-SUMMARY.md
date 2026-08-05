@@ -309,6 +309,26 @@ None — no external service configuration required.
 - **`packages/paaf-llm/tests/conftest.py` is now the shared fixture home** for the package. Sibling plans should extend it rather than defining local `FakeAdapter` factories, so the profile-naming convention stays in one place.
 - **For the orchestrator:** `REQUIREMENTS.md` was intentionally left untouched. This plan completes MODEL-08 (recorded in `requirements-completed`), but the orchestrator owns that write. `deferred-items.md` also left untouched — its single entry is now resolved (see "Deferred Item Resolved").
 
+## Self-Check: PASSED
+
+All claimed artifacts verified present on disk and all claimed commits verified in git log.
+
+| Claim | Result |
+|-------|--------|
+| `packages/paaf-llm/src/paaf_llm/ports.py` | FOUND |
+| `packages/paaf-llm/src/paaf_llm/fake/__init__.py` | FOUND |
+| `packages/paaf-llm/src/paaf_llm/__init__.py` | FOUND |
+| `packages/paaf-llm/tests/conftest.py` | FOUND |
+| `packages/paaf-llm/tests/test_ports.py` | FOUND |
+| `packages/paaf-llm/tests/test_fake_adapter.py` | FOUND |
+| `packages/paaf-llm/tests/test_no_leak.py` | FOUND |
+| `packages/paaf-llm/tests/test_wheel_smoke.py` | FOUND |
+| `scripts/check_wheel_independence.sh` | FOUND |
+| `.github/workflows/wheel-independence.yml` | FOUND |
+| `conftest.py` | FOUND |
+| `.planning/phases/03-paaf-llm-core/03-05-SUMMARY.md` | FOUND |
+| Commits `a04aa47`, `4d1357b`, `2f078d4`, `9d8d43f`, `2b4463a`, `9e6b080` | ALL FOUND |
+
 ---
 *Phase: 03-paaf-llm-core*
 *Completed: 2026-08-05*
