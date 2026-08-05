@@ -13,7 +13,13 @@ CREATE TABLE IF NOT EXISTS runs (
     ended_at            REAL,      -- run end timestamp
     prompt_tokens       INTEGER,   -- token count: prompt side (TRACE-02)
     completion_tokens   INTEGER,   -- token count: completion side (TRACE-02)
-    time_to_first_audio REAL       -- TTFA in seconds — first-class metric (TRACE-03)
+    time_to_first_audio REAL,      -- TTFA in seconds — first-class metric (TRACE-03)
+    -- Fallback provenance (MODEL-04, D-06, SC#4). Denormalized onto runs rather than a
+    -- child fallbacks table: the fire-and-forget writer never surfaces lastrowid, so an
+    -- FK child would force a writer redesign (RESEARCH Pitfall 5). Both are additive and
+    -- nullable — a run that never fell back simply leaves them NULL.
+    served_by           TEXT,      -- profile name that ACTUALLY served the run (SC#4)
+    fallback_trail      TEXT       -- JSON list of fallback hops: [{from,to,reason}]
 );
 
 CREATE TABLE IF NOT EXISTS tool_calls (
