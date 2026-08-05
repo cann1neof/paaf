@@ -10,12 +10,16 @@ proves it bites on a deliberate ``import httpx``):
     network call would raise ``SocketBlockedError`` and fail this test. (aiosqlite uses
     threads + local files, no sockets; the only permitted socket is asyncio's local
     AF_UNIX self-pipe via ``--allow-unix-socket``, which cannot leave the device.)
-  * After importing ``paaf_trace`` no outbound HTTP client module is present in
-    ``sys.modules`` — the import graph carries no phone-home client.
+  * After importing ``paaf_trace`` in a PRISTINE interpreter, no outbound HTTP
+    client module is present in ``sys.modules`` — the import graph carries no
+    phone-home client. The fresh process matters: read over the running pytest
+    session instead, this would report on whatever every other test happened to
+    import rather than on ``paaf_trace``.
 """
 
 from __future__ import annotations
 
+import subprocess
 import sys
 
 import aiosqlite
@@ -43,10 +47,31 @@ async def test_full_path_runs_with_no_network(tmp_path) -> None:
 
 
 def test_no_http_client_in_import_graph() -> None:
-    """Importing paaf_trace pulls in no outbound HTTP client module (TRACE-05)."""
-    import paaf_trace
-    import paaf_trace.metrics
-    import paaf_trace.store  # noqa: F401
+    """Importing paaf_trace pulls in no outbound HTTP client module (TRACE-05).
 
-    present = [name for name in _HTTP_CLIENTS if name in sys.modules]
+    Measured in a FRESH interpreter, not over this process's ``sys.modules``.
+    Reading the running pytest process answers "has anything in this session
+    imported an HTTP client?", which is a different — and much weaker — question
+    than the one this test's name asks. It also turns red for reasons that have
+    nothing to do with the trace store: installing the optional
+    ``paaf-llm[engine]`` extra brings ``langsmith``, ``openai``, and ``ollama``
+    into the environment, and any test that legitimately imports one of them
+    would fail this assertion while ``paaf_trace`` remained perfectly clean.
+
+    The child process is immune to that. The positive control (``paaf_trace``
+    really was imported) keeps the absence assertion from passing vacuously on a
+    child that failed before it got started.
+    """
+    probe = (
+        "import sys, paaf_trace, paaf_trace.metrics, paaf_trace.store; "
+        "print('\\n'.join(sys.modules))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+    loaded = set(result.stdout.split())
+    assert "paaf_trace.store" in loaded, "the probe did not import the trace store"
+    present = sorted(name for name in _HTTP_CLIENTS if name in loaded)
     assert present == [], f"unexpected HTTP client(s) in import graph: {present}"
