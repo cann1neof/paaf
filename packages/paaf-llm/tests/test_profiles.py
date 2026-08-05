@@ -8,7 +8,7 @@ malformed one raising ``pydantic.ValidationError`` mean anything.
 from __future__ import annotations
 
 import pytest
-from paaf_llm.profiles import ModelProfile
+from paaf_llm.profiles import LlmConfig, ModelProfile
 from pydantic import ValidationError
 
 
@@ -87,3 +87,121 @@ def test_temperature_is_bounded(temperature: float) -> None:
 def test_non_positive_first_token_budget_is_rejected(budget: float) -> None:
     with pytest.raises(ValidationError):
         ModelProfile(provider="ollama", model="m", first_token_budget_s=budget)
+
+
+# --------------------------------------------------------------------------
+# LlmConfig — reference integrity across the whole profile tree
+# --------------------------------------------------------------------------
+
+
+def _valid_config() -> dict:
+    """A healthy two-profile config: the positive control for every rejection."""
+    return {
+        "base_prompt": "You are a household assistant.",
+        "active_profile": "kitchen-local",
+        "fallback_chain": ["study-local", "cloud"],
+        "profiles": {
+            "kitchen-local": {
+                "provider": "ollama",
+                "model": "qwen3.5:9b",
+                "endpoint_host": "192.168.1.10",
+                "endpoint_port": 11434,
+                "capabilities": "Timers, lights, and quick kitchen questions.",
+                "peers": ["study-local"],
+            },
+            "study-local": {
+                "provider": "ollama",
+                "model": "qwen3.5:32b",
+                "endpoint_host": "192.168.1.11",
+                "endpoint_port": 11434,
+                "capabilities": "Longer reasoning and writing.",
+                "peers": ["kitchen-local"],
+                "constraints": ["Never answer about the household calendar."],
+            },
+            "cloud": {
+                "provider": "anthropic",
+                "model": "claude-opus-5",
+                "api_key_ref": "anthropic_api_key",
+            },
+        },
+    }
+
+
+def test_valid_config_loads() -> None:
+    # POSITIVE CONTROL. Without this, every rejection test below could pass for
+    # the wrong reason (a typo in the fixture rather than the validator biting).
+    cfg = LlmConfig.model_validate(_valid_config())
+    assert cfg.active_profile == "kitchen-local"
+    assert cfg.base_prompt.startswith("You are")
+    assert cfg.fallback_chain == ["study-local", "cloud"]
+    assert set(cfg.profiles) == {"kitchen-local", "study-local", "cloud"}
+    assert cfg.profiles["study-local"].peers == ["kitchen-local"]
+
+
+def test_fallback_chain_and_peers_are_separate_fields() -> None:
+    # RESEARCH Open Question 1: resilience (fallback_chain, on LlmConfig) and
+    # handoff (peers, on each ModelProfile) have different semantics. Phase 4
+    # reads only `peers`. Collapsing them would silently conflate the two.
+    assert "fallback_chain" in LlmConfig.model_fields
+    assert "fallback_chain" not in ModelProfile.model_fields
+    assert "peers" in ModelProfile.model_fields
+    assert "peers" not in LlmConfig.model_fields
+
+
+def test_peer_validation() -> None:
+    # MODEL-05 / D-07: the peer graph is inert this phase, but it must still be
+    # INTEGRAL — Phase 4 traverses it, so a dangling edge is rejected at load.
+    undeclared_peer = _valid_config()
+    undeclared_peer["profiles"]["kitchen-local"]["peers"] = ["ghost"]
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(undeclared_peer)
+
+    self_peer = _valid_config()
+    self_peer["profiles"]["kitchen-local"]["peers"] = ["kitchen-local"]
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(self_peer)
+
+    undeclared_fallback = _valid_config()
+    undeclared_fallback["fallback_chain"] = ["ghost"]
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(undeclared_fallback)
+
+    undeclared_active = _valid_config()
+    undeclared_active["active_profile"] = "ghost"
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(undeclared_active)
+
+
+def test_two_lan_profiles() -> None:
+    # MODEL-06: two Ollama servers on the same LAN are two DISTINCT profiles,
+    # keyed by name, each classifying LAN through its own declared endpoint.
+    cfg = LlmConfig.model_validate(_valid_config())
+    kitchen = cfg.profiles["kitchen-local"]
+    study = cfg.profiles["study-local"]
+
+    assert kitchen is not study
+    assert kitchen.provider == study.provider == "ollama"
+    assert kitchen.endpoint() != study.endpoint()
+    assert kitchen.endpoint().host == "192.168.1.10"
+    assert study.endpoint().host == "192.168.1.11"
+    assert kitchen.endpoint().is_lan()
+    assert study.endpoint().is_lan()
+
+    # The cloud profile in the same tree declares no endpoint — it is visible to
+    # the registry as "no PAAF-declared endpoint", not hidden (T-03-03).
+    assert cfg.profiles["cloud"].endpoint() is None
+
+
+def test_empty_fallback_chain_is_allowed() -> None:
+    # A user who wants no fallback at all is not forced to declare one.
+    minimal = _valid_config()
+    minimal["fallback_chain"] = []
+    assert LlmConfig.model_validate(minimal).fallback_chain == []
+
+
+def test_unknown_config_key_is_rejected() -> None:
+    # NEGATIVE CONTROL (T-03-02): extra="forbid" on the root too.
+    bad = _valid_config()
+    bad["routing_rules"] = {"if": "hebrew", "then": "cloud"}
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(bad)
