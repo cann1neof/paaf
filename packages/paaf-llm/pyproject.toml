@@ -2,11 +2,29 @@
 [project]
 name = "paaf-llm"
 version = "0.1.0"
-description = "PAAF LLM management (stub in Phase 2). Deliberately carries NO voice/core/audio deps."
+description = "PAAF LLM management: model profiles, prompt composition, and the agent turn loop."
 requires-python = ">=3.12"
-# FOUND-02: paaf-llm must be pip-installable with no voice/core/audio deps. This list
-# stays empty in Phase 2 so the Plan 03 clean-venv wheel job proves independence.
-dependencies = []
+# FOUND-02 / MODEL-08: paaf-llm carries NO voice or audio deps, and NO agent
+# framework. These are the base deps only — langchain lives behind the optional
+# `[engine]` extra so the wheel runs framework-uninstalled (SC#1) and the
+# clean-venv wheel job keeps proving independence from paaf-voice.
+dependencies = [
+    "paaf-core",
+    "paaf-trace",
+    "pydantic>=2.13",
+    "pyyaml>=6.0.3",
+    "click>=8.4",
+    "rich>=15",
+]
+
+[tool.uv.sources]
+paaf-core = { workspace = true }
+paaf-trace = { workspace = true }
+
+# The `paaf` CLI (D-01/D-02). Declared now; `paaf_llm.cli` lands later in this
+# phase — console-script entry points resolve lazily at invocation, not install.
+[project.scripts]
+paaf = "paaf_llm.cli:main"
 
 [build-system]
 requires = ["hatchling"]
