@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# engine-adapter job (MODEL-02 / MODEL-04). The complement of
+# `framework-uninstalled`: that job proves the fake suite runs with the agent
+# framework ABSENT, this one proves the real adapter runs with it PRESENT. Both
+# are required and neither substitutes for the other.
+#
+# WHY THIS JOB HAD TO EXIST (threat T-03-23, repudiation)
+# `packages/paaf-llm/tests/test_engine_adapter.py` opens with
+# `pytest.importorskip("langchain")`, and ci.yml runs `uv sync --all-packages`,
+# which installs NO extras. So until this file existed, all 26 adapter tests
+# SKIPPED in CI and pytest exited 0 — a green check mark over an untested seam.
+# That seam is not incidental: it is where every provider failure is translated
+# into the PAAF exception the fallback loop classifies by reading `.reason`
+# (5xx -> ServerError, 429 -> RateLimited, connection -> ConnectionFailed,
+# timeout -> RequestTimedOut). If that translation regresses, MODEL-02/04's
+# fallback behavior over REAL providers is wrong while every fake-backed test
+# stays green, because the fake raises the PAAF errors directly and never
+# exercises the translation at all.
+#
+# THE ANTI-SKIP STEP IS NOT REDUNDANT. A job that installs the extra and runs an
+# importorskip'd module is still green if the install silently no-ops — it just
+# skips again, which is the exact failure mode this job was added to end. So the
+# framework is asserted importable in its own step first: with langchain present,
+# importorskip CANNOT skip, and the 26 tests must execute or fail.
+#
+# Runs from the SOURCE tree, deliberately not via `--pyargs paaf_llm`:
+# test_engine_adapter.py is the one paaf-llm test that is NOT force-included into
+# the wheel (it would only ever skip in the framework-free venv that the
+# framework-uninstalled job builds), so the installed package does not contain
+# it. Source tree here, shipped wheel there.
+#
+# Still offline: the adapter tests monkeypatch the framework call and open no
+# socket. `--disable-socket` is inherited from the root pyproject's `addopts`
+# (verified: pytest reports `configfile: pyproject.toml` for this invocation), so
+# a test that tried to reach a real provider would fail rather than quietly bill
+# someone's API key.
+#
+# `-p no:langsmith_plugin` is also in those inherited addopts, and it matters
+# here more than anywhere: `langsmith` arrives transitively with `langchain`, and
+# its auto-registered pytest plugin loads httpx + requests + urllib3 into every
+# test process before any test runs. This is the ONLY CI job that installs the
+# extra, so it is the only job where that plugin would otherwise load. It is
+# passed explicitly below as well — inheritance depends on this job continuing to
+# run from the repo root, and "no telemetry, no phone-home client" is a founding
+# commitment rather than a preference, so it gets belt and braces.
+#
+# Kept as a SEPARATE workflow file (not ci.yml) so wave plans do not contend on
+# one file.
+name: engine-adapter
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine-adapter:
+    runs-on: ubuntu-latest
+    env:
+      # Pin CPython 3.12 (the Phase-1 baseline; 3.13+ carries wheel-availability
+      # risk across the torch/audio-ML chain, per CLAUDE.md).
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve workspace WITH the agent framework
+        # `--all-packages` is required, not decorative: the workspace root
+        # (`paaf-workspace`) is a virtual package with no optional-dependencies
+        # of its own, so a bare `uv sync --extra engine` exits 2 with
+        # "Extra `engine` is not defined in the optional-dependencies table for
+        # `paaf-workspace`". The extra belongs to the paaf-llm MEMBER, and
+        # `--all-packages` is what puts member extras in scope.
+        run: uv sync --all-packages --extra engine
+
+      - name: Assert the framework really installed (this job must not silently skip)
+        # Closes threat T-03-23. test_engine_adapter.py importorskips langchain,
+        # so if the step above ever stopped installing the extra the suite would
+        # skip and this job would go green having proven nothing. With these
+        # imports succeeding, importorskip cannot skip.
+        run: >
+          uv run python -c "import langchain, langgraph, langchain_ollama,
+          langchain_anthropic, langchain_openai;
+          print('agent framework present:', langchain.__version__)"
+
+      - name: Real-adapter exception translation (MODEL-02 / MODEL-04)
+        # The 26 tests that cover the four transport->AdapterError translations
+        # (5xx->ServerError, 429->RateLimited, connection->ConnectionFailed,
+        # timeout->RequestTimedOut), their validation against 13 real provider
+        # SDK exception instances, the two-LAN base_url distinctness that makes
+        # MODEL-06 mean anything, and the secret-never-in-a-message guards.
+        # PASS here means the seam the fallback loop rides over real providers is
+        # exercised in CI rather than skipped.
+        run: uv run pytest packages/paaf-llm/tests/test_engine_adapter.py -q -p no:langsmith_plugin
+
+      - name: Full suite with the framework installed
+        # Installing the extra changes the process, and that has already broken
+        # things twice: langsmith's pytest plugin dragged an HTTP client into
+        # every test process, and two import-graph guards were reading the
+        # session's sys.modules rather than their own package's. Both went red
+        # only once langchain was present. Running the adapter tests alone would
+        # prove the adapter works while the rest of the suite quietly rotted
+        # under the extra, so the whole suite runs here too.
+        run: uv run pytest --disable-socket -q -p no:langsmith_plugin
