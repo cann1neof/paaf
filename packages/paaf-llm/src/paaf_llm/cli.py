@@ -287,6 +287,41 @@ def chat(config_path: str, show_prompt: bool) -> None:
 
 @main.command()
 @_config_option
+@click.option(
+    "--provenance",
+    is_flag=True,
+    help="Label each part of the prompt with its source (base / skill:<name>).",
+)
+def prompt(config_path: str, provenance: bool) -> None:
+    """Print the exact system prompt your model receives. No model is called.
+
+    A pure dry run: no adapter is constructed and no network is touched, so this
+    is safe to pipe, diff, and paste. The default output is the composed prompt
+    and nothing else — the trailing newline is omitted deliberately so
+    ``paaf prompt --config x.yaml > sent.txt`` captures the exact bytes (PERS-04).
+
+    ``--provenance`` shows the SAME content with source labels (D-03). It is
+    opt-in because the raw view is the authoritative one; annotation is an audit
+    aid laid around the prompt, never a rendering of it.
+    """
+    config = load_llm_config(config_path)
+    # The same fragment source build_agent hands the agent — one call, so the
+    # inspector cannot show a prompt assembled from different parts (D-02).
+    fragments = load_skill_fragments(config)
+    composer = PromptComposer()
+
+    if provenance:
+        for segment in composer.segments(config.base_prompt, fragments):
+            click.echo(PROVENANCE_LABEL.format(source=segment.source))
+            click.echo(segment.text)
+        return
+
+    # No prefix, no suffix, no newline: stdout IS the prompt (PERS-04/05, D-10).
+    click.echo(composer.compose(config.base_prompt, fragments), nl=False)
+
+
+@main.command()
+@_config_option
 def profiles(config_path: str) -> None:
     """Show each profile's capability manifest and peer graph (inert data)."""
     render_profiles(load_llm_config(config_path), _make_console())
