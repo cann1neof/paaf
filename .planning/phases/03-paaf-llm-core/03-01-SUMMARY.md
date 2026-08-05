@@ -242,6 +242,20 @@ None — no external service configuration required.
 - **For the orchestrator:** REQUIREMENTS.md was intentionally left untouched — MODEL-01/05/06 are shared with plans 03-07 and 03-08 and should be marked complete only once those land.
 - **Note for plan 03-09 (wheel job):** `paaf-llm` now depends on `paaf-core` and `paaf-trace`. The existing `test_wheel_smoke.py` negative control only asserts `paaf_voice` is unimportable, so it stays valid — but the clean-venv job will now install two more workspace wheels.
 
+## Self-Check: PASSED
+
+All claimed artifacts verified present on disk and all claimed commits verified in git log.
+
+| Claim | Result |
+|-------|--------|
+| `packages/paaf-llm/src/paaf_llm/profiles.py` | FOUND |
+| `packages/paaf-llm/tests/test_profiles.py` | FOUND |
+| `packages/paaf-core/src/paaf_core/py.typed` | FOUND |
+| `packages/paaf-llm/pyproject.toml` | FOUND |
+| `.planning/phases/03-paaf-llm-core/03-01-SUMMARY.md` | FOUND |
+| `.planning/phases/03-paaf-llm-core/deferred-items.md` | FOUND |
+| Commits `4f4e077`, `3668173`, `32b97bb`, `7b6c323`, `656daeb` | ALL FOUND |
+
 ---
 *Phase: 03-paaf-llm-core*
 *Completed: 2026-08-05*
