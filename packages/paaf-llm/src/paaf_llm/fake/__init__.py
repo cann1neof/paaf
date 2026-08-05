@@ -1,0 +1,171 @@
+# SPDX-License-Identifier: Apache-2.0
+"""The shipped fake chat adapter — the substrate the whole suite runs on (SC#1).
+
+This package **ships in the wheel** and **MUST run with the agent framework
+uninstalled**. That is not a convenience; it is the proof that
+:class:`~paaf_llm.ports.ChatAdapter` is a port rather than a mirror of whatever
+framework happens to be underneath. ``pip install paaf-llm`` (no ``[engine]``
+extra, so no LangChain anywhere) has to import this module and run the entire
+fallback / composition / trace suite green. Consequently **no framework import
+may ever appear under this package** — asserted by
+``tests/test_fake_adapter.py`` against this file's source and by import-linter
+against the import graph.
+
+It is driven entirely by an **injected script**, never by wall-clock luck or a
+live provider: :meth:`FakeAdapter.program` records, per profile, the tokens to
+emit, an optional degraded failure to raise, an optional first-token delay, and
+the usage to report. Every fallback test in this phase is a different program.
+
+**The one thing this fake deliberately does NOT do** is decide that a first token
+was too slow. ``first_token_delay_s`` makes the fake *slow*; classifying that as
+:attr:`~paaf_llm.ports.FallbackReason.SLOW_FIRST_TOKEN` is the engine's job,
+because the budget belongs to the user (``ModelProfile.first_token_budget_s``,
+D-04/D-05). A fake that raised the reason itself would let a broken engine —
+one with no deadline at all — pass the very test written to catch it.
+
+**Profile addressing.** :class:`~paaf_llm.profiles.ModelProfile` carries no
+``name`` field: a profile's name is the key it sits under in
+``LlmConfig.profiles``, so it does not travel with the profile across the port.
+Programs are therefore keyed by :attr:`PROFILE_KEY_FIELD` (``model``), which the
+test fixtures set equal to the profile's name. A profile object that does happen
+to expose ``.name`` — a future schema, or a caller's own type — is honored first.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from ..ports import AdapterError, Message, Usage
+
+if TYPE_CHECKING:
+    from ..profiles import ModelProfile
+
+#: The ``ModelProfile`` field a program is keyed by. See the module docstring:
+#: the profile's *name* lives in the ``LlmConfig.profiles`` dict key and does not
+#: cross the port, so the fake addresses profiles by this field instead.
+PROFILE_KEY_FIELD = "model"
+
+#: Reported by :meth:`FakeAdapter.last_usage` when a program named no usage.
+#: Concrete counts on purpose: a default of ``Usage()`` (both ``None``) would let
+#: an aggregated-usage test pass against an engine that never read usage at all.
+DEFAULT_USAGE = Usage(prompt_tokens=7, completion_tokens=3)
+
+
+@dataclass(slots=True)
+class _Program:
+    """One profile's scripted behavior for a single :meth:`FakeAdapter.stream`."""
+
+    tokens: list[str] = field(default_factory=list)
+    fail: type[AdapterError] | None = None
+    first_token_delay_s: float = 0.0
+    usage: Usage = DEFAULT_USAGE
+
+
+class FakeAdapter:
+    """A deterministic :class:`~paaf_llm.ports.ChatAdapter` driven by a script.
+
+    Program a profile, then stream it::
+
+        adapter.program("local", tokens=["hel", "lo"])
+        adapter.program("cloud", fail=ServerError)
+
+    Un-programmed profiles raise :class:`LookupError` rather than streaming
+    nothing. That is deliberate: an empty stream is indistinguishable from a
+    working provider that had nothing to say, so a forgotten ``program()`` call
+    would silently weaken whatever test forgot it. ``LookupError`` is pointedly
+    NOT an :class:`~paaf_llm.ports.AdapterError`, so a fallback loop cannot
+    swallow the mistake as one more plausible-looking hop.
+    """
+
+    def __init__(self) -> None:
+        self._programs: dict[str, _Program] = {}
+        self._last_usage: Usage = DEFAULT_USAGE
+        #: Every ``(profile_key, messages)`` this adapter was asked to stream, in
+        #: order — the substrate for multi-turn history and composed-prompt
+        #: assertions (a test can prove what actually crossed the port).
+        self.calls: list[tuple[str, tuple[Message, ...]]] = []
+
+    def program(
+        self,
+        profile_name: str,
+        *,
+        tokens: list[str] | None = None,
+        fail: type[AdapterError] | None = None,
+        first_token_delay_s: float = 0.0,
+        usage: Usage | None = None,
+    ) -> None:
+        """Script what ``profile_name`` does on its next (and every) stream.
+
+        Args:
+            profile_name: the profile this script answers for.
+            tokens: the reply tokens to emit, in order.
+            fail: an :class:`~paaf_llm.ports.AdapterError` subclass to raise on
+                the first token instead of streaming — one of the four degraded
+                triggers the fallback loop must classify.
+            first_token_delay_s: seconds to wait before the FIRST token. The
+                engine's deadline decides whether that is too slow; this adapter
+                never does (D-04/D-05).
+            usage: what :meth:`last_usage` reports once the stream is aggregated.
+        """
+        self._programs[profile_name] = _Program(
+            tokens=list(tokens or []),
+            fail=fail,
+            first_token_delay_s=first_token_delay_s,
+            usage=usage if usage is not None else DEFAULT_USAGE,
+        )
+
+    async def stream(
+        self, profile: ModelProfile, messages: Sequence[Message]
+    ) -> AsyncIterator[str]:
+        """Emit ``profile``'s scripted tokens, or raise its scripted failure.
+
+        Raises:
+            AdapterError: the subclass the program named, on the first token.
+            LookupError: when ``profile`` was never programmed.
+        """
+        key = self.program_key(profile)
+        self.calls.append((key, tuple(messages)))
+
+        program = self._programs.get(key)
+        if program is None:
+            raise LookupError(
+                f"FakeAdapter has no program for profile {key!r}; "
+                f"call program({key!r}, ...) before streaming it. "
+                f"Programmed profiles: {sorted(self._programs)}"
+            )
+
+        if program.fail is not None:
+            raise program.fail(f"programmed {program.fail.__name__} for {key!r}")
+
+        if program.first_token_delay_s:
+            # Slow, not classified: the engine's asyncio.timeout cancels this
+            # sleep and records SLOW_FIRST_TOKEN itself (D-04/D-05).
+            await asyncio.sleep(program.first_token_delay_s)
+
+        for token in program.tokens:
+            yield token
+
+        # Usage is published only after the whole stream drained — several real
+        # providers report it on the final message only (SPIKE-05), so reading it
+        # mid-stream would be an anti-pattern this fake must not reward.
+        self._last_usage = program.usage
+
+    def last_usage(self) -> Usage:
+        """Return the usage published by the most recently aggregated stream."""
+        return self._last_usage
+
+    @staticmethod
+    def program_key(profile: ModelProfile) -> str:
+        """Return the key ``profile``'s program is registered under.
+
+        Prefers a ``name`` attribute when the profile type has one, and falls
+        back to :data:`PROFILE_KEY_FIELD`. See the module docstring for why the
+        profile's own name is not available here.
+        """
+        name = getattr(profile, "name", None)
+        if isinstance(name, str) and name:
+            return name
+        return str(getattr(profile, PROFILE_KEY_FIELD))
