@@ -36,7 +36,13 @@ PRAGMAS: tuple[str, ...] = (
 
 @dataclass(slots=True)
 class RunEvent:
-    """A completed (or in-progress) run row: prompts, model, timings, tokens, TTFA."""
+    """A completed (or in-progress) run row: prompts, model, timings, tokens, TTFA.
+
+    Also carries fallback provenance (MODEL-04, D-06, SC#4): ``served_by`` names the
+    profile that ACTUALLY served the run, and ``fallback_trail`` is the JSON list of
+    hops that preceded it. Both are appended LAST and default to ``None``, so existing
+    positional construction and no-fallback runs are unaffected (backward compatible).
+    """
 
     id: int | None = None
     prompts: str | None = None
@@ -46,14 +52,17 @@ class RunEvent:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     time_to_first_audio: float | None = None
+    served_by: str | None = None
+    fallback_trail: str | None = None
 
     def as_sql(self) -> tuple[str, tuple[object, ...]]:
         return (
             (
                 "INSERT INTO runs "
                 "(id, prompts, model, started_at, ended_at, "
-                "prompt_tokens, completion_tokens, time_to_first_audio) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                "prompt_tokens, completion_tokens, time_to_first_audio, "
+                "served_by, fallback_trail) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             ),
             (
                 self.id,
@@ -64,6 +73,8 @@ class RunEvent:
                 self.prompt_tokens,
                 self.completion_tokens,
                 self.time_to_first_audio,
+                self.served_by,
+                self.fallback_trail,
             ),
         )
 
