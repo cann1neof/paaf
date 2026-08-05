@@ -44,8 +44,12 @@ replied to.
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
+
+from paaf_trace.store import RunEvent
 
 from .compose import PromptComposer
 from .ports import (
@@ -184,12 +188,14 @@ class Agent:
             Message("user", user_text),
         ]
 
+        started_at = time.time()
         served_by, reply, trail = await self._run_chain(messages)
 
         # SPIKE-05: read usage ONCE, after the stream fully aggregated. Several
         # providers publish counts only on the final message, so a per-chunk
         # read reports None almost every time.
         usage: Usage = self._adapter.last_usage()
+        self._drain(system, served_by, trail, usage, started_at, time.time())
 
         self.history.append(Message("user", user_text))
         self.history.append(Message("assistant", reply))
@@ -200,6 +206,47 @@ class Agent:
             usage=usage,
             fallback_trail=trail,
             handoff=None,  # Phase-4 seam, inert here
+        )
+
+    def _drain(
+        self,
+        system: str,
+        served_by: str,
+        trail: list[Hop],
+        usage: Usage,
+        started_at: float,
+        ended_at: float,
+    ) -> None:
+        """Record ONE run: the prompt sent, who served it, and every hop (D-06).
+
+        ``emit`` is synchronous and fire-and-forget by contract — the trace
+        store owns the writer task, and awaiting it here would put disk I/O on
+        the turn's path, which is the exact thing ``paaf-trace`` is shaped to
+        avoid.
+
+        The trail is serialized as JSON because the ``runs`` column is TEXT: the
+        store is a denormalized event log, not an object graph. An empty trail
+        writes ``"[]"`` rather than ``NULL`` — "the active profile served it" is
+        a fact worth recording, not an absence.
+        """
+        if self._trace is None:
+            return
+        self._trace.emit(
+            RunEvent(
+                prompts=system,
+                model=served_by,
+                started_at=started_at,
+                ended_at=ended_at,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                served_by=served_by,
+                fallback_trail=json.dumps(
+                    [
+                        {"from": frm, "to": to, "reason": reason}
+                        for frm, to, reason in trail
+                    ]
+                ),
+            )
         )
 
     async def _run_chain(
