@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Shared fixtures for the paaf-llm suite: the programmable fake and a trace store.
+
+Every fixture here is deliberately framework-free. The whole point of the fake
+adapter (SC#1) is that this suite proves the library correct with the agent
+framework UNINSTALLED, so a fixture that reached for a real provider — or for a
+real network — would quietly dissolve the guarantee the suite exists to make.
+
+**Profile naming convention (load-bearing, read this before writing a test).**
+:class:`~paaf_llm.profiles.ModelProfile` carries no ``name`` field: a profile's
+name is the key it sits under in ``LlmConfig.profiles``, so the name does not
+travel with the profile object across the ``ChatAdapter`` port. The fake
+therefore keys its programs by ``profile.model`` (see
+:mod:`paaf_llm.fake`), and :func:`make_profile` sets ``model`` to the profile's
+name so that ``fake_adapter.program("local", ...)`` drives the profile
+``make_profile("local")`` produces.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Callable, Sequence
+from typing import Any
+
+import pytest
+from paaf_llm.fake import FakeAdapter
+from paaf_llm.profiles import LlmConfig, ModelProfile
+from paaf_trace.store import TraceStore
+
+
+@pytest.fixture
+def fake_adapter() -> FakeAdapter:
+    """A fresh, unprogrammed :class:`FakeAdapter` per test.
+
+    Fresh per test on purpose: a shared adapter would carry one test's scripted
+    program into the next, and a fallback test that passes because of a stale
+    program is worse than no test at all.
+    """
+    return FakeAdapter()
+
+
+@pytest.fixture
+def make_profile() -> Callable[..., ModelProfile]:
+    """Build a minimal valid :class:`ModelProfile` named ``name``.
+
+    ``model`` is set to ``name`` (see the module docstring) so the profile is
+    addressable through :meth:`FakeAdapter.program`. Any field can be overridden
+    — ``make_profile("slow", first_token_budget_s=0.01)`` is the usual shape for
+    a slow-first-token test.
+    """
+
+    def _make(name: str, **overrides: Any) -> ModelProfile:
+        fields: dict[str, Any] = {"provider": "ollama", "model": name}
+        fields.update(overrides)
+        return ModelProfile(**fields)
+
+    return _make
+
+
+@pytest.fixture
+def make_llm_config(
+    make_profile: Callable[..., ModelProfile],
+) -> Callable[..., LlmConfig]:
+    """Build a minimal :class:`LlmConfig` with an active profile and a chain.
+
+    Every name in ``fallbacks`` is declared as a profile too, because
+    ``LlmConfig`` rejects a chain entry that names no declared profile — the
+    fixture cannot hand back a config the schema would refuse.
+    """
+
+    def _make(
+        active: str = "local",
+        fallbacks: Sequence[str] = (),
+        base_prompt: str = "",
+    ) -> LlmConfig:
+        names = [active, *fallbacks]
+        return LlmConfig(
+            base_prompt=base_prompt,
+            active_profile=active,
+            profiles={name: make_profile(name) for name in names},
+            fallback_chain=list(fallbacks),
+        )
+
+    return _make
+
+
+@pytest.fixture
+async def trace_store(tmp_path: Any) -> AsyncIterator[TraceStore]:
+    """A started :class:`TraceStore` over a per-test temp DB, stopped on teardown.
+
+    ``stop()`` is awaited in a ``finally`` so the writer task is drained and the
+    connection closed even when the test body raises — an abandoned writer task
+    would leak into the next test's event loop.
+    """
+    store = TraceStore(str(tmp_path / "trace.db"))
+    await store.start()
+    try:
+        yield store
+    finally:
+        await store.stop()
