@@ -23,6 +23,7 @@ created: 2026-08-05
 | **Quick run command** | `uv run pytest packages/paaf-llm -q` |
 | **Full suite command** | `uv run pytest -q` |
 | **Framework-uninstalled job** | install `paaf-llm` wheel **without** `[engine]`, then `uv run pytest --pyargs paaf_llm` (extends the Phase-2 clean-venv wheel job) |
+| **Engine-adapter job** | install `[engine]` (`uv sync --extra engine`), then `uv run pytest packages/paaf-llm/tests/test_engine_adapter.py` from source — the framework PRESENT, so the `importorskip` guard passes and exception translation (5xx/429/connection/timeout → AdapterError) EXECUTES in CI (MODEL-02/04). Complementary to the framework-uninstalled job. |
 | **Estimated runtime** | ~sub-second (fake-adapter unit suite, no network) |
 
 ---
@@ -31,7 +32,7 @@ created: 2026-08-05
 
 - **After every task commit:** Run `uv run pytest packages/paaf-llm -q` (fake-adapter unit suite; sub-second, no network)
 - **After every plan wave:** Run `uv run pytest -q` (whole workspace)
-- **Before `/gsd-verify-work`:** Full suite green **AND** the framework-uninstalled job green (SC#1 is not satisfied until both pass)
+- **Before `/gsd-verify-work`:** Full suite green **AND** the framework-uninstalled job green (SC#1 is not satisfied until both pass); the engine-adapter job (`[engine]` installed → `test_engine_adapter.py` runs, not skips) additionally green so the real translation seam (MODEL-02/04) is proven
 - **Max feedback latency:** ~5 seconds (quick suite)
 
 ---
@@ -43,6 +44,7 @@ created: 2026-08-05
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | TBD | — | 0 | MODEL-08 / SC#1 | — | Full suite passes with LangChain uninstalled | integration | `pytest --pyargs paaf_llm` (venv without `[engine]`) | ❌ W0 | ⬜ pending |
+| TBD | 03-09 | 6 | MODEL-02 / MODEL-04 | T-03-23 | Real adapter translates 5xx→ServerError, 429→RateLimited, connection→ConnectionFailed, timeout→RequestTimedOut (the fallback-loop seam over real providers) — exercised in CI, not skipped | unit | `pytest packages/paaf-llm/tests/test_engine_adapter.py` (venv **with** `[engine]`) | ❌ W0 | ⬜ pending |
 | TBD | — | 0 | MODEL-08 | — | No framework type in any public signature | unit | `pytest packages/paaf-llm/tests/test_no_leak.py` | ❌ W0 | ⬜ pending |
 | TBD | — | 0 | MODEL-03 | — | Fallback FIRES on connection failure mid-conversation; history carries across | unit | `pytest -k test_fallback_connection` | ❌ W0 | ⬜ pending |
 | TBD | — | 0 | MODEL-04 | — | Fallback FIRES on timeout, 5xx, 429, slow-first-token (4 positive) | unit | `pytest -k "test_fallback_degraded"` | ❌ W0 | ⬜ pending |
@@ -66,6 +68,7 @@ created: 2026-08-05
 - [ ] `packages/paaf-llm/tests/test_prompt.py` — byte-exact + no-hidden-prompt invariants
 - [ ] `packages/paaf-llm/tests/test_profiles.py` — peer/fallback/active cross-ref validation + two-LAN-profiles
 - [ ] CI: framework-uninstalled job (extend `.github/workflows/ci.yml` wheel job to run the full `paaf_llm` suite without `[engine]`)
+- [ ] CI: engine-adapter job (`.github/workflows/engine-adapter.yml`) — install `[engine]`, run `test_engine_adapter.py` from source so exception translation (MODEL-02/04) is exercised WITH the framework present; complementary to and does not replace the framework-uninstalled job
 - [ ] `.importlinter`: add the `_engine` whitelist + the three provider modules (`langchain_ollama`/`_anthropic`/`_openai`) to `forbidden_modules`; a negative-control proving a stray provider import fails CI
 - [ ] `packages/paaf-trace` schema: additive `served_by` + `fallback_trail` columns (or a `fallbacks` table) + a schema test
 

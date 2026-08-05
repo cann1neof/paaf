@@ -491,20 +491,23 @@ This lets the suite prove, offline and deterministically: multi-turn history car
 | A5 | LangChain provider strings `ollama:`/`openai:`/`anthropic:` map 1:1 to profiles with `base_url`/`api_key` kwargs | Pattern 3 | If a provider needs different plumbing (e.g. OpenAI-compatible base_url quirks), the adapter absorbs it — no public API change. `[CITED: CLAUDE.md provider table]` / partially `[ASSUMED]` |
 | A6 | Exact pinned versions of the `[engine]` packages | Standard Stack | Must be re-pinned via `pip index versions` at plan time; CLAUDE.md pins are 2026-07-13, live publishes are newer. `[ASSUMED]` |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Fallback vs. mesh peer-graph — are they the same list?**
    - What we know: `fallback_chain` (resilience, MODEL-03) and `peers` (handoff targets, MODEL-05/Phase-4) are conceptually distinct — fallback is "same request, different provider on failure"; handoff is "different agent, by the awake model's choice."
    - What's unclear: whether the founder wants them modeled as one field or two. CONTEXT treats them separately (D-04 vs D-07).
    - Recommendation: keep them **separate fields** (as in Pattern 4). They have different semantics and Phase 4 only touches `peers`.
+   - **RESOLVED:** Adopted — modeled as separate `fallback_chain` and `peers` fields in the profile schema (plan 03-01).
 
 2. **Does a warm-up/preload step belong in Phase 3 or is it a config-only default?**
    - What we know: warmup is the clean fix for Pitfall 2.
    - What's unclear: whether the founder wants an explicit `agent.warmup()` API now (useful later for VOICE-10's warmup contract) or just a documented `keep_alive` recommendation.
    - Recommendation: add a minimal `warmup()` on the engine now (cheap, reused by Phase 8/VOICE-10), defaulting to preloading `active_profile` + chain.
+   - **RESOLVED:** Adopted — a minimal `warmup()` API is added on the engine (plan 03-06), preloading `active_profile` + chain.
 
 3. **Should the OpenAI-compatible provider be `langchain-openai` with `base_url`, or the generic `openai:` string?**
    - Recommendation: verify at plan time; `langchain-openai` with an arbitrary `base_url` is the documented path for OpenAI-compatible endpoints. Absorbed by the adapter regardless.
+   - **RESOLVED:** Adopted — the real adapter maps `openai_compatible` profiles to the `openai:` provider string with an arbitrary `base_url` (plan 03-08).
 
 ## Environment Availability
 
