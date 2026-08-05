@@ -130,14 +130,14 @@ Plans:
   4. Each model profile declares, in YAML, a natural-language capability manifest and the peer agents it may hand off to; the schema validates them and `paaf chat` surfaces them, but no handoff behavior exists yet — the graph is inert data this phase, and Phase 4 makes it live.
   5. One command prints the final composed prompt verbatim — base prompt, skill fragments, runtime context — exactly as sent to the model, and it contains nothing the user did not write.
 
-**Plans**: 9 plans
+**Plans**: 4/9 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Model profile + mesh-seam schema: named profiles, manifest + peer graph (inert), two-LAN distinctness (MODEL-01/05/06)
-- [ ] 03-02-PLAN.md — Trace fallback-provenance columns: additive served_by + fallback_trail on runs (D-06/SC#4)
-- [ ] 03-03-PLAN.md — Provider import boundary + negcontrol: langchain provider bindings confined to _engine (MODEL-08)
-- [ ] 03-04-PLAN.md — Prompt composer (pure): base + skill fragments, join==compose nothing-hidden invariant (PERS-01/02/05)
+- [x] 03-01-PLAN.md — Model profile + mesh-seam schema: named profiles, manifest + peer graph (inert), two-LAN distinctness (MODEL-01/05/06)
+- [x] 03-02-PLAN.md — Trace fallback-provenance columns: additive served_by + fallback_trail on runs (D-06/SC#4)
+- [x] 03-03-PLAN.md — Provider import boundary + negcontrol: langchain provider bindings confined to _engine (MODEL-08)
+- [x] 03-04-PLAN.md — Prompt composer (pure): base + skill fragments, join==compose nothing-hidden invariant (PERS-01/02/05)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -339,7 +339,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
-| 3. paaf-llm Core (single agent) | 0/9 | Not started | - |
+| 3. paaf-llm Core (single agent) | 4/9 | In Progress|  |
 | 4. Agent Mesh | 0/TBD | Not started | - |
 | 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
