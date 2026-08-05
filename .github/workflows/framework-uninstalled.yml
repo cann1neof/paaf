@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# framework-uninstalled job (MODEL-08 / SC#1). This is the Phase-3 gate, and it
+# exists to make one specific regression impossible to merge:
+#
+#   Phase 3 claims paaf_llm sits behind a PORT — that the agent framework is
+#   swappable because nothing outside paaf_llm._engine knows it exists. Plan
+#   03-08 then added the real LangChain adapter. The only thing standing between
+#   "a port" and "a mirror of whatever framework is installed" is that the
+#   adapter stays LAZY, and laziness is exactly the kind of property that decays
+#   silently: one eager `from ._engine import ...` at the top of a module, or one
+#   `langchain` moved out of the optional [engine] extra into base dependencies,
+#   and the claim is dead with no test anywhere going red.
+#
+# So this job builds the wheel, installs it into a clean off-repo venv with its
+# real dependencies (paaf-core, paaf-trace) but WITHOUT the [engine] extra, runs
+# the ENTIRE shipped fake-adapter suite via `pytest --pyargs paaf_llm`, and
+# asserts `import langchain` and `import langgraph` both raise
+# ModuleNotFoundError while every one of those tests is green.
+#
+# This job and `engine-adapter` are COMPLEMENTARY, and both are required:
+#   * framework-uninstalled (here) — framework ABSENT. Proves the fake suite
+#     needs no framework at all (SC#1 / MODEL-08).
+#   * engine-adapter            — framework PRESENT. Proves the real adapter's
+#     exception translation actually executes rather than importorskipping
+#     itself into a silent pass (MODEL-02 / MODEL-04).
+# Neither substitutes for the other. Deleting either one removes a guarantee.
+#
+# WARNING SIGN: if you can make `paaf_llm/__init__.py` import the engine eagerly,
+# or move langchain into the base `dependencies`, and this job still passes, then
+# the clean venv is not clean — an editable install or a PYTHONPATH/cwd leak has
+# put the repo source tree back on sys.path — and the guard is vacuous. The
+# script guards against that by installing built wheels only and running from a
+# cwd outside the repo (RESEARCH Pitfall 2).
+#
+# Kept as a SEPARATE workflow file (not ci.yml) so wave plans do not contend on
+# one file.
+name: framework-uninstalled
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  framework-uninstalled:
+    runs-on: ubuntu-latest
+    env:
+      # Pin CPython 3.12 (the Phase-1 baseline; 3.13+ carries wheel-availability
+      # risk across the torch/audio-ML chain, per CLAUDE.md).
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run the full fake-adapter suite with the agent framework uninstalled
+        # Builds paaf-llm + its declared workspace deps (paaf-core, paaf-trace),
+        # asserts the wheel ships every fake-adapter test file that exists in the
+        # source tree (so this gate cannot rot into measuring three smoke
+        # assertions), installs them into an off-repo venv WITHOUT the [engine]
+        # extra, runs the whole suite via `pytest --pyargs paaf_llm`, and asserts
+        # langchain and langgraph are both absent while it passes.
+        run: bash scripts/check_framework_uninstalled.sh
