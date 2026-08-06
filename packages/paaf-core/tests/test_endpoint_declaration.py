@@ -57,6 +57,49 @@ class TestEndpointClassification:
             ep.host = "10.0.0.1"  # type: ignore[misc]
 
 
+class TestEndpointUrl:
+    """``path`` is declared, appended verbatim, and never classifies anything."""
+
+    def test_path_defaults_to_empty(self) -> None:
+        # The default must stay "" rather than None: url() concatenates it, and a
+        # future default change would otherwise silently produce "…:8000None".
+        assert Endpoint("192.168.1.20", 8000, "http").path == ""
+
+    def test_url_without_a_path_is_scheme_host_port(self) -> None:
+        # No trailing slash and no invented suffix — the endpoint means exactly
+        # what the user declared.
+        assert Endpoint("192.168.1.20", 8000, "http").url() == "http://192.168.1.20:8000"
+
+    def test_url_with_a_path_appends_it_verbatim(self) -> None:
+        # /v1 is where vLLM, llama.cpp's server and LM Studio actually serve.
+        endpoint = Endpoint("192.168.1.20", 8000, "http", "/v1")
+        assert endpoint.url() == "http://192.168.1.20:8000/v1"
+
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [("192.168.1.20", True), ("api.openai.com", False)],
+        ids=["lan", "public"],
+    )
+    def test_a_path_does_not_change_classification(
+        self, host: str, expected: bool
+    ) -> None:
+        # is_lan() reads the HOST. A path is addressing, not trust: letting it
+        # shift classification would make Phase-9's offline refusal depend on a
+        # string the user typed for a completely unrelated reason.
+        assert Endpoint(host, 8000, "http").is_lan() is expected
+        assert Endpoint(host, 8000, "http", "/v1").is_lan() is expected
+
+    def test_two_endpoints_differing_only_in_path_are_distinct(self) -> None:
+        # NOT incidental. The adapter's model cache is keyed on the derived URL;
+        # two paths collapsing into one set member (or one cache entry) would
+        # silently serve one server's client for another's.
+        with_path = Endpoint("192.168.1.20", 8000, "http", "/v1")
+        without = Endpoint("192.168.1.20", 8000, "http")
+
+        assert with_path != without
+        assert len({with_path, without}) == 2
+
+
 class _FakeComponent:
     """A minimal ``NetworkComponent`` used to exercise the registry."""
 
