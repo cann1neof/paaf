@@ -298,6 +298,13 @@ None — no external service configuration required. Every test in this plan is 
 - `paaf_llm.ports.EngineError` is now available to any framework-free caller, which the Phase 9 embedded app and its config API will want for the same reason the CLI did.
 - **Environment note for the next executor:** the worktree is left synced with `uv sync --all-packages` (no `[engine]` extra), matching the documented baseline. `packages/paaf-llm` should report 105 passed, 1 skipped in that state.
 
+## Self-Check: PASSED
+
+- All 7 claimed files verified present on disk.
+- All 7 claimed commits verified present in `git log`.
+- `git diff --diff-filter=D dd48187..HEAD` reports no deleted files — nothing was removed by this plan.
+- Working tree clean; no uncommitted changes remain.
+
 ---
 *Phase: 03-paaf-llm-core*
 *Completed: 2026-08-06*
