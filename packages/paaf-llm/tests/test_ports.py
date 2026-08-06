@@ -12,14 +12,20 @@ a mirror of whatever agent framework happens to serve a turn:
    text, so the guard survives a future refactor that hides an import behind a
    helper.
 
-``test_turn_result_carries_the_inert_handoff_seam`` is the Phase-4 seam guard:
-``TurnResult.handoff`` exists and is always ``None`` this phase, so adding real
-handoff behavior in Phase 4 does not change the port's shape.
+**Phase-4 additions (MESH-01/02).** The mesh's tool vocabulary lives in a SECOND
+protocol, :class:`ports.ToolCallingChatAdapter`, so ``ChatAdapter``'s own
+definition is unchanged (D-02) — ``test_chat_adapter_is_a_two_method_protocol``
+is the guard that keeps it that way, and it is a *negative* control: it fails the
+moment somebody grows the Phase-3 port instead of extending it.
+:class:`ports.UndeclaredPeer`'s two non-subclass assertions matter for the same
+reason ``EngineError``'s do — a routing violation absorbed by the fallback loop
+would print a confident, wrong explanation at a routing bug.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import inspect
 from pathlib import Path
 
 import paaf_llm
@@ -42,12 +48,134 @@ def test_usage_defaults_to_unknown_counts() -> None:
     assert ports.Usage(11, 22).completion_tokens == 22
 
 
-def test_turn_result_carries_the_inert_handoff_seam() -> None:
-    """The Phase-4 seam is present and defaults to None (design-only this phase)."""
+def test_turn_result_handoff_defaults_to_none() -> None:
+    """The handoff seam still defaults to None — a turn need not hand off (MESH-01)."""
     assert ports.TurnResult.__dataclass_fields__["handoff"].default is None
     result = ports.TurnResult(text="hello", served_by="local", usage=ports.Usage())
     assert result.handoff is None
     assert result.fallback_trail == []
+
+
+def test_turn_result_handoff_is_typed_rather_than_any() -> None:
+    """Phase 4 replaced the ``type HandoffRequest = Any`` placeholder with the payload.
+
+    Asserted against the source text rather than ``get_type_hints`` because the
+    annotation is a string under ``from __future__ import annotations``: an
+    ``Any`` left behind here would resolve happily and say nothing.
+    """
+    source = inspect.getsource(ports)
+    assert "type HandoffRequest = Any" not in source
+    declaration = (
+        source.split("class TurnResult")[1].split("handoff:")[1].split("\n")[0]
+    )
+    assert "Any" not in declaration
+    assert ports.TurnResult.__dataclass_fields__["handoff"].type == (
+        "HandoffRequest | None"
+    )
+
+
+def test_handoff_request_names_both_ends_and_is_frozen() -> None:
+    """MESH-01: the accepted handoff rides back on the result as a value, not a string."""
+    request = ports.HandoffRequest(from_agent="host", to_agent="chef")
+    assert (request.from_agent, request.to_agent) == ("host", "chef")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        request.to_agent = "admin"  # type: ignore[misc]
+
+
+def test_tool_spec_is_a_frozen_value() -> None:
+    """A ToolSpec crosses the port into adapter code — it must not be rewritable."""
+    spec = ports.ToolSpec(name="transfer_to_chef", description="cooking", parameters={})
+    assert (spec.name, spec.description, spec.parameters) == (
+        "transfer_to_chef",
+        "cooking",
+        {},
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        spec.name = "transfer_to_admin"  # type: ignore[misc]
+
+
+def test_tool_call_is_a_frozen_value_with_an_optional_id() -> None:
+    """``call_id`` is optional because several providers publish no id at all."""
+    call = ports.ToolCall(name="transfer_to_chef", arguments={})
+    assert call.call_id is None
+    assert ports.ToolCall("t", {}, "abc").call_id == "abc"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        call.name = "tampered"  # type: ignore[misc]
+
+
+def test_mesh_signal_kinds_are_the_six_declared_events() -> None:
+    """All six exist NOW even though later plans trigger four of them.
+
+    ``ports.py`` is edited by one plan in this phase; declaring the vocabulary
+    once is what keeps a later wave from having to serialize behind another edit
+    to this file.
+    """
+    assert {kind.value for kind in ports.MeshSignalKind} == {
+        "undeclared_peer",
+        "budget_exhausted",
+        "observer_retry",
+        "observer_reroute",
+        "unobserved",
+        "mesh_unavailable",
+    }
+    # A ``str`` enum for the same reason ``FallbackReason`` is one: it serializes
+    # into the trace's JSON and prints in a notice without a lookup table.
+    assert ports.MeshSignalKind.UNDECLARED_PEER == "undeclared_peer"
+
+
+def test_mesh_signal_is_a_frozen_value() -> None:
+    signal = ports.MeshSignal(
+        kind=ports.MeshSignalKind.UNDECLARED_PEER,
+        turn_id="deadbeef",
+        from_agent="host",
+        to_agent="admin",
+    )
+    assert signal.detail == ""
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        signal.detail = "tampered"  # type: ignore[misc]
+
+
+def test_mesh_signal_sink_is_a_one_method_protocol() -> None:
+    """D-05's "flashlight" endpoint — narrow enough to satisfy in four lines."""
+    assert getattr(ports.MeshSignalSink, "_is_protocol", False)
+    assert [
+        name for name in vars(ports.MeshSignalSink) if not name.startswith("_")
+    ] == ["signal"]
+
+
+def test_undeclared_peer_is_neither_a_degraded_provider_nor_a_config_error() -> None:
+    """Negative control: a routing violation is not one more fallback hop (Pattern 2).
+
+    If ``UndeclaredPeer`` subclassed ``AdapterError`` the loop would swallow it
+    and print ``↳ fell back to cloud (connection)`` at a routing bug. If it
+    subclassed ``EngineError`` it would claim the user's YAML is wrong when
+    ``_check_refs`` has already proven the graph integral.
+    """
+    assert not issubclass(ports.UndeclaredPeer, ports.AdapterError)
+    assert not issubclass(ports.UndeclaredPeer, ports.EngineError)
+    assert not issubclass(ports.UndeclaredPeer, ports.AllProvidersFailed)
+    assert issubclass(ports.UndeclaredPeer, Exception)
+
+
+def test_tool_calling_chat_adapter_extends_the_phase_3_port() -> None:
+    """D-02: the mesh grows a SECOND protocol; ``ChatAdapter`` itself is untouched."""
+    assert issubclass(ports.ToolCallingChatAdapter, ports.ChatAdapter)
+    assert getattr(ports.ToolCallingChatAdapter, "_is_protocol", False)
+    assert hasattr(ports.ToolCallingChatAdapter, "stream_with_tools")
+    assert hasattr(ports.ToolCallingChatAdapter, "last_tool_calls")
+    # Inherited, not redeclared — the two Phase-3 methods still come from the base.
+    assert "stream" not in vars(ports.ToolCallingChatAdapter)
+    assert "last_usage" not in vars(ports.ToolCallingChatAdapter)
+
+
+def test_tool_calling_chat_adapter_is_runtime_checkable() -> None:
+    """The engine feature-detects with ``isinstance`` (Code Example 1)."""
+
+    class _NotToolCalling:
+        def stream(self, profile: object, messages: object) -> object: ...
+        def last_usage(self) -> object: ...
+
+    assert not isinstance(_NotToolCalling(), ports.ToolCallingChatAdapter)
 
 
 def test_turn_result_records_which_profile_served_and_the_hops() -> None:
@@ -150,6 +278,28 @@ def test_public_surface_re_exports_paaf_types() -> None:
     assert EngineError is ports.EngineError
     assert ModelProfile.__module__ == "paaf_llm.profiles"
     assert LlmConfig.__module__ == "paaf_llm.profiles"
+
+
+def test_public_surface_re_exports_the_mesh_vocabulary() -> None:
+    """MESH-01/02: every new port name is importable from the package root."""
+    mesh_names = {
+        "HandoffRequest",
+        "MeshSignal",
+        "MeshSignalKind",
+        "MeshSignalSink",
+        "ToolCall",
+        "ToolCallingChatAdapter",
+        "ToolSpec",
+        "UndeclaredPeer",
+    }
+    assert mesh_names <= set(paaf_llm.__all__)
+    for name in mesh_names:
+        assert getattr(paaf_llm, name) is getattr(ports, name)
+
+
+def test_public_all_is_sorted() -> None:
+    """A sorted ``__all__`` is how a re-export stays reviewable as the surface grows."""
+    assert paaf_llm.__all__ == sorted(paaf_llm.__all__)
 
 
 def test_public_surface_exposes_no_engine_symbol() -> None:

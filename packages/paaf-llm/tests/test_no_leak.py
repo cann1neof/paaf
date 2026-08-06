@@ -41,13 +41,17 @@ import paaf_llm
 _ALLOWED_ROOTS = frozenset({"paaf_llm", "paaf_core"})
 
 #: Names ``ports.py`` references under ``TYPE_CHECKING`` only, supplied here so
-#: annotations resolve at runtime. ``HandoffRequest`` is the Phase-4 seam and has
-#: no definition yet by design; stubbing it as ``object`` lets the walker reach
-#: the annotations that DO matter instead of stopping at a ``NameError``.
+#: annotations resolve at runtime.
+#:
+#: ``HandoffRequest`` is deliberately NOT in this mapping any more. Phase 3 had to
+#: stub it as ``object`` because the payload did not exist yet; Phase 4 defines it
+#: for real, and leaving the stub in place would SHADOW the real type — the walker
+#: would keep inspecting ``object`` and would no longer be looking at
+#: ``TurnResult.handoff`` at all. A stub that outlives the thing it stood in for
+#: is a hole in the detector, not a convenience.
 _RESOLUTION_NS: dict[str, Any] = {
     "ModelProfile": paaf_llm.ModelProfile,
     "LlmConfig": paaf_llm.LlmConfig,
-    "HandoffRequest": object,
 }
 
 _FRAMEWORK_PREFIXES = ("langchain", "langgraph")
