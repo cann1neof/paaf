@@ -50,7 +50,7 @@ from rich.console import Console
 
 from .agent import Agent
 from .compose import PromptComposer
-from .ports import AllProvidersFailed, EngineError
+from .ports import AdapterError, AllProvidersFailed, EngineError
 from .profiles import LlmConfig
 
 if TYPE_CHECKING:
@@ -88,6 +88,18 @@ NO_HANDOFF_NOTE = (
 #: chain exhaustion keeps its own wording, since a config error is not a
 #: degraded provider and saying so would be the confident wrong explanation.
 CONFIG_FAILURE_NOTICE = "paaf could not use the model you configured: {detail}"
+
+#: Printed when a provider dies AFTER it has begun replying. ``{reason}`` is
+#: formatted from ``AdapterError.reason.value`` — the same ``FallbackReason`` the
+#: trace records (D-06) — never from the exception's class name, so the terminal
+#: message and the trace row cannot disagree about why the turn ended. The notice
+#: says out loud that no re-route was attempted, because silence there would read
+#: as the fallback chain having failed to do its job rather than having
+#: deliberately declined to swap models mid-sentence.
+MID_REPLY_FAILURE_NOTICE = (
+    "the model failed after it had begun replying ({reason}); the chain does not "
+    "re-route once a reply has started: {detail}"
+)
 
 
 def _config_failure(exc: Exception) -> click.ClickException:
@@ -272,6 +284,15 @@ async def _chat_loop(agent: Agent, *, show_prompt: bool, console: Console) -> No
             raise click.ClickException(str(exc)) from exc
         except EngineError as exc:
             raise _config_failure(exc) from exc
+        except AdapterError as exc:
+            # Reaching here means the turn loop had already COMMITTED to a
+            # profile: a pre-commit AdapterError is caught inside
+            # agent._run_chain and becomes a fallback hop, never an error. This
+            # clause therefore does not duplicate the fallback loop — it covers
+            # the case the loop declines on purpose, once a reply is underway.
+            raise click.ClickException(
+                MID_REPLY_FAILURE_NOTICE.format(reason=exc.reason.value, detail=exc)
+            ) from exc
 
         _print_fallback_trail(result.fallback_trail, console)
         console.print(f"{result.served_by}> {result.text}")
