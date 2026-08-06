@@ -32,6 +32,7 @@ import pytest
 
 pytest.importorskip("langchain")
 
+import paaf_llm._engine as engine_module
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -39,6 +40,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
+from paaf_llm import cli
 from paaf_llm._engine import (
     PROVIDER_STRINGS,
     EngineError,
@@ -538,11 +540,108 @@ async def test_preload_survives_a_provider_that_is_down() -> None:
     await adapter.preload(_ollama("qwen3", "192.168.1.10"))  # must not raise
 
 
-def test_build_engine_adapter_is_the_factory_the_cli_imports() -> None:
-    """``cli._default_adapter`` calls ``build_engine_adapter(config)`` — unchanged.
+def test_the_cli_default_adapter_forwards_the_store_to_the_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression test for the exact line Gap 1 blamed — and for a shape of miss.
 
-    Pinning the name and the one-argument call keeps ``paaf chat`` working
-    without a CLI edit, which is the whole point of the port.
+    Both SIDES of this seam were already covered and the seam itself was not.
+    Every test in ``test_inspector.py`` replaces ``cli._default_adapter``
+    wholesale (``inject`` and ``spy_adapter_factory`` both do), and every other
+    test in this section calls ``build_engine_adapter`` directly. So the one line
+    that joins them — ``_default_adapter``'s own body — was executed by nothing,
+    and it was the line that silently passed one argument too few. That is
+    precisely how Gap 1 shipped past a green suite.
+
+    A source grep proves the argument is present today and then goes cold. This
+    test is what stays red if someone drops it again.
+
+    ``monkeypatch.setattr`` targets the attribute on the MODULE, not the name
+    imported into this file: ``_default_adapter``'s import is lazy and in-function
+    (SC#1), so it re-resolves ``build_engine_adapter`` off the module on every
+    call — which is exactly what makes it interceptable here.
+    """
+    sentinel = object()
+    recorded: dict[str, Any] = {}
+
+    def recorder(config: LlmConfig, *, secret_store: Any = None) -> Any:
+        recorded["config"] = config
+        recorded["secret_store"] = secret_store
+        return sentinel
+
+    monkeypatch.setattr(engine_module, "build_engine_adapter", recorder)
+
+    config = LlmConfig(
+        active_profile="a", profiles={"a": _ollama("qwen3", "192.168.1.10")}
+    )
+    store = _Secrets(anthropic_key="sk-live-value")
+
+    returned = cli._default_adapter(config, secret_store=store)
+
+    assert recorded["secret_store"] is store
+    assert recorded["config"] is config
+    assert returned is sentinel
+
+
+def _cloud_with_a_ref() -> tuple[LlmConfig, ModelProfile]:
+    """An Anthropic profile naming a key, plus the config that activates it."""
+    profile = ModelProfile(
+        provider="anthropic", model="claude-sonnet-4-5", api_key_ref="anthropic_key"
+    )
+    return LlmConfig(active_profile="cloud", profiles={"cloud": profile}), profile
+
+
+def test_the_factory_carries_a_secret_store_through_to_key_resolution() -> None:
+    """The store handed to the FACTORY reaches key resolution (CORE-04).
+
+    Asserted through ``build_engine_adapter`` rather than by constructing
+    ``LangChainAdapter`` directly, because the direct construction is already
+    covered by ``test_api_key_is_resolved_by_reference_not_read_from_config`` —
+    and the seam that actually broke was the factory call, not the class.
+    """
+    config, profile = _cloud_with_a_ref()
+    adapter = build_engine_adapter(
+        config, secret_store=_Secrets(anthropic_key="sk-live-value")
+    )
+
+    assert adapter.api_key(profile) == "sk-live-value"
+    assert adapter.model_kwargs(profile)["api_key"] == "sk-live-value"
+
+
+def test_the_factory_without_a_store_fails_as_a_config_error() -> None:
+    """The verifier's reproduced failure, encoded as a permanent test.
+
+    This is the exact case that blocked SC#2 twice:
+    ``EngineError: could not bind 'anthropic:claude-sonnet-4-5': profile declares
+    api_key_ref 'anthropic_key' but no secret store was provided``.
+
+    ``not isinstance(..., AdapterError)`` is the load-bearing assertion. If a
+    missing credential were a degraded provider, the fallback chain would swallow
+    it and quietly let another model answer for the cloud profile the user
+    configured — leaving them believing it works.
+    """
+    config, profile = _cloud_with_a_ref()
+    adapter = build_engine_adapter(config)
+
+    with pytest.raises(EngineError) as raised:
+        adapter.api_key(profile)
+
+    assert not isinstance(raised.value, AdapterError)
+    assert "anthropic_key" in str(raised.value)
+    assert "sk-" not in str(raised.value)
+
+
+def test_build_engine_adapter_is_the_factory_the_cli_imports() -> None:
+    """Pins the factory NAME and its optional ``secret_store`` keyword.
+
+    ``cli._default_adapter`` imports exactly this name, lazily, and supplies
+    ``secret_store`` — which is how a profile's ``api_key_ref`` gets resolved from
+    a real store rather than from the provider SDK's own environment variable.
+
+    That the CLI *actually* supplies it is proven by
+    ``test_the_cli_default_adapter_forwards_the_store_to_the_factory``, not here:
+    this test builds the adapter itself, so it would pass unchanged against a CLI
+    that had dropped the argument. That gap is what Gap 1 was.
     """
     config = LlmConfig(
         active_profile="a",
