@@ -72,21 +72,37 @@ command -v "$PY" >/dev/null 2>&1 || PY=python
 "$PY" -m venv "$CLEAN_DIR/venv"
 VENV_PY="$CLEAN_DIR/venv/bin/python"
 
-# --- 3. Install the built wheels (plus pytest to run the smoke tests) -----------
+# --- 3. Install the built wheels (plus the test runner) -------------------------
 # NOTE the absent `[engine]` extra: langchain is deliberately NOT installed, so
-# the smoke suite below runs framework-uninstalled (SC#1).
+# the suite below runs framework-uninstalled (SC#1).
+#
+# pytest-asyncio and pytest-socket are installed alongside pytest because as of
+# Phase 3 Plan 09 the wheel ships the WHOLE fake-adapter suite, not just the
+# three-assertion smoke file — and that suite is async and offline-asserting.
+# Pinned to the versions the workspace's own dev group pins, so this job and
+# `uv run pytest` cannot disagree about what passes.
 echo "==> Installing wheels into clean venv (no [engine] extra => no langchain)"
 "$VENV_PY" -m pip install --quiet --upgrade pip
-"$VENV_PY" -m pip install --quiet "${WHEEL_PATHS[@]}" pytest
+"$VENV_PY" -m pip install --quiet "${WHEEL_PATHS[@]}" \
+  "pytest==9.1.1" "pytest-asyncio==1.4.0" "pytest-socket==0.7.0"
 
 # --- 4. Import + version from OUTSIDE the repo (cwd = temp dir) ------------------
 echo "==> Importing paaf_llm from the installed wheel (cwd outside repo)"
 cd "$CLEAN_DIR"
 "$VENV_PY" -c "import paaf_llm; print('paaf_llm', paaf_llm.__version__)"
 
-# --- 5. Run the smoke suite against the INSTALLED package, not the source tree ---
-echo "==> Running smoke tests via pytest --pyargs paaf_llm"
-"$VENV_PY" -m pytest --pyargs paaf_llm -q
+# --- 5. Run the shipped suite against the INSTALLED package, not the source tree -
+# `--pyargs` runs from site-packages, where the repo's root pyproject.toml is NOT
+# the rootdir — so none of its `addopts` are inherited and every setting the
+# suite needs must be passed by hand. `-o asyncio_mode=auto` because the suite's
+# async tests carry no explicit marker and pytest 9 FAILS (does not skip) them
+# without it; `--disable-socket --allow-unix-socket` because the offline posture
+# is not inherited either and this job would otherwise run with the network open.
+echo "==> Running the shipped suite via pytest --pyargs paaf_llm"
+"$VENV_PY" -m pytest --pyargs paaf_llm -q \
+  -o asyncio_mode=auto \
+  --disable-socket --allow-unix-socket \
+  -p no:langsmith_plugin
 
 # --- 6. Negative control: forbidden packages must NOT be importable -------------
 # paaf_voice: paaf-llm must never couple to the voice half (FOUND-02).

@@ -62,7 +62,40 @@ packages = ["src/paaf_llm"]
 
 # FOUND-02 / Plan 03: ship the wheel smoke test INSIDE the package so the
 # clean-venv job can discover it with `pytest --pyargs paaf_llm` (RESEARCH
-# Pitfall 2). Only the independence smoke test is shipped — not the whole
-# workspace tests/ dir.
+# Pitfall 2).
+#
+# MODEL-08 / SC#1 (Plan 09): the ENTIRE fake-adapter suite ships too, for the
+# same reason and one bigger one. SC#1 is not "a smoke test passes without the
+# agent framework", it is "the whole suite passes without it" — and a claim that
+# only a three-assertion smoke file can check is a claim nobody is really
+# checking. Shipping the suite is what lets
+# `scripts/check_framework_uninstalled.sh` run `pytest --pyargs paaf_llm` inside
+# a clean venv that has paaf-core and paaf-trace but NO langchain, and have that
+# run mean something: profiles, prompt composition, the agent turn, the fallback
+# chain, the CLI inspector, and the no-leak guards all execute against the fake
+# with the framework genuinely absent.
+#
+# Deliberately NOT shipped: `tests/test_engine_adapter.py`. It exists to test the
+# REAL LangChain adapter and opens with `pytest.importorskip("langchain")`, so in
+# the clean venv it could only ever SKIP — a skipped test inside the artifact
+# whose whole point is "no framework here" muddies the gate rather than
+# strengthening it. It runs from the source tree instead, in the complementary
+# `.github/workflows/engine-adapter.yml` job, WITH the `[engine]` extra installed
+# so it actually executes.
+#
+# Every file listed here must import only paaf_llm + paaf_core + paaf_trace (and
+# their declared deps: pydantic, pyyaml, click, rich, aiosqlite). If a new test
+# file needs the framework, it belongs with test_engine_adapter.py — outside this
+# block — not in the shipped set.
 [tool.hatch.build.targets.wheel.force-include]
 "tests/test_wheel_smoke.py" = "paaf_llm/tests/test_wheel_smoke.py"
+"tests/conftest.py" = "paaf_llm/tests/conftest.py"
+"tests/test_smoke.py" = "paaf_llm/tests/test_smoke.py"
+"tests/test_ports.py" = "paaf_llm/tests/test_ports.py"
+"tests/test_fake_adapter.py" = "paaf_llm/tests/test_fake_adapter.py"
+"tests/test_profiles.py" = "paaf_llm/tests/test_profiles.py"
+"tests/test_compose.py" = "paaf_llm/tests/test_compose.py"
+"tests/test_agent_turn.py" = "paaf_llm/tests/test_agent_turn.py"
+"tests/test_fallback.py" = "paaf_llm/tests/test_fallback.py"
+"tests/test_inspector.py" = "paaf_llm/tests/test_inspector.py"
+"tests/test_no_leak.py" = "paaf_llm/tests/test_no_leak.py"
