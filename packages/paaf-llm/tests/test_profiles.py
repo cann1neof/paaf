@@ -52,6 +52,128 @@ def test_profile_defaults() -> None:
     assert profile.capabilities == ""
     assert profile.peers == []
     assert profile.constraints == []
+    # A declared path and a declared no-auth posture are both OPT-IN. Asserted
+    # here so a future default flip cannot pass silently: defaulting the path
+    # would append a URL segment nobody wrote, and defaulting the flag would
+    # send unauthenticated requests on the user's behalf.
+    assert profile.endpoint_path is None
+    assert profile.endpoint_unauthenticated is False
+
+
+def test_a_declared_path_reaches_the_full_url() -> None:
+    # MODEL-02: /v1 is where vLLM, llama.cpp's server and LM Studio actually
+    # serve, so an OpenAI-compatible profile must be able to say so in YAML.
+    profile = ModelProfile(
+        provider="openai_compatible",
+        model="qwen3:32b",
+        endpoint_host="192.168.1.20",
+        endpoint_port=8000,
+        endpoint_path="/v1",
+    )
+    endpoint = profile.endpoint()
+    assert endpoint is not None
+    assert endpoint.path == "/v1"
+    assert endpoint.url() == "http://192.168.1.20:8000/v1"
+    # The path travels WITH the endpoint, so the value Phase-9's offline check
+    # classifies is the same one the adapter dials (CORE-05).
+    assert endpoint.is_lan()
+
+
+def test_an_unauthenticated_openai_compatible_profile_validates() -> None:
+    # A LAN vLLM/llama.cpp server with no auth is a real configuration, and
+    # saying so explicitly is the only way PAAF will send a credential-free
+    # request — an absent api_key_ref alone is ambiguous with "I forgot".
+    profile = ModelProfile(
+        provider="openai_compatible",
+        model="qwen3:32b",
+        endpoint_host="192.168.1.20",
+        endpoint_port=8000,
+        endpoint_path="/v1",
+        endpoint_unauthenticated=True,
+    )
+    assert profile.endpoint_unauthenticated is True
+    assert profile.api_key_ref is None
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "field"),
+    [
+        (
+            {"provider": "openai_compatible", "model": "m", "endpoint_path": "/v1"},
+            "endpoint_path",
+        ),
+        (
+            {
+                "provider": "openai_compatible",
+                "model": "m",
+                "endpoint_host": "192.168.1.20",
+                "endpoint_port": 8000,
+                "endpoint_path": "v1",
+            },
+            "endpoint_path",
+        ),
+        (
+            {
+                "provider": "openai_compatible",
+                "model": "m",
+                "endpoint_host": "192.168.1.20",
+                "endpoint_port": 8000,
+                "endpoint_path": "/v1/",
+            },
+            "endpoint_path",
+        ),
+        (
+            {
+                "provider": "openai_compatible",
+                "model": "m",
+                "endpoint_host": "192.168.1.20",
+                "endpoint_port": 8000,
+                "endpoint_path": "/v1?key=x",
+            },
+            "endpoint_path",
+        ),
+        (
+            {
+                "provider": "openai_compatible",
+                "model": "m",
+                "endpoint_unauthenticated": True,
+                "api_key_ref": "some_key",
+            },
+            "endpoint_unauthenticated",
+        ),
+        (
+            {"provider": "ollama", "model": "m", "endpoint_unauthenticated": True},
+            "endpoint_unauthenticated",
+        ),
+    ],
+    ids=[
+        "path_without_host_or_port",
+        "path_not_starting_with_slash",
+        "path_ending_with_slash",
+        "path_with_a_query_character",
+        "unauthenticated_and_api_key_ref",
+        "unauthenticated_on_the_wrong_provider",
+    ],
+)
+def test_malformed_endpoint_declarations_are_rejected(kwargs: dict, field: str) -> None:
+    # T-03-36: a hand-edited path crosses into a DIALED URL, so it is untrusted
+    # input. Every rejection names its field, and nothing is normalized — PAAF
+    # repairing a malformed path would be it dialing a URL the user never wrote.
+    with pytest.raises(ValidationError) as raised:
+        ModelProfile(**kwargs)
+    assert field in str(raised.value)
+
+
+@pytest.mark.parametrize("path", ["/v1 beta", "/v1\tx", "/v1#frag"])
+def test_a_path_with_whitespace_or_a_fragment_is_rejected(path: str) -> None:
+    with pytest.raises(ValidationError):
+        ModelProfile(
+            provider="openai_compatible",
+            model="m",
+            endpoint_host="192.168.1.20",
+            endpoint_port=8000,
+            endpoint_path=path,
+        )
 
 
 def test_capabilities_is_free_text_not_a_structured_schema() -> None:

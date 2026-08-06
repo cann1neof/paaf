@@ -114,6 +114,22 @@ PROVIDER_STRINGS: dict[str, str] = {
     "anthropic": "anthropic",
 }
 
+#: THIS IS NOT A CREDENTIAL, and nothing may treat it as one.
+#:
+#: The OpenAI binding requires a non-empty api_key argument before it will
+#: construct a client at all, so an unauthenticated LAN server — a vLLM or
+#: llama.cpp process the user runs with no auth — could not be bound without
+#: supplying *something*. This is that something: a structurally required
+#: placeholder, deliberately NOT sourced from the secret store, sent ONLY to an
+#: endpoint whose profile explicitly declared `endpoint_unauthenticated: true`.
+#: The value is self-describing so that a server logging its rejected
+#: Authorization header, or a user reading a traceback, sees what it is.
+#:
+#: It is also deliberately kept OUT of LangChainAdapter._secret_values: it is not
+#: a secret, and scrubbing it would replace an ordinary string in unrelated error
+#: text with "***" for no benefit (T-03-38).
+UNAUTHENTICATED_API_KEY = "paaf-unauthenticated"
+
 #: Providers whose models are loaded from disk on first use and therefore have a
 #: cold-start cost worth paying at :meth:`LangChainAdapter.preload` time. A hosted
 #: provider has no cold load, so preloading one would spend the user's tokens and
@@ -327,20 +343,21 @@ class LangChainAdapter:
         ``None`` means "use the provider's own default", which is the honest
         reading of a profile that declared no host/port — a cloud profile is not
         hiding an endpoint, it simply has none of PAAF's to declare (CORE-05).
-        The URL is built from the ``paaf_core`` ``Endpoint`` that
+        The URL is built by the ``paaf_core`` ``Endpoint`` that
         ``ModelProfile.endpoint()`` returns, so the same value Phase-9's offline
         check classifies is the one actually dialed.
 
-        Note the schema's current limit: ``Endpoint`` carries scheme/host/port and
-        no PATH, so an OpenAI-compatible server that serves under ``/v1`` cannot
-        be fully addressed yet. This method does NOT guess a suffix — silently
-        rewriting a user's declared endpoint is the kind of hidden behavior the
-        project refuses. See the plan summary's deferred note.
+        A declared ``endpoint_path`` travels with that endpoint and is appended
+        VERBATIM — which is how an OpenAI-compatible server serving under ``/v1``
+        (vLLM, llama.cpp's server, LM Studio) is addressed. This method still
+        guesses nothing: a suffix PAAF invented would be a URL the user never
+        wrote, and a malformed one is rejected at load by
+        ``ModelProfile._check_endpoint`` rather than repaired here.
         """
         endpoint = profile.endpoint()
         if endpoint is None:
             return None
-        return f"{endpoint.scheme}://{endpoint.host}:{endpoint.port}"
+        return endpoint.url()
 
     def api_key(self, profile: ModelProfile) -> str | None:
         """Resolve ``profile``'s API key BY REFERENCE, or ``None`` if none is named.
@@ -381,6 +398,11 @@ class LangChainAdapter:
         key = self.api_key(profile)
         if key is not None:
             kwargs["api_key"] = key
+        if profile.endpoint_unauthenticated:
+            # No precedence question arises: ModelProfile._check_endpoint rejects
+            # a profile that declares both this flag and an api_key_ref, so the
+            # branch above cannot have set a real key here.
+            kwargs["api_key"] = UNAUTHENTICATED_API_KEY
         return kwargs
 
     @staticmethod
@@ -395,13 +417,19 @@ class LangChainAdapter:
         Keying on the provider string alone — or on provider plus ``base_url`` —
         looks sufficient and is not: two Anthropic profiles naming the same model
         both declare no endpoint, so they would collide and the second would
-        silently inherit the first's temperature and credential.
+        silently inherit the first's temperature and credential. The same holds
+        for ``endpoint_unauthenticated``, which is derivable from no other element
+        of this tuple: two profiles alike but for the flag produce one provider
+        string, one URL, one temperature and no key reference, so without it they
+        collide and the second inherits the first's CREDENTIAL POSTURE. The
+        declared path needs no separate element — ``base_url`` already carries it.
         """
         return (
             LangChainAdapter.provider_string(profile),
             LangChainAdapter.base_url(profile) or "",
             repr(profile.temperature),
             profile.api_key_ref or "",
+            repr(profile.endpoint_unauthenticated),
         )
 
     def bind(self, profile: ModelProfile) -> Any:
@@ -575,6 +603,7 @@ __all__ = [
     "PRELOADABLE_PROVIDERS",
     "PRELOAD_MESSAGE",
     "PROVIDER_STRINGS",
+    "UNAUTHENTICATED_API_KEY",
     "EngineError",
     "LangChainAdapter",
     "build_engine_adapter",

@@ -43,6 +43,7 @@ from langchain_core.messages.ai import UsageMetadata
 from paaf_llm import cli
 from paaf_llm._engine import (
     PROVIDER_STRINGS,
+    UNAUTHENTICATED_API_KEY,
     EngineError,
     LangChainAdapter,
     build_engine_adapter,
@@ -104,6 +105,44 @@ def _ollama(name: str, host: str) -> ModelProfile:
     return ModelProfile(
         provider="ollama", model=name, endpoint_host=host, endpoint_port=11434
     )
+
+
+def _openai_compatible(
+    *,
+    path: str | None = "/v1",
+    unauthenticated: bool = True,
+    api_key_ref: str | None = None,
+) -> ModelProfile:
+    """A LAN OpenAI-compatible server — the vLLM / llama.cpp / LM Studio shape.
+
+    Mirrors :func:`_ollama`. ``path`` and ``unauthenticated`` are settable
+    because the controls in this file work by varying exactly one of them and
+    asserting the outcome changes.
+    """
+    return ModelProfile(
+        provider="openai_compatible",
+        model="qwen3:32b",
+        endpoint_host="192.168.1.20",
+        endpoint_port=8000,
+        endpoint_path=path,
+        endpoint_unauthenticated=unauthenticated,
+        api_key_ref=api_key_ref,
+    )
+
+
+#: Attribute names a bound client may expose its base URL under. The OpenAI and
+#: Ollama bindings do NOT agree on one, so the assertion tries each — and fails
+#: loudly if none matched, rather than passing vacuously.
+_BASE_URL_ATTRS = ("openai_api_base", "base_url", "openai_base_url", "_base_url")
+
+
+def _bound_base_url(model: Any) -> str | None:
+    """Return the base URL ``model`` carries, or ``None`` if no attribute matched."""
+    for name in _BASE_URL_ATTRS:
+        value = getattr(model, name, None)
+        if value is not None:
+            return str(value)
+    return None
 
 
 async def _drain(adapter: LangChainAdapter, profile: ModelProfile) -> list[str]:
@@ -265,6 +304,124 @@ def test_two_cloud_profiles_on_one_model_do_not_share_a_binding() -> None:
 def test_a_profile_with_no_endpoint_declares_no_base_url() -> None:
     """A cloud profile has no PAAF endpoint to declare — that is not a hidden one."""
     assert LangChainAdapter.base_url(ModelProfile(provider="anthropic", model="c")) is None
+
+
+# ------------------------------------ MODEL-02: the openai_compatible provider --
+
+
+def test_an_unauthenticated_openai_compatible_profile_binds_at_a_v1_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The test whose absence let BOTH of Gap 3's failures ship.
+
+    ``openai_compatible`` was exercised only at the provider-string level, so
+    nothing ever bound one — and two independent defects hid behind that: the
+    schema could not express ``/v1`` (where vLLM, llama.cpp's server and LM
+    Studio actually serve), and an unauthenticated local server could not bind at
+    all because the OpenAI binding demands a credential the schema had no way to
+    say was unnecessary.
+
+    ``delenv`` is load-bearing: on a developer machine with ``OPENAI_API_KEY``
+    exported, this would pass on an ambient credential and prove nothing about
+    the declaration under test.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    profile = _openai_compatible()
+    adapter = LangChainAdapter()  # deliberately NO secret store
+
+    assert adapter.base_url(profile) == "http://192.168.1.20:8000/v1"
+    assert adapter.model_kwargs(profile)["api_key"] == UNAUTHENTICATED_API_KEY
+
+    bound = adapter.bind(profile)  # must not raise
+
+    carried = _bound_base_url(bound)
+    # Asserted FIRST, so a bound client exposing its base URL under some name
+    # this file does not know cannot make the check below pass vacuously.
+    assert carried is not None, f"no attribute in {_BASE_URL_ATTRS} on {type(bound)}"
+    assert "http://192.168.1.20:8000/v1" in carried
+
+
+def test_two_profiles_differing_only_in_the_auth_declaration_do_not_share_a_binding() -> (
+    None
+):
+    """The auth flag is in the cache key, because it is derivable from nothing else.
+
+    ``base_url`` already carries the path, but two profiles differing ONLY in
+    ``endpoint_unauthenticated`` derive the same URL, the same provider string
+    and the same temperature. Without the flag in the key they collide, and the
+    second silently inherits the FIRST one's credential posture — an
+    unauthenticated client answering for a profile the user gave a key.
+    """
+    adapter = LangChainAdapter(secret_store=_Secrets(local_key="sk-local"))
+    no_auth = _openai_compatible()
+    with_key = _openai_compatible(unauthenticated=False, api_key_ref="local_key")
+
+    assert adapter.cache_key(no_auth) != adapter.cache_key(with_key)
+    assert adapter.bind(no_auth) is not adapter.bind(with_key)
+    assert adapter.bind(no_auth) is adapter.bind(no_auth)  # still cached per profile
+
+
+def test_an_openai_compatible_profile_without_the_auth_declaration_still_needs_a_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NEGATIVE CONTROL on the flag — the test that makes the flag load-bearing.
+
+    Without this, a ``model_kwargs`` that supplied the placeholder
+    UNCONDITIONALLY would satisfy every positive assertion above while sending an
+    invented credential to every OpenAI-compatible endpoint, authenticated or
+    not. Removing the declaration must reproduce the verifier's original
+    ``Missing credentials`` failure, and here it does.
+
+    ``delenv`` is what makes it deterministic: on a developer machine with
+    ``OPENAI_API_KEY`` exported the bind would succeed on an ambient credential
+    and the control would silently stop controlling anything.
+
+    ``not isinstance(..., AdapterError)`` is the second load-bearing assertion. A
+    missing credential is a configuration error, not a degraded provider; if it
+    were the latter the ordered fallback chain would swallow it and let another
+    model quietly answer for the profile the user configured.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    profile = _openai_compatible(unauthenticated=False)
+    adapter = LangChainAdapter()  # no secret store, and the profile names no ref
+
+    with pytest.raises(EngineError) as raised:
+        adapter.bind(profile)
+
+    assert not isinstance(raised.value, AdapterError)
+
+
+def test_base_url_appends_nothing_the_user_did_not_declare() -> None:
+    """NEGATIVE CONTROL on the path: PAAF adds no segment the user did not write.
+
+    Plan 03-08 refused to append a ``/v1`` suffix on the user's behalf, and that
+    decision survives the path becoming expressible: declaring it is now the
+    user's to make, and an undeclared one stays undeclared.
+
+    Asserted with ``==`` against the whole string rather than ``in`` or
+    ``startswith``, so a trailing slash or a helpfully-invented ``/v1`` fails
+    here instead of reaching a dialed URL.
+    """
+    profile = _openai_compatible(path=None)
+    assert LangChainAdapter.base_url(profile) == "http://192.168.1.20:8000"
+
+
+def test_two_profiles_differing_only_in_the_endpoint_path_do_not_share_a_binding() -> (
+    None
+):
+    """MODEL-06 applied to the provider that had no binding coverage at all.
+
+    The same reasoning that makes two LAN Ollama boxes two clients makes two
+    paths two clients: ``/v1`` and the server's root are different servers as far
+    as a request is concerned, and one cache entry answering for both would serve
+    one endpoint's client to the other.
+    """
+    adapter = LangChainAdapter()
+    with_path = _openai_compatible(path="/v1")
+    without_path = _openai_compatible(path=None)
+
+    assert adapter.cache_key(with_path) != adapter.cache_key(without_path)
+    assert adapter.bind(with_path) is not adapter.bind(without_path)
 
 
 # ------------------------------------------------------ CORE-04: key by ref --
