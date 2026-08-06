@@ -32,6 +32,13 @@ and only when a turn is actually about to run, so ``import paaf_llm.cli`` — an
 the whole test suite that injects the fake through :func:`build_agent` — works
 with the agent framework absent.
 
+**The trace is opt-in, and PAAF names no file on the user's behalf.**
+``paaf chat --trace-db <path>`` records each turn into the SQLite store
+(``served_by``, the composed prompt, and every fallback hop — SC#4 / D-06).
+Without the flag no store is constructed and nothing is written: a CLI that
+created a database at an invented path would be writing files nobody asked for,
+and filesystem conventions for the daemon belong to Phase 9 (APP-*), not here.
+
 **Config text is never interpreted.** The :class:`rich.console.Console` is built
 with ``markup=False, highlight=False``, so a profile whose ``capabilities`` string
 contains ``[/]`` cannot restyle, hide, or truncate the surrounding output. The
@@ -47,6 +54,7 @@ from typing import TYPE_CHECKING
 import click
 import yaml
 from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
+from paaf_trace.store import TraceStore
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -412,6 +420,51 @@ async def _chat_loop(agent: Agent, *, show_prompt: bool, console: Console) -> No
         console.print(f"{result.served_by}> {result.text}")
 
 
+async def _chat_session(
+    config: LlmConfig,
+    *,
+    show_prompt: bool,
+    console: Console,
+    secret_store: SecretResolver | None,
+    trace_db_path: str | None,
+) -> None:
+    """Own the trace store's lifecycle around one ``paaf chat`` conversation.
+
+    **Why this coroutine exists at all.** :class:`~paaf_trace.store.TraceStore`
+    owns a writer task and a bounded ``asyncio.Queue``, and both belong to the
+    running loop — a store constructed before :func:`asyncio.run` would bind its
+    queue to a loop that never runs it. The agent is handed that store as its
+    sink, so the agent has to be built in here too. That is the whole reason
+    ``build_agent`` moved out of the :func:`chat` command body: not a new
+    parameter, a new place to stand.
+
+    ``stop()`` is awaited in a ``finally`` and that placement is load-bearing. It
+    is what joins the queue, so every event already emitted is written AND
+    committed before the process leaves. Stopping only on the happy path would
+    discard exactly the rows a session that ended badly most needs to have kept.
+
+    ``trace_db_path`` is ``None`` unless the user named a file. Nothing is
+    constructed and nothing is written in that case — PAAF does not create a
+    database at a path nobody asked for.
+    """
+    store = TraceStore(trace_db_path) if trace_db_path is not None else None
+    if store is not None:
+        # Returns once the schema is applied, so the sink is usable immediately.
+        await store.start()
+    try:
+        # The second reachable config-failure site: the factory validates every
+        # declared profile's provider before a single turn runs, so a config
+        # error can land here rather than mid-conversation.
+        try:
+            agent = build_agent(config, secret_store=secret_store, trace=store)
+        except EngineError as exc:
+            raise _config_failure(exc) from exc
+        await _chat_loop(agent, show_prompt=show_prompt, console=console)
+    finally:
+        if store is not None:
+            await store.stop()
+
+
 _config_option = click.option(
     "--config",
     "config_path",
@@ -449,7 +502,23 @@ def main() -> None:
         "environment variable, never from the command line."
     ),
 )
-def chat(config_path: str, show_prompt: bool, secrets_path: str | None) -> None:
+@click.option(
+    "--trace-db",
+    "trace_db_path",
+    default=None,
+    type=click.Path(dir_okay=False, writable=True),
+    help=(
+        "Record each turn — the prompt sent, which profile served it, and every "
+        "fallback hop — into a local SQLite file at this path, created on first "
+        "use. Nothing is written unless you give this flag."
+    ),
+)
+def chat(
+    config_path: str,
+    show_prompt: bool,
+    secrets_path: str | None,
+    trace_db_path: str | None,
+) -> None:
     """Hold a conversation, falling back down your chain when a provider drops."""
     config = load_llm_config(config_path)
     console = _make_console()
@@ -458,14 +527,15 @@ def chat(config_path: str, show_prompt: bool, secrets_path: str | None) -> None:
     store = open_secret_store(
         config, secrets_path, os.environ.get(SECRET_PASSPHRASE_ENV)
     )
-    # The second reachable failure site: the factory validates every declared
-    # profile's provider before a single turn runs, so a config error can land
-    # here rather than mid-conversation.
-    try:
-        agent = build_agent(config, secret_store=store)
-    except EngineError as exc:
-        raise _config_failure(exc) from exc
-    asyncio.run(_chat_loop(agent, show_prompt=show_prompt, console=console))
+    # Everything past here runs inside the loop, because the trace sink and the
+    # agent that writes to it both belong to it. See _chat_session's docstring.
+    asyncio.run(_chat_session(
+        config,
+        show_prompt=show_prompt,
+        console=console,
+        secret_store=store,
+        trace_db_path=trace_db_path,
+    ))
 
 
 @main.command()
