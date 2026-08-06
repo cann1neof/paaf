@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Spike Gate** - Falsify the language promise, the stack, and the hardware assumption before writing any architecture (completed 2026-07-25)
 - [x] **Phase 2: Foundation** - Workspace, CI-enforced contracts, config, secrets, and the latency regression gate (completed 2026-07-25)
-- [ ] **Phase 3: paaf-llm Core (single agent)** - Ports and fake adapter first, then models, fallbacks, the manifest + peer-graph seam, and the verbatim prompt
+- [x] **Phase 3: paaf-llm Core (single agent)** - Ports and fake adapter first, then models, fallbacks, the manifest + peer-graph seam, and the verbatim prompt (completed 2026-08-06)
 - [ ] **Phase 4: Agent Mesh** - Automatic LLM-driven handoff between models the awake one chooses, headless, with the full handoff chain in the trace
 - [ ] **Phase 5: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
 - [ ] **Phase 6: Skills & PyPI Release** - Installable skills, and `paaf-llm` — mesh included — shipped publicly before voice exists
@@ -130,7 +130,7 @@ Plans:
   4. Each model profile declares, in YAML, a natural-language capability manifest and the peer agents it may hand off to; the schema validates them and `paaf chat` surfaces them, but no handoff behavior exists yet — the graph is inert data this phase, and Phase 4 makes it live.
   5. One command prints the final composed prompt verbatim — base prompt, skill fragments, runtime context — exactly as sent to the model, and it contains nothing the user did not write.
 
-**Plans**: 8/9 plans executed
+**Plans**: 9/9 plans complete
 Plans:
 **Wave 1**
 
@@ -157,7 +157,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 03-09-PLAN.md — SC#1 gate: ship fake suite in wheel + framework-uninstalled CI job (MODEL-08/SC#1)
+- [x] 03-09-PLAN.md — SC#1 gate: ship fake suite in wheel + framework-uninstalled CI job (MODEL-08/SC#1)
 
 **UI hint**: no
 
@@ -339,7 +339,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
-| 3. paaf-llm Core (single agent) | 8/9 | In Progress|  |
+| 3. paaf-llm Core (single agent) | 9/9 | Complete   | 2026-08-06 |
 | 4. Agent Mesh | 0/TBD | Not started | - |
 | 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
