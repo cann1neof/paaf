@@ -38,6 +38,7 @@ import yaml
 from click.testing import CliRunner
 from paaf_llm import cli
 from paaf_llm.cli import (
+    CONFIG_FAILURE_NOTICE,
     NO_HANDOFF_NOTE,
     PROVENANCE_LABEL,
     build_agent,
@@ -47,7 +48,7 @@ from paaf_llm.cli import (
 )
 from paaf_llm.compose import SEGMENT_SEPARATOR, PromptComposer
 from paaf_llm.fake import FakeAdapter
-from paaf_llm.ports import ChatAdapter, ConnectionFailed, EngineError, ServerError, Usage
+from paaf_llm.ports import ChatAdapter, ConnectionFailed, EngineError, Usage
 from paaf_llm.profiles import LlmConfig, ModelProfile
 
 #: A base prompt and two persona fragments with enough shape that a CLI which
@@ -612,7 +613,7 @@ def test_a_bind_failure_is_reported_readably(
     result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
 
     assert result.exit_code != 0
-    assert detail in result.output
+    assert CONFIG_FAILURE_NOTICE.format(detail=detail) in result.output
     assert not isinstance(result.exception, EngineError)
 
 
@@ -636,7 +637,7 @@ def test_a_build_time_failure_is_reported_readably(
     result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
 
     assert result.exit_code != 0
-    assert detail in result.output
+    assert CONFIG_FAILURE_NOTICE.format(detail=detail) in result.output
     assert not isinstance(result.exception, EngineError)
 
 

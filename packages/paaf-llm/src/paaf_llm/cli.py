@@ -50,7 +50,7 @@ from rich.console import Console
 
 from .agent import Agent
 from .compose import PromptComposer
-from .ports import AllProvidersFailed
+from .ports import AllProvidersFailed, EngineError
 from .profiles import LlmConfig
 
 if TYPE_CHECKING:
@@ -80,6 +80,28 @@ NO_HANDOFF_NOTE = (
     "The peer graph is inert in this phase: it is declared and validated data, "
     "and no handoff is performed."
 )
+
+#: Printed when a profile cannot be USED as configured — a credential that will
+#: not resolve, a model the provider does not have. One line, because the detail
+#: is already the adapter's own scrubbed message (T-03-04) and the CLI holds no
+#: logic the library lacks (D-01). This is emphatically not a fallback notice:
+#: chain exhaustion keeps its own wording, since a config error is not a
+#: degraded provider and saying so would be the confident wrong explanation.
+CONFIG_FAILURE_NOTICE = "paaf could not use the model you configured: {detail}"
+
+
+def _config_failure(exc: Exception) -> click.ClickException:
+    """Wrap a configuration failure as the one-line error the user reads.
+
+    One helper for both reachable sites — a profile that fails at bind time and
+    one that fails when the factory validates the provider table — so the two
+    surfaces cannot drift into two different wordings for the same problem.
+
+    The text lives in :data:`CONFIG_FAILURE_NOTICE` rather than inline, following
+    this module's convention for every user-facing string: a test then asserts
+    against the notice the CLI actually emits instead of against a copy of it.
+    """
+    return click.ClickException(CONFIG_FAILURE_NOTICE.format(detail=exc))
 
 
 def load_llm_config(path: str) -> LlmConfig:
@@ -244,7 +266,12 @@ async def _chat_loop(agent: Agent, *, show_prompt: bool, console: Console) -> No
         try:
             result = await agent.turn(user_text)
         except AllProvidersFailed as exc:
+            # Chain exhaustion already reads well and names every hop, so it
+            # keeps its own wording — prefixing it with the config notice would
+            # blame the user's YAML for a run of unreachable providers.
             raise click.ClickException(str(exc)) from exc
+        except EngineError as exc:
+            raise _config_failure(exc) from exc
 
         _print_fallback_trail(result.fallback_trail, console)
         console.print(f"{result.served_by}> {result.text}")
@@ -281,7 +308,13 @@ def chat(config_path: str, show_prompt: bool) -> None:
     config = load_llm_config(config_path)
     console = _make_console()
     render_profiles(config, console)
-    agent = build_agent(config)
+    # The second reachable failure site: the factory validates every declared
+    # profile's provider before a single turn runs, so a config error can land
+    # here rather than mid-conversation.
+    try:
+        agent = build_agent(config)
+    except EngineError as exc:
+        raise _config_failure(exc) from exc
     asyncio.run(_chat_loop(agent, show_prompt=show_prompt, console=console))
 
 
