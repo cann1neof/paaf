@@ -41,10 +41,12 @@ byte-exact prompt path skips rich entirely and uses :func:`click.echo`.
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING
 
 import click
 import yaml
+from paaf_core.secrets import EncryptedFileSecretStore
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -56,7 +58,7 @@ from .profiles import LlmConfig
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from .agent import TraceSink
+    from .agent import SecretResolver, TraceSink
     from .ports import ChatAdapter
 
 #: The per-hop fallback notice (D-06). Brief on purpose: "nothing hidden" is one
@@ -100,6 +102,13 @@ MID_REPLY_FAILURE_NOTICE = (
     "the model failed after it had begun replying ({reason}); the chain does not "
     "re-route once a reply has started: {detail}"
 )
+
+#: The environment variable the store passphrase is read from. Deliberately NOT
+#: a command-line option (T-03-32): a passphrase on ``argv`` is visible in ``ps``
+#: to every other user on the box and lands in shell history. A module constant
+#: for the same reason every other user-facing string here is one — the tests
+#: assert against the name the CLI actually reads, not a copy of it.
+SECRET_PASSPHRASE_ENV = "PAAF_SECRET_PASSPHRASE"
 
 
 def _config_failure(exc: Exception) -> click.ClickException:
@@ -145,7 +154,61 @@ def load_skill_fragments(config: LlmConfig) -> list[tuple[str, str]]:
     return []
 
 
-def _default_adapter(config: LlmConfig) -> ChatAdapter:
+def profiles_needing_secrets(config: LlmConfig) -> list[str]:
+    """Return the sorted names of profiles that declare an ``api_key_ref``.
+
+    The ONE place that decides whether this config needs a secret store at all,
+    so the decision cannot be made twice with two different answers — the guard
+    that refuses to unlock a store nobody asked for and the guard that demands
+    ``--secrets`` are the same question, and they read it here.
+
+    ``api_key_ref`` holds the NAME of a ``paaf_core`` SecretStore key (CORE-04),
+    never the value, so a profile declaring one is exactly a profile whose
+    credential lives outside the YAML and must be fetched from somewhere.
+    """
+    return sorted(
+        name for name, profile in config.profiles.items() if profile.api_key_ref
+    )
+
+
+def open_secret_store(
+    config: LlmConfig, secrets_path: str | None, passphrase: str | None
+) -> SecretResolver | None:
+    """Return an unlocked store for ``config``, or ``None`` if it needs none.
+
+    **The early return is the load-bearing line** (T-03-34). A config in which no
+    profile names an ``api_key_ref`` returns ``None`` before the filesystem is
+    touched and before a passphrase is even looked for: an all-local setup must
+    never be asked to unlock anything, and a store built "just in case" would be
+    a credential prompt the user's config never justified.
+
+    Only past that point do the two missing-input guards apply. They live here
+    rather than at the store constructor because ``Path(None)`` and
+    ``None.encode`` are tracebacks, and a traceback on the headline command is
+    the failure mode this CLI's error handling exists to eliminate.
+    """
+    needed = profiles_needing_secrets(config)
+    if not needed:
+        return None
+
+    if secrets_path is None:
+        raise click.ClickException(
+            f"these profiles declare an api_key_ref: {', '.join(needed)}. The key "
+            f"value is never read from YAML, so name the encrypted store holding "
+            f"it with --secrets, and supply its passphrase in {SECRET_PASSPHRASE_ENV}."
+        )
+    if not passphrase:
+        raise click.ClickException(
+            "the secret store cannot be unlocked because no passphrase was "
+            f"supplied. Set {SECRET_PASSPHRASE_ENV} in the environment."
+        )
+
+    return EncryptedFileSecretStore(secrets_path, passphrase)
+
+
+def _default_adapter(
+    config: LlmConfig, secret_store: SecretResolver | None = None
+) -> ChatAdapter:
     """Build the real framework-backed adapter, importing it only now (SC#1).
 
     The import lives inside this function on purpose. At module scope it would
@@ -169,7 +232,7 @@ def _default_adapter(config: LlmConfig) -> ChatAdapter:
             "Everything that does not call a model — `paaf prompt`, "
             "`paaf profiles` — works without it."
         ) from exc
-    return build_engine_adapter(config)
+    return build_engine_adapter(config, secret_store=secret_store)
 
 
 def build_agent(
@@ -178,6 +241,7 @@ def build_agent(
     *,
     skill_fragments: Sequence[tuple[str, str]] | None = None,
     trace: TraceSink | None = None,
+    secret_store: SecretResolver | None = None,
 ) -> Agent:
     """Return the :class:`Agent` this CLI drives, optionally with an injected adapter.
 
@@ -185,6 +249,12 @@ def build_agent(
     framework-uninstalled, which is how ``tests/test_inspector.py`` exercises
     ``chat`` without a provider. Passing ``None`` builds the real adapter, and
     only then.
+
+    ``secret_store`` goes to the ADAPTER FACTORY and nowhere else. ``Agent`` has
+    a ``secret_store`` parameter of its own, and it stays unused on purpose —
+    its docstring says key resolution belongs to the real adapter rather than to
+    the turn loop, and passing the store in both places would imply a second
+    consumer that does not exist.
 
     Fragments default to :func:`load_skill_fragments`, the same call
     :func:`prompt` makes — that shared default is what makes the inspector's
@@ -196,7 +266,7 @@ def build_agent(
     )
     return Agent.build(
         config,
-        adapter if adapter is not None else _default_adapter(config),
+        adapter if adapter is not None else _default_adapter(config, secret_store),
         trace=trace,
         skill_fragments=fragments,
     )
@@ -324,16 +394,31 @@ def main() -> None:
     is_flag=True,
     help="Echo the exact system prompt sent, before each reply (D-02).",
 )
-def chat(config_path: str, show_prompt: bool) -> None:
+@click.option(
+    "--secrets",
+    "secrets_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help=(
+        "Path to the encrypted store holding the keys your profiles name with "
+        f"api_key_ref. Its passphrase is read from the {SECRET_PASSPHRASE_ENV} "
+        "environment variable, never from the command line."
+    ),
+)
+def chat(config_path: str, show_prompt: bool, secrets_path: str | None) -> None:
     """Hold a conversation, falling back down your chain when a provider drops."""
     config = load_llm_config(config_path)
     console = _make_console()
     render_profiles(config, console)
+    # Returns None — and opens nothing — unless a profile actually named a key.
+    store = open_secret_store(
+        config, secrets_path, os.environ.get(SECRET_PASSPHRASE_ENV)
+    )
     # The second reachable failure site: the factory validates every declared
     # profile's provider before a single turn runs, so a config error can land
     # here rather than mid-conversation.
     try:
-        agent = build_agent(config)
+        agent = build_agent(config, secret_store=store)
     except EngineError as exc:
         raise _config_failure(exc) from exc
     asyncio.run(_chat_loop(agent, show_prompt=show_prompt, console=console))

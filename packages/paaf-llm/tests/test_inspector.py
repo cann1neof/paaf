@@ -663,7 +663,7 @@ def test_a_build_time_failure_is_reported_readably(
     path = write_config(tmp_path, make_config())
     detail = "profile 'cloud': no binding for provider 'moon'"
 
-    def explode(_config: LlmConfig) -> Any:
+    def explode(_config: LlmConfig, secret_store: Any = None) -> Any:
         raise EngineError(detail)
 
     monkeypatch.setattr(cli, "_default_adapter", explode)
