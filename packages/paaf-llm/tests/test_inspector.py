@@ -48,7 +48,13 @@ from paaf_llm.cli import (
 )
 from paaf_llm.compose import SEGMENT_SEPARATOR, PromptComposer
 from paaf_llm.fake import FakeAdapter
-from paaf_llm.ports import ChatAdapter, ConnectionFailed, EngineError, Usage
+from paaf_llm.ports import (
+    ChatAdapter,
+    ConnectionFailed,
+    EngineError,
+    ServerError,
+    Usage,
+)
 from paaf_llm.profiles import LlmConfig, ModelProfile
 
 #: A base prompt and two persona fragments with enough shape that a CLI which
@@ -658,3 +664,76 @@ def test_an_unexpected_exception_still_escapes(
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LookupError)
+
+
+class _FailsAfterFirstTokenAdapter:
+    """Yields one token, commits the profile, then fails mid-reply.
+
+    The shipped fake cannot do this — it fails before its first token, which is
+    the case the fallback loop handles. This models the case the loop
+    deliberately does NOT handle: past ``# Committed: this profile serves the
+    turn``, an ``AdapterError`` is left to propagate on purpose, because
+    re-routing a half-spoken reply to a different model is worse than stopping.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.calls: list[str] = []
+
+    async def stream(self, profile: Any, messages: Any) -> Any:
+        self.calls.append(profile.model)
+        yield "half-a-"
+        raise self._error
+
+    def last_usage(self) -> Usage:
+        return Usage()
+
+
+def test_a_failure_after_the_reply_began_is_reported_readably(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-commit provider failure reads as one line naming the reason.
+
+    The reason is asserted as ``http_5xx`` — the ``FallbackReason`` VALUE, the
+    same string the trace records (D-06) — rather than as a class name, so the
+    terminal message and the trace row cannot disagree about why the turn died.
+
+    The call count is the second half of the claim: exactly one stream call means
+    the chain did not quietly try ``cloud`` after ``local`` had already begun
+    speaking. Without it the test would pass against an engine that re-routed
+    mid-reply and merely happened to fail again.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = _FailsAfterFirstTokenAdapter(ServerError("upstream exploded"))
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert "http_5xx" in result.output
+    assert "upstream exploded" in result.output
+    assert not isinstance(result.exception, ServerError)
+    assert adapter.calls == ["local"]
+
+
+def test_a_failure_before_the_reply_began_still_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE CONTROL for the mid-reply handler: a PRE-commit failure still hops.
+
+    This is the control that protects MODEL-03/04 from the fix above. A handler
+    that intercepted every ``AdapterError`` before the engine's fallback loop saw
+    one would satisfy the positive test completely, while silently turning the
+    ordered fallback chain — the headline feature — into an error message.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = FakeAdapter()
+    adapter.program("local", fail=ConnectionFailed)
+    adapter.program("cloud", tokens=["still ", "here"])
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code == 0, result.output
+    assert "↳ fell back to cloud (connection)" in result.output
+    assert "Error:" not in result.output
