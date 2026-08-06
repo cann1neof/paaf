@@ -36,6 +36,7 @@ from typing import Any
 import pytest
 import yaml
 from click.testing import CliRunner
+from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
 from paaf_llm import cli
 from paaf_llm.cli import (
     CONFIG_FAILURE_NOTICE,
@@ -108,7 +109,34 @@ def inject(monkeypatch: pytest.MonkeyPatch, adapter: ChatAdapter) -> None:
     the fake fails only with an ``AdapterError``, and every exception class that
     matters here is one the fallback loop deliberately does not catch.
     """
-    monkeypatch.setattr(cli, "_default_adapter", lambda _config: adapter)
+    monkeypatch.setattr(
+        cli, "_default_adapter", lambda _config, secret_store=None: adapter
+    )
+
+
+def spy_adapter_factory(
+    monkeypatch: pytest.MonkeyPatch, adapter: ChatAdapter
+) -> dict[str, Any]:
+    """Like :func:`inject`, but RECORD what the command handed the factory.
+
+    Returns the holder the replacement factory writes into, so a test can assert
+    on the ``secret_store`` the ``chat`` command actually resolved rather than on
+    a store the test itself built.
+
+    Patches the FACTORY for the same reason :func:`inject` does: replacing
+    ``build_agent`` would leave the command's own secret-store wiring — the thing
+    under test — outside the test.
+    """
+    captured: dict[str, Any] = {"config": None, "secret_store": None, "calls": 0}
+
+    def factory(config: LlmConfig, secret_store: Any = None) -> ChatAdapter:
+        captured["config"] = config
+        captured["secret_store"] = secret_store
+        captured["calls"] += 1
+        return adapter
+
+    monkeypatch.setattr(cli, "_default_adapter", factory)
+    return captured
 
 
 def label_parts() -> tuple[str, str]:
@@ -635,7 +663,7 @@ def test_a_build_time_failure_is_reported_readably(
     path = write_config(tmp_path, make_config())
     detail = "profile 'cloud': no binding for provider 'moon'"
 
-    def explode(_config: LlmConfig) -> Any:
+    def explode(_config: LlmConfig, secret_store: Any = None) -> Any:
         raise EngineError(detail)
 
     monkeypatch.setattr(cli, "_default_adapter", explode)
@@ -737,3 +765,187 @@ def test_a_failure_before_the_reply_began_still_falls_back(
     assert result.exit_code == 0, result.output
     assert "↳ fell back to cloud (connection)" in result.output
     assert "Error:" not in result.output
+
+
+# ------------------------------------------------ CORE-04: api_key_ref works --
+#
+# Gap 1 of 03-VERIFICATION: `cli._default_adapter` called the engine factory with
+# one argument, so `self._secret_store` was `None` in every real invocation and
+# ANY profile declaring `api_key_ref` died at bind. The credential mechanism the
+# schema advertises — the key by NAME, never in YAML — was the one that did not
+# work from the shipped command.
+#
+# The positive test below uses a REAL `EncryptedFileSecretStore` written to disk
+# rather than a stub resolver: a stub would pass against a CLI that never opened
+# a store at all, which is precisely the bug. Its control asserts the opposite
+# half — that a config naming no reference never constructs a store.
+
+
+def secret_store_at(tmp_path: Path, passphrase: str, **values: str) -> Path:
+    """Write a real encrypted store under ``tmp_path`` and return its path."""
+    path = tmp_path / "secrets.json"
+    store = EncryptedFileSecretStore(str(path), passphrase)
+    for key, value in values.items():
+        store.set(key, value)
+    return path
+
+
+def config_with_a_key_ref(ref: str = "anthropic_key") -> LlmConfig:
+    """The two-profile config, with ``cloud`` naming a secret-store key."""
+    return make_config(
+        profiles={
+            "local": ModelProfile(provider="ollama", model="local"),
+            "cloud": ModelProfile(
+                provider="anthropic", model="cloud", api_key_ref=ref
+            ),
+        }
+    )
+
+
+def test_a_profile_with_api_key_ref_reaches_the_adapter_with_a_working_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The regression control for Gap 1, end to end through ``paaf chat``.
+
+    The store is a real encrypted file, unlocked by the command from the
+    passphrase in the environment, and the assertion is made on the store the
+    ADAPTER FACTORY received — not on the one this test built. That is what makes
+    it a test of the wiring rather than of ``paaf_core``.
+    """
+    passphrase = "correct-horse-battery-staple"
+    store_path = secret_store_at(tmp_path, passphrase, anthropic_key="sk-live-value")
+    path = write_config(tmp_path, config_with_a_key_ref())
+
+    adapter = FakeAdapter()
+    adapter.program("local", tokens=["ok"])
+    captured = spy_adapter_factory(monkeypatch, adapter)
+    monkeypatch.setenv(cli.SECRET_PASSPHRASE_ENV, passphrase)
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--secrets", str(store_path)],
+        input="hello\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    store = captured["secret_store"]
+    assert store is not None
+    assert store.get("anthropic_key") == "sk-live-value"
+
+
+def test_a_config_with_no_api_key_ref_never_opens_a_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE CONTROL (T-03-34): an all-local config is never asked to unlock.
+
+    Two halves, and both are needed. Asserting only that the factory got ``None``
+    would pass against an implementation that opened a store and then ignored it;
+    replacing the store class with a callable that fails the test is what proves
+    the filesystem was never touched.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = FakeAdapter()
+    adapter.program("local", tokens=["ok"])
+    captured = spy_adapter_factory(monkeypatch, adapter)
+
+    def never(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("a secret store was opened for a config that declares no ref")
+
+    monkeypatch.setattr(cli, "EncryptedFileSecretStore", never)
+    monkeypatch.delenv(cli.SECRET_PASSPHRASE_ENV, raising=False)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code == 0, result.output
+    assert captured["calls"] == 1
+    assert captured["secret_store"] is None
+
+
+# ------------------------------------- every secret-store failure says what to do --
+#
+# Three ways the store can fail before a single token is asked for: no path, no
+# passphrase, wrong passphrase. Each must exit non-zero with ONE readable line
+# naming the fix, and none may echo the passphrase (T-03-33).
+#
+# `test_a_config_with_no_api_key_ref_never_opens_a_store` above is the negative
+# control for all three at once: an all-local config returns before any of these
+# branches is reachable.
+
+
+def test_api_key_ref_without_a_secrets_path_is_a_readable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared ref with nowhere to read it from names the profile and the flag.
+
+    ``result.exception`` is the load-bearing half. Without the guard this dies as
+    ``TypeError`` out of ``Path(None)``; asserting only on the exit code would
+    pass against that traceback, because a crash also exits non-zero.
+    """
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert "cloud" in result.output
+    assert "--secrets" in result.output
+    assert cli.SECRET_PASSPHRASE_ENV in result.output
+    assert not isinstance(
+        result.exception, OSError | TypeError | InvalidPassphraseError
+    )
+
+
+def test_a_missing_passphrase_on_a_pipe_is_a_readable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a pipe, an absent passphrase is an error — never a prompt (T-03-35).
+
+    ``paaf chat`` reads the conversation from stdin, so prompting on a non-TTY
+    would silently feed the user's FIRST MESSAGE into the KDF. The assertion that
+    the piped text is absent from the output is what pins that: it fails against
+    an implementation that prompted unconditionally and echoed what it consumed.
+    """
+    store_path = secret_store_at(tmp_path, "any-passphrase", anthropic_key="sk-v")
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+    monkeypatch.delenv(cli.SECRET_PASSPHRASE_ENV, raising=False)
+
+    first_message = "what-is-the-weather"
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--secrets", str(store_path)],
+        input=f"{first_message}\n",
+    )
+
+    assert result.exit_code != 0
+    assert cli.SECRET_PASSPHRASE_ENV in result.output
+    assert first_message not in result.output
+    assert not isinstance(
+        result.exception, OSError | TypeError | InvalidPassphraseError
+    )
+
+
+def test_a_wrong_passphrase_is_readable_and_never_echoed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-03-33's control: the store that would not open is named, the secret is not.
+
+    The message interpolates the PATH only. A wrong passphrase is the one failure
+    where the natural thing to print — "you supplied X" — is precisely the thing
+    that must never reach a terminal, a log, or a bug report.
+    """
+    store_path = secret_store_at(tmp_path, "the-right-one", anthropic_key="sk-v")
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+    monkeypatch.setenv(cli.SECRET_PASSPHRASE_ENV, "the-wrong-one")
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--secrets", str(store_path)],
+        input="hello\n",
+    )
+
+    assert result.exit_code != 0
+    assert str(store_path) in result.output
+    assert "the-wrong-one" not in result.output
+    assert not isinstance(result.exception, InvalidPassphraseError)
