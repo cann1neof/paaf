@@ -36,7 +36,7 @@ from typing import Any
 import pytest
 import yaml
 from click.testing import CliRunner
-from paaf_core.secrets import EncryptedFileSecretStore
+from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
 from paaf_llm import cli
 from paaf_llm.cli import (
     CONFIG_FAILURE_NOTICE,
@@ -859,3 +859,93 @@ def test_a_config_with_no_api_key_ref_never_opens_a_store(
     assert result.exit_code == 0, result.output
     assert captured["calls"] == 1
     assert captured["secret_store"] is None
+
+
+# ------------------------------------- every secret-store failure says what to do --
+#
+# Three ways the store can fail before a single token is asked for: no path, no
+# passphrase, wrong passphrase. Each must exit non-zero with ONE readable line
+# naming the fix, and none may echo the passphrase (T-03-33).
+#
+# `test_a_config_with_no_api_key_ref_never_opens_a_store` above is the negative
+# control for all three at once: an all-local config returns before any of these
+# branches is reachable.
+
+
+def test_api_key_ref_without_a_secrets_path_is_a_readable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A declared ref with nowhere to read it from names the profile and the flag.
+
+    ``result.exception`` is the load-bearing half. Without the guard this dies as
+    ``TypeError`` out of ``Path(None)``; asserting only on the exit code would
+    pass against that traceback, because a crash also exits non-zero.
+    """
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert "cloud" in result.output
+    assert "--secrets" in result.output
+    assert cli.SECRET_PASSPHRASE_ENV in result.output
+    assert not isinstance(
+        result.exception, OSError | TypeError | InvalidPassphraseError
+    )
+
+
+def test_a_missing_passphrase_on_a_pipe_is_a_readable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a pipe, an absent passphrase is an error — never a prompt (T-03-35).
+
+    ``paaf chat`` reads the conversation from stdin, so prompting on a non-TTY
+    would silently feed the user's FIRST MESSAGE into the KDF. The assertion that
+    the piped text is absent from the output is what pins that: it fails against
+    an implementation that prompted unconditionally and echoed what it consumed.
+    """
+    store_path = secret_store_at(tmp_path, "any-passphrase", anthropic_key="sk-v")
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+    monkeypatch.delenv(cli.SECRET_PASSPHRASE_ENV, raising=False)
+
+    first_message = "what-is-the-weather"
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--secrets", str(store_path)],
+        input=f"{first_message}\n",
+    )
+
+    assert result.exit_code != 0
+    assert cli.SECRET_PASSPHRASE_ENV in result.output
+    assert first_message not in result.output
+    assert not isinstance(
+        result.exception, OSError | TypeError | InvalidPassphraseError
+    )
+
+
+def test_a_wrong_passphrase_is_readable_and_never_echoed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-03-33's control: the store that would not open is named, the secret is not.
+
+    The message interpolates the PATH only. A wrong passphrase is the one failure
+    where the natural thing to print — "you supplied X" — is precisely the thing
+    that must never reach a terminal, a log, or a bug report.
+    """
+    store_path = secret_store_at(tmp_path, "the-right-one", anthropic_key="sk-v")
+    path = write_config(tmp_path, config_with_a_key_ref())
+    spy_adapter_factory(monkeypatch, FakeAdapter())
+    monkeypatch.setenv(cli.SECRET_PASSPHRASE_ENV, "the-wrong-one")
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--secrets", str(store_path)],
+        input="hello\n",
+    )
+
+    assert result.exit_code != 0
+    assert str(store_path) in result.output
+    assert "the-wrong-one" not in result.output
+    assert not isinstance(result.exception, InvalidPassphraseError)
