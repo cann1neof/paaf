@@ -1064,7 +1064,7 @@ fake.program("chef", tool_calls=[ToolCall("transfer_to_admin", {})])
 | A6 | `default_agent` being undeclared should mean "the currently-awake agent answers with the handoff tool withdrawn" | Open Question 2 | Medium. If wrong, budget exhaustion has undefined behaviour. **Needs a decision before planning** — D-09 says PAAF does not guess, so the no-guess default must itself be specified |
 | A7 | A rejected handoff must be communicated back to the calling agent somehow, and PAAF has no message role for it | Open Question 1 | **High** — this is the phase's sharpest unresolved design question. See Open Question 1 |
 
-## Open Questions
+## Open Questions (RESOLVED — see "Open Questions — RESOLVED" below)
 
 ### 1. How does an observer veto reach the calling agent without inventing a message the user never wrote? *(highest priority)*
 
