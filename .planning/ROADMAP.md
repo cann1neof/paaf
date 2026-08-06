@@ -193,7 +193,40 @@ Plans:
   4. Each agent applies its own fallback chain, and the trace records the full handoff chain — who was awake each turn, every handoff, and whether a turn was served by a fallback — so a wrong reroute is observable after the fact.
   5. Optional hard constraints declared on an agent are enforced by the system regardless of what the model attempts, and the entire mesh runs headless in CI against the fake adapter with the agent framework uninstalled and no audio present.
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Handoff happens: the tool-calling port seam, the peer guard and its negative control, and the receiving agent sees the full conversation (MESH-01/02/03)
+- [ ] 04-02-PLAN.md — The trace store records a handoff chain, and a pre-existing trace.db survives it — new tables only, no migration path (MESH-05, Pitfall 5)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-03-PLAN.md — The wall holds: user-owned hop budget, the home agent, A→B→A hand-back, sticky awake state, and no config-expressible routing rule (MESH-01/03, D-08/D-09, OQ-2)
+- [ ] 04-04-PLAN.md — The real LangChain adapter offers tools and reports handoff calls, plus the non-blocking live tool-streaming check (MESH-01, A1)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04-05-PLAN.md — Nothing steers the model the user cannot see: per-agent prompts, the generated-and-overridable explainer, `paaf prompt --agent`, and the bound tool surface under `--provenance` (MESH-04/PERS-05, OQ-3)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 04-06-PLAN.md — Per-agent fallback chains nested inside the handoff loop, one runs row per agent leg correlated by turn_id, and every attempt recorded including rejected ones (MESH-05, SC#4, OQ-5)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 04-07-PLAN.md — The observer judges every handoff attempt, bounded by its tool grant and confined to the caller's peer graph (MESH-06/02, D-03…D-06, OQ-1)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 04-08-PLAN.md — The observer is honest when absent or unreachable, and the correction signal is a hookable endpoint (MESH-06, D-05/D-07, OQ-4)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 04-09-PLAN.md — Honest docs (constraint caveat, observer egress, deliberate deferrals) and the three phase gates green at one commit (MESH-01/04/05/06, SC#5)
+
 **UI hint**: no
 
 ### Phase 5: Tools, MCP & Permissions
