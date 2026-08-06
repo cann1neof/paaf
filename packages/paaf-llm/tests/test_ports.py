@@ -102,6 +102,18 @@ def test_all_providers_failed_is_not_a_fallback_trigger() -> None:
     assert issubclass(ports.AllProvidersFailed, Exception)
 
 
+def test_engine_error_is_not_a_degraded_provider() -> None:
+    """Negative control: a configuration failure is never one more fallback hop.
+
+    The same shape as :func:`test_all_providers_failed_is_not_a_fallback_trigger`
+    and for the same reason. If ``EngineError`` subclassed ``AdapterError`` the
+    chain would print ``↳ fell back to cloud (connection)`` at someone whose real
+    problem is a typo in their YAML — a wrong reason, offered confidently.
+    """
+    assert not issubclass(ports.EngineError, ports.AdapterError)
+    assert issubclass(ports.EngineError, Exception)
+
+
 def test_chat_adapter_is_a_two_method_protocol() -> None:
     assert hasattr(ports.ChatAdapter, "stream")
     assert hasattr(ports.ChatAdapter, "last_usage")
@@ -121,6 +133,7 @@ def test_public_surface_re_exports_paaf_types() -> None:
         AdapterError,
         AllProvidersFailed,
         ChatAdapter,
+        EngineError,
         LlmConfig,
         Message,
         ModelProfile,
@@ -134,6 +147,7 @@ def test_public_surface_re_exports_paaf_types() -> None:
     assert ChatAdapter is ports.ChatAdapter
     assert AdapterError is ports.AdapterError
     assert AllProvidersFailed is ports.AllProvidersFailed
+    assert EngineError is ports.EngineError
     assert ModelProfile.__module__ == "paaf_llm.profiles"
     assert LlmConfig.__module__ == "paaf_llm.profiles"
 
