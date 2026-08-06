@@ -130,7 +130,7 @@ Plans:
   4. Each model profile declares, in YAML, a natural-language capability manifest and the peer agents it may hand off to; the schema validates them and `paaf chat` surfaces them, but no handoff behavior exists yet — the graph is inert data this phase, and Phase 4 makes it live.
   5. One command prints the final composed prompt verbatim — base prompt, skill fragments, runtime context — exactly as sent to the model, and it contains nothing the user did not write.
 
-**Plans**: 9/9 plans complete
+**Plans**: 13 plans — 9/9 initial plans complete; 4 gap-closure plans (03-10 … 03-13) added after `03-VERIFICATION.md` returned `gaps_found` (3/5 must-haves)
 Plans:
 **Wave 1**
 
@@ -158,6 +158,24 @@ Plans:
 **Wave 6** *(blocked on Wave 5)*
 
 - [x] 03-09-PLAN.md — SC#1 gate: ship fake suite in wheel + framework-uninstalled CI job (MODEL-08/SC#1)
+
+**Gap closure** *(plans 03-01 … 03-09 all shipped first; waves below are numbered within the gap-closure set)*
+
+**Gap-closure Wave 1**
+
+- [ ] 03-10-PLAN.md — Readable failures: EngineError becomes a port type; paaf chat reports bind and post-commit failures instead of a traceback (Gap 2, blocker)
+
+**Gap-closure Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-11-PLAN.md — api_key_ref works: paaf chat opens the paaf-core encrypted secret store and passes it to the adapter factory (Gap 1, blocks SC#2)
+
+**Gap-closure Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-12-PLAN.md — OpenAI-compatible made usable: endpoint_path + endpoint_unauthenticated, and the first binding-level tests for that provider (Gap 3, SC#2)
+
+**Gap-closure Wave 4** *(blocked on Wave 3)*
+
+- [ ] 03-13-PLAN.md — Trace sink wired: paaf chat --trace-db writes real run rows carrying served_by and the fallback trail (Gap 4, D-06/SC#4)
 
 **UI hint**: no
 
