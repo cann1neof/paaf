@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING
 
 import click
 import yaml
-from paaf_core.secrets import EncryptedFileSecretStore
+from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -109,6 +109,34 @@ MID_REPLY_FAILURE_NOTICE = (
 #: for the same reason every other user-facing string here is one — the tests
 #: assert against the name the CLI actually reads, not a copy of it.
 SECRET_PASSPHRASE_ENV = "PAAF_SECRET_PASSPHRASE"
+
+#: Printed when a profile names a key but no store was named to find it in.
+#: Lists the offending profiles, because "some profile needs a secret" sends the
+#: user hunting through their own YAML for something the CLI already knows.
+SECRETS_PATH_REQUIRED = (
+    "these profiles declare an api_key_ref: {profiles}. The key value is never "
+    "read from YAML, so name the encrypted store holding it with --secrets, and "
+    "supply that store's passphrase in the {env} environment variable."
+)
+
+#: Printed when the store was named but no passphrase reached us and stdin is a
+#: pipe rather than a terminal. Says which of the two it is, because "supply a
+#: passphrase" is not actionable when the obvious way to supply one — typing it
+#: — is exactly what a non-interactive session cannot do.
+PASSPHRASE_REQUIRED = (
+    "the secret store cannot be unlocked: no passphrase was supplied and stdin "
+    "is not a terminal, so there is nothing to prompt. Set the passphrase in the "
+    "{env} environment variable."
+)
+
+#: Printed when the store exists but will not open. Interpolates the PATH and
+#: NOTHING ELSE (T-03-33). Echoing the supplied passphrase back is the obvious
+#: "helpful" thing to do here and the one thing that must never happen: this
+#: string reaches terminals, scrollback, logs, and pasted bug reports.
+SECRET_STORE_LOCKED = (
+    "the secret store at {path} could not be unlocked with the supplied "
+    "passphrase. Check the passphrase, and that this is the right store file."
+)
 
 
 def _config_failure(exc: Exception) -> click.ClickException:
@@ -182,10 +210,15 @@ def open_secret_store(
     never be asked to unlock anything, and a store built "just in case" would be
     a credential prompt the user's config never justified.
 
-    Only past that point do the two missing-input guards apply. They live here
+    Only past that point do the three failure branches apply. They live here
     rather than at the store constructor because ``Path(None)`` and
     ``None.encode`` are tracebacks, and a traceback on the headline command is
     the failure mode this CLI's error handling exists to eliminate.
+
+    **The prompt is gated on a TTY, and that gate is load-bearing** (T-03-35).
+    ``paaf chat`` reads the conversation from stdin, so prompting on a pipe would
+    silently swallow the user's first message and feed it to the KDF — producing
+    a wrong-passphrase error about a line they meant as a question.
     """
     needed = profiles_needing_secrets(config)
     if not needed:
@@ -193,17 +226,28 @@ def open_secret_store(
 
     if secrets_path is None:
         raise click.ClickException(
-            f"these profiles declare an api_key_ref: {', '.join(needed)}. The key "
-            f"value is never read from YAML, so name the encrypted store holding "
-            f"it with --secrets, and supply its passphrase in {SECRET_PASSPHRASE_ENV}."
-        )
-    if not passphrase:
-        raise click.ClickException(
-            "the secret store cannot be unlocked because no passphrase was "
-            f"supplied. Set {SECRET_PASSPHRASE_ENV} in the environment."
+            SECRETS_PATH_REQUIRED.format(
+                profiles=", ".join(needed), env=SECRET_PASSPHRASE_ENV
+            )
         )
 
-    return EncryptedFileSecretStore(secrets_path, passphrase)
+    if not passphrase:
+        if click.get_text_stream("stdin").isatty():
+            passphrase = click.prompt(
+                "Passphrase for the secret store", hide_input=True
+            )
+        else:
+            raise click.ClickException(
+                PASSPHRASE_REQUIRED.format(env=SECRET_PASSPHRASE_ENV)
+            )
+
+    try:
+        return EncryptedFileSecretStore(secrets_path, passphrase)
+    except InvalidPassphraseError as exc:
+        # The path, never the passphrase and never a stored value (T-03-33).
+        raise click.ClickException(
+            SECRET_STORE_LOCKED.format(path=secrets_path)
+        ) from exc
 
 
 def _default_adapter(
