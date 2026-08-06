@@ -195,6 +195,25 @@ def test_every_schema_provider_has_a_binding() -> None:
     assert declared == set(PROVIDER_STRINGS)
 
 
+# ------------------------------------------------- MODEL-08: one EngineError --
+
+
+def test_engine_error_is_the_class_the_port_declares() -> None:
+    """The adapter raises the SAME class object the port declares — not a twin.
+
+    This is the control that matters, and the only one that can catch the
+    failure it guards. Two same-named classes would let this adapter raise one
+    while the framework-free CLI's ``except`` clause names the other; the
+    traceback would come straight back and every other test in both files would
+    still be green, because none of them ever compares the two identities.
+    """
+    from paaf_llm._engine import EngineError as adapter_engine_error
+    from paaf_llm.ports import EngineError as port_engine_error
+
+    assert adapter_engine_error is port_engine_error
+    assert EngineError is port_engine_error
+
+
 # --------------------------------------------------- MODEL-06: two LAN boxes --
 
 

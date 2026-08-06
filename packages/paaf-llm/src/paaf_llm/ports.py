@@ -153,6 +153,32 @@ class AllProvidersFailed(Exception):
     """
 
 
+class EngineError(Exception):
+    """A configuration or unknown failure — NOT a degraded provider.
+
+    A missing or unresolvable API key, a model name the provider does not have,
+    or a bug in the real adapter all surface here. None of those is a provider
+    having a bad minute; each is something the user must fix, and each stays
+    broken however many models the chain tries next.
+
+    Deliberately NOT an :class:`AdapterError`, for the same reason
+    :class:`AllProvidersFailed` is not one: an ``AdapterError`` means "try the
+    next profile", so the ordered fallback loop would absorb a config error as
+    one more plausible hop and print ``↳ fell back to cloud (connection)`` at
+    someone whose real problem is a typo — a confident, wrong explanation, which
+    is exactly the hidden behavior this project refuses.
+
+    It lives HERE, in the port, rather than beside the real adapter that raises
+    it, and that placement is load-bearing rather than tidy. The adapter package
+    is behind an optional extra and is unimportable without the agent framework,
+    so a caller running framework-uninstalled — the CLI — could not name this
+    class in an ``except`` clause at all if it were defined there. Being a port
+    type is what lets the CLI catch a bind failure and print one readable line
+    instead of a traceback. The adapter package imports this exact class object;
+    there is no second definition of it anywhere.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class TurnResult:
     """The outcome of one completed turn, with its provenance attached.

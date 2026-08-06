@@ -53,9 +53,15 @@ not have, or a bug in this adapter is not a degraded provider — it is a
 configuration error the user must fix. Translating those into a fallback reason
 would print ``↳ fell back to cloud (connection)`` at someone whose real problem
 is a typo, which is precisely the kind of hidden behavior this project refuses.
-They surface as :class:`EngineError`, which is PAAF-typed (so no framework
-exception escapes the port) and pointedly not an ``AdapterError`` (so the
-fallback loop cannot swallow it as one more plausible hop).
+They surface as :class:`~paaf_llm.ports.EngineError`, which is PAAF-typed (so no
+framework exception escapes the port) and pointedly not an ``AdapterError`` (so
+the fallback loop cannot swallow it as one more plausible hop). That class is
+DEFINED IN THE PORT, not here, and is merely imported and re-exported by this
+module. The placement is deliberate: this package is unimportable without the
+optional extra, so a framework-free caller — :mod:`paaf_llm.cli` — could not name
+a locally-defined class in an ``except`` clause, and the single most likely
+first-run failure (a credential that will not resolve) would reach the user as a
+traceback. Defining it in the port is what makes it catchable.
 
 **Secrets.** An API key is fetched by REFERENCE at bind time
 (``SecretStore.get(profile.api_key_ref)``, CORE-04) and never read from YAML. Any
@@ -72,6 +78,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..ports import (
     ConnectionFailed,
+    EngineError,
     Message,
     RateLimited,
     RequestTimedOut,
@@ -149,16 +156,6 @@ _STATUS_ATTRS = ("status_code", "status", "http_status")
 #: How far to walk an exception's ``__cause__``/``__context__`` chain. Bounded
 #: because a chain can be cyclic and this runs on a failure path.
 _MAX_CHAIN_DEPTH = 12
-
-
-class EngineError(Exception):
-    """A failure that is NOT a degraded provider — configuration, or unknown.
-
-    PAAF-typed on purpose (no framework exception escapes the port) and
-    deliberately not an :class:`~paaf_llm.ports.AdapterError`, so the fallback
-    loop does not absorb a config error as a plausible-looking hop. See the
-    module docstring for why that distinction is load-bearing.
-    """
 
 
 @dataclass(frozen=True, slots=True)

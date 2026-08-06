@@ -38,6 +38,7 @@ import yaml
 from click.testing import CliRunner
 from paaf_llm import cli
 from paaf_llm.cli import (
+    CONFIG_FAILURE_NOTICE,
     NO_HANDOFF_NOTE,
     PROVENANCE_LABEL,
     build_agent,
@@ -47,7 +48,13 @@ from paaf_llm.cli import (
 )
 from paaf_llm.compose import SEGMENT_SEPARATOR, PromptComposer
 from paaf_llm.fake import FakeAdapter
-from paaf_llm.ports import ConnectionFailed
+from paaf_llm.ports import (
+    ChatAdapter,
+    ConnectionFailed,
+    EngineError,
+    ServerError,
+    Usage,
+)
 from paaf_llm.profiles import LlmConfig, ModelProfile
 
 #: A base prompt and two persona fragments with enough shape that a CLI which
@@ -89,12 +96,17 @@ def make_config(**overrides: Any) -> LlmConfig:
     return LlmConfig(**fields)
 
 
-def inject(monkeypatch: pytest.MonkeyPatch, adapter: FakeAdapter) -> None:
+def inject(monkeypatch: pytest.MonkeyPatch, adapter: ChatAdapter) -> None:
     """Make the real ``chat`` command build ``adapter`` instead of a provider.
 
     Patching the adapter FACTORY rather than ``build_agent`` keeps the command's
     own wiring — config load, fragment source, agent construction — inside the
     test. Stubbing ``build_agent`` would test the stub.
+
+    Typed to the PORT rather than to :class:`FakeAdapter`, because the failure
+    tests below inject local adapters that model what the shipped fake cannot:
+    the fake fails only with an ``AdapterError``, and every exception class that
+    matters here is one the fallback loop deliberately does not catch.
     """
     monkeypatch.setattr(cli, "_default_adapter", lambda _config: adapter)
 
@@ -545,3 +557,183 @@ def test_invalid_config_is_a_readable_error(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "is not a valid PAAF LLM config" in result.output
     assert "missing" in result.output
+
+
+# ------------------------------------------------- readable failure surfaces --
+#
+# Gap 2 of 03-VERIFICATION: `EngineError` escaped `paaf chat` as a raw traceback,
+# reproduced live twice by the verifier. For a phase whose thesis is "nothing
+# hidden from the user, readable output", a traceback on the headline command is
+# the one failure mode that contradicts it outright.
+#
+# Every test here is paired: a positive claim that a named failure reads well,
+# and a control proving the handler that made it read well did not become a
+# catch-all. `test_an_unexpected_exception_still_escapes` is the control for the
+# whole section — a handler written over the base exception class would satisfy
+# every positive assertion below and still be wrong.
+
+
+class _RaisingAdapter:
+    """Fails on the FIRST token with a supplied exception, and records the call.
+
+    Deliberately not the shipped fake: the fake fails only with an
+    ``AdapterError``, which is the one class these tests must not use — the whole
+    question here is what happens to an exception the fallback loop is designed
+    NOT to catch. ``_SlowLaterTokensAdapter`` in ``tests/test_fallback.py`` is the
+    precedent for a local adapter modelling what the fake cannot.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.calls: list[str] = []
+
+    async def stream(self, profile: Any, messages: Any) -> Any:
+        self.calls.append(profile.model)
+        raise self._error
+        yield ""  # unreachable, and required: it is what makes this a generator
+
+    def last_usage(self) -> Usage:
+        return Usage()
+
+
+def test_a_bind_failure_is_reported_readably(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A profile that cannot be bound prints one line, not a traceback (Gap 2).
+
+    The detail is the verifier's own reproduced text — a profile declaring an
+    ``api_key_ref`` with no secret store behind it, which is the single most
+    likely real first-run failure.
+
+    ``result.exception`` is the load-bearing assertion. Asserting only on the
+    exit code and the output would pass against a CLI that crashed, because a
+    traceback also exits non-zero and also contains the message.
+    """
+    path = write_config(tmp_path, make_config())
+    detail = (
+        "profile declares api_key_ref 'anthropic_key' but no secret store was "
+        "provided to the adapter"
+    )
+    inject(monkeypatch, _RaisingAdapter(EngineError(detail)))
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert CONFIG_FAILURE_NOTICE.format(detail=detail) in result.output
+    assert not isinstance(result.exception, EngineError)
+
+
+def test_a_build_time_failure_is_reported_readably(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OTHER reachable site: the factory validates providers before any turn.
+
+    ``build_engine_adapter`` checks every declared profile up front, so a config
+    error can land before a single token is asked for. One helper serves both
+    sites precisely so the two cannot drift into different wordings.
+    """
+    path = write_config(tmp_path, make_config())
+    detail = "profile 'cloud': no binding for provider 'moon'"
+
+    def explode(_config: LlmConfig) -> Any:
+        raise EngineError(detail)
+
+    monkeypatch.setattr(cli, "_default_adapter", explode)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert CONFIG_FAILURE_NOTICE.format(detail=detail) in result.output
+    assert not isinstance(result.exception, EngineError)
+
+
+def test_an_unexpected_exception_still_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE CONTROL for the whole section: the handlers name types, never all.
+
+    A ``LookupError`` is neither a configuration failure nor a degraded provider
+    — from the fake it means a test forgot to program a profile, which must stay
+    loud. If either handler were widened to the base exception class, this test
+    is the only one in the file that would turn red.
+    """
+    path = write_config(tmp_path, make_config())
+    inject(monkeypatch, _RaisingAdapter(LookupError("no program for 'local'")))
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LookupError)
+
+
+class _FailsAfterFirstTokenAdapter:
+    """Yields one token, commits the profile, then fails mid-reply.
+
+    The shipped fake cannot do this — it fails before its first token, which is
+    the case the fallback loop handles. This models the case the loop
+    deliberately does NOT handle: past ``# Committed: this profile serves the
+    turn``, an ``AdapterError`` is left to propagate on purpose, because
+    re-routing a half-spoken reply to a different model is worse than stopping.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+        self.calls: list[str] = []
+
+    async def stream(self, profile: Any, messages: Any) -> Any:
+        self.calls.append(profile.model)
+        yield "half-a-"
+        raise self._error
+
+    def last_usage(self) -> Usage:
+        return Usage()
+
+
+def test_a_failure_after_the_reply_began_is_reported_readably(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post-commit provider failure reads as one line naming the reason.
+
+    The reason is asserted as ``http_5xx`` — the ``FallbackReason`` VALUE, the
+    same string the trace records (D-06) — rather than as a class name, so the
+    terminal message and the trace row cannot disagree about why the turn died.
+
+    The call count is the second half of the claim: exactly one stream call means
+    the chain did not quietly try ``cloud`` after ``local`` had already begun
+    speaking. Without it the test would pass against an engine that re-routed
+    mid-reply and merely happened to fail again.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = _FailsAfterFirstTokenAdapter(ServerError("upstream exploded"))
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code != 0
+    assert "http_5xx" in result.output
+    assert "upstream exploded" in result.output
+    assert not isinstance(result.exception, ServerError)
+    assert adapter.calls == ["local"]
+
+
+def test_a_failure_before_the_reply_began_still_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE CONTROL for the mid-reply handler: a PRE-commit failure still hops.
+
+    This is the control that protects MODEL-03/04 from the fix above. A handler
+    that intercepted every ``AdapterError`` before the engine's fallback loop saw
+    one would satisfy the positive test completely, while silently turning the
+    ordered fallback chain — the headline feature — into an error message.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = FakeAdapter()
+    adapter.program("local", fail=ConnectionFailed)
+    adapter.program("cloud", tokens=["still ", "here"])
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code == 0, result.output
+    assert "↳ fell back to cloud (connection)" in result.output
+    assert "Error:" not in result.output
