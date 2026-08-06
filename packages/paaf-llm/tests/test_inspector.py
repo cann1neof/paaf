@@ -28,6 +28,7 @@ exercised end to end without a provider, a socket, or the ``[engine]`` extra.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 import sys
@@ -1024,3 +1025,137 @@ def test_chat_with_a_trace_db_writes_a_run_row(
     _key, messages = adapter.calls[0]
     assert messages[0].role == "system"
     assert row["prompts"] == messages[0].content
+
+
+def test_the_trace_row_records_the_fallback_trail_the_user_was_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-06 end to end: the hop the user SAW is the hop recorded on disk.
+
+    Both halves of D-06 were already true separately — the terminal prints a
+    notice per hop, and ``Agent._drain`` serializes the same trail — but nothing
+    asserted they agree from the shipped command. The final assertion is the one
+    that closes the loop: the ``reason`` parsed out of the database column is a
+    substring of the notice that reached the terminal, so a future change to
+    either surface cannot silently drift from the other.
+
+    The trail is compared through :func:`json.loads` rather than as raw text: a
+    substring assertion on the JSON string would pass against a differently
+    shaped object that merely happened to contain the word ``connection``.
+    """
+    path = write_config(tmp_path, make_config())
+    db_path = tmp_path / "trace.db"
+    adapter = FakeAdapter()
+    adapter.program("local", fail=ConnectionFailed)
+    adapter.program("cloud", tokens=["still ", "here"])
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--trace-db", str(db_path)],
+        input="hello\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    notice = "↳ fell back to cloud (connection)"
+    assert notice in result.output
+
+    rows = read_runs(db_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["served_by"] == "cloud"
+
+    trail = json.loads(row["fallback_trail"])
+    assert trail == [{"from": "local", "to": "cloud", "reason": "connection"}]
+    # The user's view and the authoritative record agree on WHY (D-06).
+    assert trail[0]["reason"] in notice
+
+
+def test_chat_without_a_trace_db_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE CONTROL (T-03-44): no flag, no store, no file — anywhere.
+
+    Two halves, and both are needed. The directory comparison alone would pass
+    against an implementation that always constructed a store at some default
+    path and merely never wrote to it — which is exactly the behavior this
+    plan refused, because a database at a path the user never named is a file
+    nobody asked for. Replacing :class:`TraceStore` with a callable that fails
+    the test is what proves nothing was constructed at all.
+    """
+    path = write_config(tmp_path, make_config())
+    adapter = FakeAdapter()
+    adapter.program("local", tokens=["ok"])
+    inject(monkeypatch, adapter)
+
+    def never(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("a trace store was constructed for a run with no --trace-db")
+
+    monkeypatch.setattr(cli, "TraceStore", never)
+
+    before = sorted(entry.name for entry in tmp_path.iterdir())
+    result = CliRunner().invoke(main, ["chat", "--config", path], input="hello\n")
+
+    assert result.exit_code == 0, result.output
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == before
+    assert list(tmp_path.rglob("*.db")) == []
+
+
+class _ServesOnceThenFailsAdapter:
+    """Serves the first turn, then raises on every turn after it.
+
+    The shipped fake cannot express this — a program is permanent, so a fake
+    profile either always serves or always fails. What is needed here is a
+    session that gets far enough to RECORD something and then dies, which is the
+    only shape in which "were the rows it already had flushed?" is a real
+    question. ``_RaisingAdapter`` and ``_FailsAfterFirstTokenAdapter`` above are
+    the precedent for a local adapter modelling what the fake cannot.
+    """
+
+    def __init__(self, error: Exception, tokens: list[str]) -> None:
+        self._error = error
+        self._tokens = list(tokens)
+        self.calls: list[str] = []
+
+    async def stream(self, profile: Any, messages: Any) -> Any:
+        self.calls.append(profile.model)
+        if len(self.calls) > 1:
+            raise self._error
+        for token in self._tokens:
+            yield token
+
+    def last_usage(self) -> Usage:
+        return Usage()
+
+
+def test_a_failing_session_still_flushes_its_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Constraint 5 as a test (T-03-42): ``stop()`` runs on the error path too.
+
+    Two lines of input. The first turn is served and recorded; the second raises
+    an ``EngineError``, which the turn loop reports readably and which unwinds
+    the whole session. A store stopped after ``_chat_loop`` rather than in a
+    ``finally`` would abandon the writer task with the first turn's event still
+    in the queue — losing exactly the row a user debugging a failed session most
+    wants, and doing it silently.
+    """
+    path = write_config(tmp_path, make_config())
+    db_path = tmp_path / "trace.db"
+    detail = "profile 'local': the provider went away mid-session"
+    adapter = _ServesOnceThenFailsAdapter(EngineError(detail), ["ok"])
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--trace-db", str(db_path)],
+        input="first\nsecond\n",
+    )
+
+    assert result.exit_code != 0
+    assert CONFIG_FAILURE_NOTICE.format(detail=detail) in result.output
+    assert not isinstance(result.exception, EngineError)
+
+    rows = read_runs(db_path)
+    assert len(rows) >= 1
+    assert rows[0]["served_by"] == "local"
