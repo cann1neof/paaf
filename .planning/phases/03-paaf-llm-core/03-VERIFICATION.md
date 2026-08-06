@@ -1,102 +1,63 @@
 ---
 phase: 03-paaf-llm-core
-verified: 2026-08-06T12:00:00Z
-status: gaps_found
-score: 3/5 must-haves verified
-behavior_unverified: 1
+verified: 2026-08-06T17:02:03Z
+status: human_needed
+score: 5/5 must-haves verified
+behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "SC#2 — The user names model profiles across Ollama, OpenAI-compatible endpoints and Anthropic in YAML — including two separate local servers on the LAN as distinct profiles — and `paaf chat` uses them without a line of code."
-    status: partial
-    reason: >-
-      Naming works and two-LAN distinctness is genuinely proven, but PAAF's own
-      declared credential mechanism is not wired into the shipped command:
-      `cli._default_adapter` constructs `build_engine_adapter(config)` with NO
-      secret store, so ANY profile that declares `api_key_ref` dies at bind with
-      an EngineError. Verified by running `paaf chat` against a hand-written
-      YAML. That makes the Anthropic leg (and any authenticated OpenAI-compatible
-      leg) reachable only by setting the provider SDK's own environment variable,
-      which routes around the CORE-04 SecretStore the schema's `api_key_ref`
-      exists to use. Separately, `paaf_core.Endpoint` carries no URL path, so an
-      OpenAI-compatible server mounted at `/v1` (vLLM, llama.cpp server, LM
-      Studio — the named use case for that provider) cannot be addressed at all,
-      and an unauthenticated local OpenAI-compatible server cannot bind because
-      ChatOpenAI demands credentials the schema has no unauthenticated way to
-      supply. Ollama is unaffected.
-    artifacts:
-      - path: "packages/paaf-llm/src/paaf_llm/cli.py:138"
-        issue: "`return build_engine_adapter(config)` — the `secret_store` parameter is never passed, so LangChainAdapter._secret_store is always None in production. Every `api_key_ref` profile raises EngineError at bind."
-      - path: "packages/paaf-llm/src/paaf_llm/_engine/__init__.py:326-346"
-        issue: "`base_url()` derives scheme://host:port with no path; `paaf_core.net.endpoint.Endpoint` has no path field and `ModelProfile` has `extra=\"forbid\"`, so `/v1` is inexpressible."
-      - path: "packages/paaf-llm/tests/test_engine_adapter.py"
-        issue: "`openai_compatible` is exercised only at the provider-string level (line 175). No test binds an openai_compatible profile, which is why neither the missing-credential nor the missing-path failure was caught."
-    missing:
-      - "Wire a `paaf_core` SecretStore into `cli._default_adapter` (build_engine_adapter accepts `secret_store=` already — the parameter exists and is unit-tested, it is simply never supplied), or document explicitly that env-var credentials are the Phase-3 path."
-      - "Add an `endpoint_path` field to ModelProfile (and a path to paaf_core Endpoint) so OpenAI-compatible servers under /v1 are addressable, OR record this as an accepted Phase-3 limitation in ROADMAP/REQUIREMENTS rather than only in a plan SUMMARY."
-      - "A way to express 'this OpenAI-compatible endpoint needs no auth' so an unauthenticated LAN server can bind."
-      - "A test that binds an openai_compatible profile end-to-end (the one provider with no binding-level coverage)."
-  - truth: "`paaf chat` reports failures readably rather than as a Python traceback (D-01 thin-CLI / 'nothing hidden' spirit)."
-    status: failed
-    reason: >-
-      `_chat_loop` catches only `AllProvidersFailed`. `EngineError` — which the
-      engine module's own docstring designates as the class for the most likely
-      real-world first-run failure (a missing or unresolvable credential, a wrong
-      model name) — propagates out of `asyncio.run` as a raw traceback.
-      Reproduced live twice.
-    artifacts:
-      - path: "packages/paaf-llm/src/paaf_llm/cli.py:244-247"
-        issue: "`except AllProvidersFailed` only; no handler for EngineError (or for a mid-stream AdapterError, which the engine deliberately does not catch after first-token commit)."
-    missing:
-      - "Catch EngineError (and a post-commit AdapterError) in `_chat_loop` and re-raise as click.ClickException, with a test."
+re_verification:
+  previous_status: gaps_found
+  previous_score: 2026-08-06 — 3/5
+  gaps_closed:
+    - "SC#2 — `paaf chat` could not use PAAF's own credential mechanism: `cli._default_adapter` never forwarded a secret store, so any `api_key_ref` profile died at bind (Gap 1, plan 03-11)"
+    - "SC#2 — an OpenAI-compatible server under `/v1` was inexpressible and an unauthenticated one could not bind; no test bound an `openai_compatible` profile (Gap 3, plan 03-12)"
+    - "`paaf chat` reported failures as a raw Python traceback: `_chat_loop` caught only `AllProvidersFailed`, so `EngineError` escaped (Gap 2, plan 03-10)"
+    - "`paaf chat` never wrote a trace row: `build_agent(config)` was called with no `trace=` sink (Warning/Gap 4, plan 03-13)"
+  gaps_remaining: []
+  regressions: []
 deferred:
   - truth: "SC#5's 'skill fragments' clause — an ACTIVE skill contributes a persona fragment to the composed prompt (PERS-02)."
     addressed_in: "Phase 6 — Skills & PyPI Release"
-    evidence: "Phase 6 success criterion 2: 'Enabling or disabling an installed skill changes the composed prompt and the tool registry without uninstalling it.' Phase 3's `cli.load_skill_fragments` returns `[]` by documented design (D-09); the composer's fragment contract is pinned now by tests that repoint that source."
+    evidence: "Phase 6 success criterion 2 (read from ROADMAP.md line 225): 'Enabling or disabling an installed skill changes the composed prompt and the tool registry without uninstalling it.' Phase 3's `cli.load_skill_fragments` returns `[]` by documented design (D-09); the composer's fragment contract is pinned now by tests that repoint that source."
   - truth: "SC#5's 'runtime context' clause — time, device name, room compose into the prompt (PERS-03)."
     addressed_in: "Phase 10 — The Appliance"
-    evidence: "REQUIREMENTS.md traceability table maps PERS-03 to 'Phase 10 — The Appliance'. Plan 03-07 scoped SC#5 to base + skill fragments on this basis (D-09)."
-behavior_unverified_items:
-  - truth: "SC#3 — Pulling the WAN mid-conversation moves the reply onto a local profile and the conversation continues."
-    test: "With a real cloud profile as `active_profile` and a real local Ollama profile in `fallback_chain`, start `paaf chat`, send one turn successfully, then physically disconnect the WAN and send a second turn."
-    expected: "The second turn prints `↳ fell back to <local> (connection)` and is answered by the local model, and the local model's reply demonstrates it received the first turn's history."
-    why_human: >-
-      Every fallback trigger is proven against the FakeAdapter and the four
-      transport translations are validated against 13 real provider SDK exception
-      instances, but no test in the repo contacts a real provider — the suite runs
-      under `--disable-socket` by design. Cutting a real WAN link is a physical
-      state change no automated check in this repo can produce. (03-VALIDATION.md
-      already lists this as Manual-Only.) Partial live evidence was collected
-      during this verification: an unreachable LAN Ollama endpoint did produce a
-      real ConnectionFailed and the loop did advance to the next profile.
+    evidence: "ROADMAP.md line 288 lists PERS-03 in Phase 10's Requirements; REQUIREMENTS.md line 265 maps `PERS-03 | Phase 10 — The Appliance`. Plan 03-07 scoped SC#5 to base + skill fragments on this basis (D-09)."
 human_verification:
-  - test: "Pull the WAN mid-conversation with a real cloud active profile and a real local fallback (see behavior_unverified_items)."
-    expected: "Reply moves onto the local profile, one `↳ fell back to ... (connection)` notice, conversation history intact."
-    why_human: "No test contacts a real provider; the suite is socket-disabled by design."
-  - test: "Cold-start a 14B Ollama model and send the first turn."
-    expected: "No spurious `slow_first_token` fallback inside the configured `first_token_budget_s`; `Agent.warmup()`/`LangChainAdapter.preload()` absorbs the cold-load cost."
-    why_human: "03-VALIDATION.md Manual-Only row. Timing against a real cold-loading model cannot be asserted deterministically offline."
-  - test: "Run `paaf chat` against a real running local Ollama server (`endpoint_host`/`endpoint_port` pointing at it) and hold a two-turn conversation."
-    expected: "Both turns answer; the second turn's answer shows the model saw the first."
-    why_human: "MODEL-01/02 real round-trip. Requires a live provider; excluded from the socket-disabled CI suite."
+  - test: "With a real `ANTHROPIC_API_KEY` stored in an encrypted `paaf_core` secret store under the name a profile's `api_key_ref` declares, run `paaf chat --config <yaml> --secrets <store>` against a live Anthropic profile and hold one turn."
+    expected: "A genuine completion comes back from api.anthropic.com and is printed as `<profile>> <reply>`."
+    why_human: "Requires a real, billable API key. The verifier proved the whole path up to the wire — the key resolves out of a real encrypted store, the Anthropic profile BINDS with it, and it dials a real socket (an Anthropic profile pointed at a dead local port produced a real `ConnectionFailed` and hopped) — but a successful Anthropic completion cannot be produced without a credential. 03-VALIDATION.md already lists this as Manual-Only."
+  - test: "With a real cloud profile as `active_profile` and a real local Ollama profile in `fallback_chain`, start `paaf chat`, send one turn successfully, then physically disconnect the WAN and send a second turn."
+    expected: "The second turn prints `↳ fell back to <local> (connection)`, is answered by the local model, and that reply shows it received the first turn's history."
+    why_human: "Cutting a real WAN link is a physical state change no automated check in this repo can produce. The verifier reproduced the equivalent live — an unreachable active profile produced a real ConnectionFailed, the loop hopped to a real local Ollama server, and turn 2's answer recalled turn 1's content — so what is left is confirmation that a WAN cut is indistinguishable from an unreachable endpoint."
+  - test: "Cold-start a 14B Ollama model and send the first turn of a session."
+    expected: "No spurious `slow_first_token` fallback inside the configured `first_token_budget_s` — `Agent.warmup()` / `LangChainAdapter.preload()` absorbs the cold-load cost."
+    why_human: "03-VALIDATION.md Manual-Only row. Timing against a real cold-loading model cannot be asserted deterministically offline, and the verifier's local model is small and already warm."
   - test: "Point two Ollama profiles at two DIFFERENT physical LAN machines and confirm each answers from its own box."
-    expected: "Each named profile is served by its own server (distinct model names or `ollama ps` on each box confirms which one ran)."
-    why_human: "MODEL-06's headline. Proven at the binding level (two distinct clients with distinct base_urls) but never against two real servers."
+    expected: "`ollama ps` on each machine (or distinct model names) confirms which server ran."
+    why_human: "The verifier has one Ollama server. Distinctness was proven live at the endpoint level — two same-provider profiles at 127.0.0.1:11435 (dead) and 127.0.0.1:11434 (live) did NOT share a binding: the dead one produced a real connection failure rather than being answered by the live one's client. Two physical boxes is the remaining confirmation."
 ---
 
-# Phase 3: paaf-llm Core (single agent) — Verification Report
+# Phase 3: paaf-llm Core (single agent) — Verification Report (re-verification)
 
 **Phase Goal:** `paaf chat` holds a real single-agent conversation using a model the user named in YAML, survives losing its provider mid-sentence via a user-defined fallback chain, and shows the user the exact prompt it sent — while each profile also declares the capability manifest and peer-agent graph the mesh will later traverse.
 
-**Verified:** 2026-08-06
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-06T17:02:03Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure by plans 03-10, 03-11, 03-12, 03-13
 
-> **Mode note (non-blocking).** ROADMAP.md declares `Mode: mvp` for this phase, but the
-> phase goal is not in User Story form (`As a …, I want to …, so that …`). The MVP-mode
-> guard would normally refuse to verify. It is bypassed here because the five Success
-> Criteria are explicit and independently verifiable, and the orchestrator directed a
-> goal-backward assessment against them. The User Flow Coverage table is therefore
-> omitted; the mode/goal mismatch is surfaced for the maintainer to reconcile.
+> **Mode note (non-blocking, carried forward).** ROADMAP.md declares `Mode: mvp` for this
+> phase, but the phase goal is not in User Story form (`As a …, I want to …, so that …`).
+> The MVP-mode guard would normally refuse to verify. It is bypassed here for the same
+> reason as the initial pass: the five Success Criteria are explicit and independently
+> verifiable, and the orchestrator directed a goal-backward assessment against them. The
+> User Flow Coverage table is therefore omitted; the mode/goal mismatch remains surfaced
+> for the maintainer to reconcile.
+
+---
+
+## Verdict In One Line
+
+All four gaps from the 2026-08-06 initial verification are **closed in the code, not merely in the SUMMARYs** — and each closure was re-verified by running the shipped command against a real provider, not by reading a diff. Score moves 3/5 → **5/5**, with no regressions and no new gaps. What remains is four confirmations that require a paid API key, a physical WAN cut, a cold 14B model, or a second LAN machine — none of which this repo can produce.
 
 ---
 
@@ -106,171 +67,290 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | The `fake/` adapter is written and merged BEFORE the real adapter, and the entire `paaf-llm` suite passes against it with the agent framework uninstalled | ✓ VERIFIED | Ordering proven from git: `9d8d43f` (FakeAdapter, 2026-08-05 16:19) precedes `105fcde` (LangChainAdapter, 2026-08-05 23:46). **I ran `bash scripts/check_framework_uninstalled.sh` myself**: builds wheels, asserts the wheel ships all 11 fake-suite test files (and only deliberately excludes `test_engine_adapter.py`), installs into a clean off-repo venv, runs `pytest --pyargs paaf_llm` → **102 passed**, then asserts `langchain` and `langgraph` are both unimportable. `check_wheel_independence.sh` also PASS. |
-| 2 | Model profiles across Ollama, OpenAI-compatible and Anthropic in YAML — incl. two LAN servers as distinct profiles — and `paaf chat` uses them without a line of code | ✗ FAILED (partial) | Naming and two-LAN distinctness verified (see below). **But `paaf chat` cannot use any profile that declares `api_key_ref`** — `cli.py:138` never passes a secret store. Reproduced live: `EngineError: could not bind 'anthropic:claude-sonnet-4-5': profile declares api_key_ref 'anthropic_key' but no secret store was provided`. OpenAI-compatible under `/v1` is inexpressible, and an unauthenticated local OpenAI-compatible server cannot bind. See Gaps. |
-| 3 | Pulling the WAN mid-conversation moves the reply onto a local profile and the conversation continues; timeout / 5xx / 429 / slow-first-token trigger the same chain | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | All five triggers + two negative controls proven against the fake (`test_fallback.py`), with an exhaustiveness control over the whole `FallbackReason` enum and over `AdapterError.__subclasses__()`. Real-provider translation validated against 13 real SDK exception instances (`test_translation_matches_the_real_provider_exception_types`, 26/26 pass with `[engine]`). **No test contacts a real provider** — the suite is socket-disabled by design, and a WAN pull is a physical state change. Routed to human verification. |
-| 4 | Each profile declares a natural-language capability manifest and peer agents in YAML; the schema validates them and `paaf chat` surfaces them, with no handoff behavior | ✓ VERIFIED | Schema: `capabilities: str` (free text), `peers: list[str]`, `constraints: list[str]`; `_check_refs` rejects dangling/self peers, dangling fallback targets, and a dangling `active_profile` (`test_peer_validation`, 4 rejection cases). Surfaced: **I ran `paaf profiles` and `paaf chat` on a hand-written YAML** and saw every manifest, peer, constraint and the inert-graph note. Inertness has a real negative control: `test_manifest_performs_no_handoff` leaves the declared peer UNPROGRAMMED so any contact raises `LookupError` (not an `AdapterError` the loop could swallow). `TurnResult.handoff` is hardcoded `None`. |
-| 5 | One command prints the final composed prompt verbatim — exactly as sent, containing nothing the user did not write | ✓ VERIFIED (2 clauses deferred) | **I ran `paaf prompt` and `od -c`'d the output**: it ends at the last user character with no trailing newline. `test_prompt_byte_exact` closes the loop three ways — CLI stdout == `compose()` == the `system` message the adapter actually received on a real turn. `--provenance` segments rejoin byte-identically. Negative controls: fragments present, no labels in the raw view, no adapter constructed. The SC's "skill fragments" and "runtime context" clauses are deferred to Phases 6 and 10 respectively (see Deferred Items). |
+| 1 | The `fake/` adapter is written and merged BEFORE the real adapter, and the entire `paaf-llm` suite passes against it with the agent framework uninstalled | ✓ VERIFIED | **Regression check.** Ordering re-confirmed from git: `9d8d43f` (FakeAdapter, 2026-08-05 16:19) precedes `105fcde` (LangChainAdapter body, 2026-08-05 23:46); `_engine/__init__.py` existed before that only as a Phase-2 docstring marker (`5bc918d`, verified by `git show`). **I ran `bash scripts/check_framework_uninstalled.sh` myself:** builds wheels, asserts all 11 fake-suite test files ship (only `test_engine_adapter.py` deliberately excluded), installs into a clean off-repo venv, `pytest --pyargs paaf_llm` → **128 passed** (up from 102 — the gap-closure tests ship too), then asserts `langchain` and `langgraph` are both unimportable. Exit 0. |
+| 2 | Model profiles across Ollama, OpenAI-compatible and Anthropic in YAML — incl. two LAN servers as distinct profiles — and `paaf chat` uses them without a line of code | ✓ VERIFIED (1 live confirmation → human) | **Was ✗ FAILED. Both blocking defects are gone, proven live.** (a) `api_key_ref` now works end to end: I wrote a **real** `EncryptedFileSecretStore` to disk, set `PAAF_SECRET_PASSPHRASE`, and an Anthropic profile declaring `api_key_ref` **bound successfully** and dialed a real socket — the failure reported was `cloud(connection)`, not the old `EngineError: … no secret store was provided`. (b) An **unauthenticated `openai_compatible` profile at `/v1`, declared entirely in YAML, held a real conversation**: `paaf chat --config oai2.yaml` → `vllm_like> banana`, exit 0, trace row `served_by=vllm_like, fallback_trail=[]`. (c) Ollama: **live two-turn conversation** (see truth 3). (d) Two same-provider endpoints are genuinely distinct bindings — live. Remaining: a real Anthropic *completion* needs a paid key → human. |
+| 3 | Pulling the WAN mid-conversation moves the reply onto a local profile and the conversation continues; timeout / 5xx / 429 / slow-first-token trigger the same chain | ✓ VERIFIED | **Was ⚠️ PRESENT_BEHAVIOR_UNVERIFIED. Now proven live against a real provider, on both legs.** *Hard loss:* active profile unreachable → `↳ fell back to local (connection)` → answered by a real Ollama model; turn 2 replied **“You stated that chartreuse was your favorite color previously!”**, proving the history crossed the hop. *Degraded-but-reachable:* a **reachable** Ollama profile with `first_token_budget_s: 0.005` produced `↳ fell back to patient (slow_first_token)` and a real answer from the next profile — a live degraded trigger, not a hard connection error. Both trails were read back off a real SQLite file. timeout/5xx/429 remain proven against the fake with an enum-exhaustiveness control plus translation validated against 13 real provider SDK exception instances (35 `[engine]` tests pass). |
+| 4 | Each profile declares a natural-language capability manifest and peer agents in YAML; the schema validates them and `paaf chat` surfaces them, with no handoff behavior | ✓ VERIFIED | **Regression check + new fields.** I ran `paaf profiles` and `paaf chat` on a hand-written 4-profile YAML: every `capabilities`, `peers`, `constraints`, role marker and the inert-graph note printed. The schema now additionally validates `endpoint_path` and `endpoint_unauthenticated` with named rejections (`profiles.py:131-183`). `_check_refs` still rejects dangling/self peers and dangling fallback/active targets. Inertness keeps its real negative control (`test_manifest_performs_no_handoff` leaves the declared peer UNPROGRAMMED so any contact raises `LookupError`, not a swallowable `AdapterError`); `TurnResult.handoff` is hardcoded `None` (`agent.py:208`). |
+| 5 | One command prints the final composed prompt verbatim — exactly as sent, containing nothing the user did not write | ✓ VERIFIED (2 clauses deferred) | **Regression check re-run.** `uv run paaf prompt --config live.yaml \| od -c` ends `s e n t e n c e .` with **no trailing newline**. `--provenance` prints `--- base ---` plus the verbatim text. `test_prompt_byte_exact` still closes the loop three ways (CLI stdout == `compose()` == the `system` message the adapter actually received on a real turn). The trace row's `prompts` column now independently corroborates it: `'You are Ada. Answer in one short sentence.'` — byte-identical to the base prompt, read back with stdlib `sqlite3`. "skill fragments" → Phase 6, "runtime context" → Phase 10 (see Deferred Items). |
 
-**Score:** 3/5 truths verified (1 present, behavior-unverified; 1 failed)
+**Score:** 5/5 truths verified (0 present-but-behavior-unverified, 0 failed)
 
 ### Deferred Items
 
 | # | Item | Addressed In | Evidence |
 |---|------|-------------|----------|
-| 1 | SC#5 "skill fragments" — an active skill contributes a fragment (PERS-02) | Phase 6 | Phase 6 SC#2: "Enabling or disabling an installed skill changes the composed prompt and the tool registry without uninstalling it." Phase 3's `load_skill_fragments` returns `[]` (D-09); the fragment contract is pinned now by tests that repoint the source. |
-| 2 | SC#5 "runtime context" — time / device name / room (PERS-03) | Phase 10 | REQUIREMENTS.md traceability: `PERS-03 | Phase 10 — The Appliance`. Plan 03-07 scoped SC#5 on this basis. |
+| 1 | SC#5 "skill fragments" — an active skill contributes a fragment (PERS-02) | Phase 6 | ROADMAP.md:225 — Phase 6 SC#2: "Enabling or disabling an installed skill changes the composed prompt and the tool registry without uninstalling it." Phase 3's `load_skill_fragments` returns `[]` (D-09), a named seam whose fragment contract is pinned now by tests that repoint the source. |
+| 2 | SC#5 "runtime context" — time / device name / room (PERS-03) | Phase 10 | ROADMAP.md:288 lists PERS-03 in Phase 10's Requirements; REQUIREMENTS.md:265 maps `PERS-03 | Phase 10 — The Appliance`. |
 
-### Required Artifacts
+---
+
+## Gap-Closure Verification (the four items this re-verification exists for)
+
+### Gap 1 — `paaf chat` could not use PAAF's own credential mechanism (plan 03-11)
+
+**Was:** `cli._default_adapter` called `build_engine_adapter(config)` with one argument, so `LangChainAdapter._secret_store` was always `None` and every `api_key_ref` profile died at bind.
+
+**Now — code read directly:** `cli.py:287` reads `return build_engine_adapter(config, secret_store=secret_store)`. The store is resolved by `cli.open_secret_store` (`cli.py:210-258`) and threaded `chat` → `_chat_session` → `build_agent(secret_store=…)` → `_default_adapter(config, secret_store)`.
+
+**Now — run live:** I created a real `EncryptedFileSecretStore` at `secrets.json` (mode **0600**, verified) holding `anthropic_key`, and ran
+
+```
+PAAF_SECRET_PASSPHRASE=… paaf chat --config local.yaml --secrets secrets.json --trace-db trace.db
+```
+
+with an Anthropic profile pointed at a dead local port. Output:
+
+```
+Error: every profile in the chain degraded: cloud(connection), lan_a(connection), vllm(connection)
+```
+
+`cloud(connection)` is the load-bearing token. The Anthropic profile **bound** — meaning the key was fetched out of the encrypted store by reference — and then failed at the *socket*, which is a degraded provider. Under the old code this same run produced `EngineError: … no secret store was provided`, a config failure, before any socket. Exit 1, `grep -c Traceback` = **0**.
+
+**Guard rails confirmed:** an `api_key_ref` config with no `--secrets` prints the named-profile guidance and exits 1 with zero tracebacks (reproduced live). `--help` confirms there is **no `--passphrase` option** — the passphrase is env-only, so it cannot land in `ps` or shell history. `test_a_config_with_no_api_key_ref_never_opens_a_store` replaces the store class with a callable that fails the test, so an all-local config provably never touches the filesystem.
+
+**Seam pinned:** `test_the_cli_default_adapter_forwards_the_store_to_the_factory` (test_engine_adapter.py:700) intercepts `build_engine_adapter` on the module and asserts `_default_adapter`'s own body forwards the store — the one line that was executed by nothing before, which is exactly how the bug shipped past a green suite. It runs in the `[engine]` job; I ran it: **35 passed, 0 skipped.**
+
+### Gap 2 — `EngineError` escaped `paaf chat` as a raw traceback (plan 03-10)
+
+**Was:** `_chat_loop` caught only `AllProvidersFailed`.
+
+**Now — code read directly:** `EngineError` is defined in `ports.py:156` (verified as the **only** definition in the repo: `grep -rn "class EngineError" packages/` → one hit). `_engine/__init__.py:79-87` imports and re-exports that exact class. I confirmed object identity at runtime:
+
+```
+paaf_llm.EngineError is paaf_llm.ports.EngineError  → True
+paaf_llm._engine.EngineError is paaf_llm.ports.EngineError → True
+```
+
+`cli.py` imports it at **module scope** (`cli.py:63`) — framework-free, which is the whole point of the move. `_chat_loop` now has three named handlers (`cli.py:402-417`): `AllProvidersFailed` (keeps its own chain-exhaustion wording), `EngineError` → `CONFIG_FAILURE_NOTICE`, and a post-commit `AdapterError` → `MID_REPLY_FAILURE_NOTICE` formatted from `exc.reason.value` (the same string the trace records, so terminal and trace cannot disagree). A fourth site is covered in `_chat_session` (`cli.py:458-461`) for the factory's up-front provider validation.
+
+**Now — run live:** all three failure surfaces produced one readable line and exit 1, with **zero** `Traceback` occurrences: the missing-`--secrets` guard, the chain-exhaustion path, and (via the test suite) the bind and mid-reply paths.
+
+**Not a catch-all:** `test_an_unexpected_exception_still_escapes` injects a `LookupError` and asserts `isinstance(result.exception, LookupError)` — it is the single test in the file that would turn red if either handler were widened to the base exception. `test_a_failure_before_the_reply_began_still_falls_back` is the second control: it proves a *pre-commit* `AdapterError` still becomes a fallback hop rather than an error message, so the fix did not quietly convert MODEL-03/04 into an error path. Both pass.
+
+### Gap 3 — OpenAI-compatible was unaddressable and untested at the binding level (plan 03-12)
+
+**Was:** `paaf_core.Endpoint` carried no path (so `/v1` was inexpressible), an unauthenticated local server could not bind, and `openai_compatible` had **zero** binding-level test coverage.
+
+**Now — code read directly:** `Endpoint` gained a defaulted, **last-declared** `path` field plus `url()` (`endpoint.py:47-63`) — defaulted-and-last so existing positional constructions are not silently reassigned. `ModelProfile` gained `endpoint_path` and `endpoint_unauthenticated` (`profiles.py:64-74`) with a validator that **rejects and never repairs** a malformed path (no leading `/`, trailing `/`, `?`/`#`, whitespace, or a path with no host/port), and rejects the flag combined with an `api_key_ref` or with a non-`openai_compatible` provider. `_engine` supplies `UNAUTHENTICATED_API_KEY = "paaf-unauthenticated"` — deliberately kept OUT of `_secret_values` because it is not a secret — and widened `cache_key` to include the flag.
+
+**Now — run live.** The strongest single piece of evidence in this report:
+
+```
+# oai2.yaml — declared entirely in YAML, no code
+provider: openai_compatible
+endpoint_host: 127.0.0.1
+endpoint_port: 11434
+endpoint_path: /v1
+endpoint_unauthenticated: true
+
+$ printf 'Say the word banana and nothing else.\n' | env -u OPENAI_API_KEY paaf chat --config oai2.yaml --trace-db oai2.db
+vllm_like> banana
+EXIT=0
+runs → {'served_by': 'vllm_like', 'fallback_trail': '[]'}
+```
+
+`env -u OPENAI_API_KEY` is load-bearing: no ambient credential was available, so the bind succeeded on the declared `endpoint_unauthenticated` flag alone. Direct adapter inspection confirmed the dialed URL: `base_url: http://127.0.0.1:11434/v1`, `kwargs: {'temperature': 0.7, 'base_url': 'http://127.0.0.1:11434/v1', 'api_key': 'paaf-unauthenticated'}`, bound class `langchain_openai.chat_models.base.ChatOpenAI` carrying that same base URL. The empty `fallback_trail` is the negative control — the active profile served it, no spurious hop.
+
+**Coverage hole closed:** `test_engine_adapter.py` now has five binding-level `openai_compatible` tests, including a negative control (`test_an_openai_compatible_profile_without_the_auth_declaration_still_needs_a_credential`, which `delenv`s `OPENAI_API_KEY` so it cannot pass on an ambient credential) and `test_base_url_appends_nothing_the_user_did_not_declare` asserting `==` against the whole string so a helpfully-invented `/v1` fails there rather than at a dialed URL.
+
+### Gap 4 / Warning — `paaf chat` never wrote a trace row (plan 03-13)
+
+**Was:** `chat` called `build_agent(config)` with no `trace=` sink, so `Agent._drain` returned on its first line.
+
+**Now — code read directly:** `--trace-db` option (`cli.py:505-515`) and a new `_chat_session` coroutine (`cli.py:423-465`) that constructs `TraceStore` **inside** the running loop (the store's queue and writer task belong to the loop), builds the agent there, and `await store.stop()` in a `finally`.
+
+**Now — run live.** Two-turn conversation against a real Ollama server with `--trace-db live.db`, read back with **stdlib `sqlite3`** (not through `paaf_trace`, so a store that never wrote could not satisfy its own reader):
+
+```
+{'model': 'local', 'served_by': 'local', 'fallback_trail': '[{"from": "cloud", "to": "local", "reason": "connection"}]', 'p': 'You are Ada. Answer in one short sentence.'}
+{'model': 'local', 'served_by': 'local', 'fallback_trail': '[{"from": "cloud", "to": "local", "reason": "connection"}]', 'p': 'You are Ada. Answer in one short sentence.'}
+```
+
+The `reason` string in the row is character-identical to the `(connection)` the user saw in `↳ fell back to local (connection)` — D-06's claim, verified across the terminal/disk boundary. The live `slow_first_token` run produced the matching row for the degraded trigger. `paaf chat` **without** `--trace-db` constructs nothing (confirmed by test and by the absence of any stray file).
+
+---
+
+## Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `packages/paaf-llm/src/paaf_llm/profiles.py` | ModelProfile + LlmConfig with cross-ref validator, endpoint() | ✓ VERIFIED | 168 lines. Reuses `paaf_core.config.schema.ReloadTier` and `paaf_core.net.endpoint.Endpoint` (not reinvented). `extra="forbid"` on both models, exercised by two rejection tests. |
-| `packages/paaf-llm/src/paaf_llm/compose.py` | Segment + segments()/compose() | ✓ VERIFIED | 86 lines, stdlib-only, no PAAF imports. `join(segments) == compose()` invariant asserted. |
-| `packages/paaf-llm/src/paaf_llm/ports.py` | Message/Usage/TurnResult/FallbackReason/AdapterError×4/AllProvidersFailed/ChatAdapter | ✓ VERIFIED | 209 lines, zero framework imports (asserted against the source text AND by import-linter). `handoff` Phase-4 seam present and always None. |
-| `packages/paaf-llm/src/paaf_llm/fake/__init__.py` | FakeAdapter.program()/stream()/last_usage() | ✓ VERIFIED | 171 lines. Un-programmed profile raises `LookupError` (deliberately not an AdapterError) — that choice is what makes `test_manifest_performs_no_handoff` a real control. |
-| `packages/paaf-llm/src/paaf_llm/agent.py` | ordered fallback, first-token deadline, history, trace drain | ✓ VERIFIED | 296 lines. `asyncio.timeout` wraps only the first `__anext__`; `aclose()`d on timeout; history appended only after a served turn. |
-| `packages/paaf-llm/src/paaf_llm/cli.py` | chat + prompt + --show-prompt + --provenance + manifest + fallback notice | ⚠️ HOLLOW (partial) | 327 lines, all commands work. But two production wirings are absent: no secret store reaches the engine adapter, and no trace sink reaches the agent. Both parameters exist and are unit-tested; neither is ever supplied. |
-| `packages/paaf-llm/src/paaf_llm/_engine/__init__.py` | LangChainAdapter + build_engine_adapter | ✓ VERIFIED | 585 lines. `find_spec` import guard (imports nothing), lazy `_framework()`, no httpx import, structural exception classification with a bounded cause-chain walk, secret scrubbing. |
-| `packages/paaf-trace/.../schema.sql` + `store.py` | additive served_by + fallback_trail | ✓ VERIFIED | Both columns present and TEXT; `RunEvent` carries them; INSERT widened. Round-trip test writes through a real store and reads the real SQLite file back. |
-| `.importlinter` | provider modules forbidden + `_engine` whitelist | ✓ VERIFIED | 3 contracts kept, 0 broken (run twice: with and without the `[engine]` extra). |
-| `tests/negcontrol/paaf_llm_provider_violation/` | fixture that turns the provider contract red | ✓ VERIFIED | 5 negcontrol tests pass; the `langchain_provider` contract exits nonzero on the fixture. |
-| `scripts/check_framework_uninstalled.sh` | SC#1 clean-venv gate | ✓ VERIFIED | Executed. PASS. Also asserts the shipped test set matches the source set, so the gate cannot rot into three smoke assertions. |
-| `.github/workflows/framework-uninstalled.yml` | SC#1 CI gate | ✓ VERIFIED | Runs the script on push+PR. |
-| `.github/workflows/engine-adapter.yml` | complementary framework-PRESENT gate | ✓ VERIFIED | Installs `[engine]`, asserts the framework really imported (anti-silent-skip step), runs the 26 adapter tests, then the whole suite. |
+| `packages/paaf-llm/src/paaf_llm/ports.py` | Message/Usage/TurnResult/FallbackReason/AdapterError×4/AllProvidersFailed/**EngineError**/ChatAdapter | ✓ VERIFIED | 236 lines. Zero framework imports (`ModelProfile` under `TYPE_CHECKING` only). `EngineError` moved here with a docstring stating *why* the placement is load-bearing, not merely tidy. `handoff` Phase-4 seam present and always `None`. |
+| `packages/paaf-llm/src/paaf_llm/cli.py` | chat + prompt + profiles + `--show-prompt` + `--provenance` + `--secrets` + `--trace-db` + named failure surfaces | ✓ VERIFIED | 581 lines (was 327). Both previously-missing production wirings are present and exercised live. Every user-facing string is a module constant, so tests assert against what the CLI emits rather than a copy. |
+| `packages/paaf-llm/src/paaf_llm/profiles.py` | ModelProfile + LlmConfig, cross-ref validator, endpoint(), **endpoint_path / endpoint_unauthenticated** | ✓ VERIFIED | 243 lines (was 168). `extra="forbid"` on both models. New validator rejects six distinct malformed-path shapes and two invalid flag combinations, each with a named message. |
+| `packages/paaf-llm/src/paaf_llm/_engine/__init__.py` | LangChainAdapter + build_engine_adapter + secret resolution + path/no-auth binding | ✓ VERIFIED | 612 lines. `find_spec` import guard (imports nothing), lazy `_framework()`, no httpx import, structural exception classification with a bounded cause-chain walk, secret scrubbing, `UNAUTHENTICATED_API_KEY` deliberately excluded from the scrub set. |
+| `packages/paaf-core/src/paaf_core/net/endpoint.py` | Endpoint with `path` + `url()`; `is_lan()` unchanged | ✓ VERIFIED | `path` declared LAST and defaulted so positional callers are not reassigned; `is_lan()` still reads host only. |
+| `packages/paaf-llm/src/paaf_llm/agent.py` | ordered fallback, first-token deadline, history, trace drain | ✓ VERIFIED | 297 lines. `asyncio.timeout` wraps only the first `__anext__`; `aclose()`d on timeout; history appended only after a served turn; `_drain` writes `served_by` + JSON trail. |
+| `packages/paaf-llm/src/paaf_llm/compose.py` | Segment + segments()/compose() | ✓ VERIFIED | Regression check — `join(segments) == compose()` invariant still asserted; byte-exactness re-confirmed live via `od -c`. |
+| `packages/paaf-llm/src/paaf_llm/fake/__init__.py` | FakeAdapter.program()/stream()/last_usage() | ✓ VERIFIED | Un-programmed profile still raises `LookupError` (deliberately not an `AdapterError`) — the choice that makes both `test_manifest_performs_no_handoff` and `test_an_unexpected_exception_still_escapes` real controls. |
+| `packages/paaf-trace/.../schema.sql` + `store.py` | additive served_by + fallback_trail | ✓ VERIFIED | Columns present in a file written by the shipped command: `PRAGMA table_info(runs)` on a CLI-created DB → `[…, 'served_by', 'fallback_trail']`. |
+| `packages/paaf-llm/tests/test_inspector.py` | CLI end-to-end incl. all four gap closures | ✓ VERIFIED | 1131+ lines (was ~600). 34 tests; every gap-closure claim is paired with a negative control. |
+| `packages/paaf-llm/tests/test_engine_adapter.py` | real-adapter seam incl. openai_compatible binding + factory forwarding | ✓ VERIFIED | 30 tests, **35 passed / 0 skipped** with `[engine]` installed (was 26). |
+| `.importlinter` | provider modules forbidden + `_engine` whitelist | ✓ VERIFIED | 3 contracts kept, 0 broken (run twice: with and without the extra). |
+| `scripts/check_framework_uninstalled.sh` | SC#1 clean-venv gate | ✓ VERIFIED | Executed by the verifier. PASS, 128 tests, langchain+langgraph unimportable. |
+| `.github/workflows/engine-adapter.yml` | framework-PRESENT gate with an anti-silent-skip step | ✓ VERIFIED | Read in full. Asserts the framework really imported before running the suite, then runs the whole workspace suite under the extra. |
 
-### Key Link Verification
+---
+
+## Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `cli.prompt` | `compose.PromptComposer.compose` | direct call, same `load_skill_fragments` source | ✓ WIRED | Byte-identity asserted against the message the adapter received, not just against a second call to the same function. |
+| `cli.chat` | `cli.open_secret_store` | `os.environ[PAAF_SECRET_PASSPHRASE]` + `--secrets` | ✓ WIRED | Early-returns `None` before touching the filesystem when no profile names a ref (T-03-34), proven by a test that replaces the store class with a failing callable. |
+| `cli._default_adapter` | `_engine.build_engine_adapter` | `secret_store=` keyword | ✓ WIRED | **Was ✗ NOT_WIRED.** `cli.py:287`. Pinned by `test_the_cli_default_adapter_forwards_the_store_to_the_factory`, and demonstrated live by an Anthropic profile binding on a store-resolved key. |
+| `LangChainAdapter._secret_store` | `ModelProfile.api_key_ref` | `SecretStore.get(ref)` | ✓ WIRED | `_engine:362-386`. Resolved value added to `_secret_values` for scrubbing; never logged. |
+| `cli.chat --trace-db` | `paaf_trace.TraceStore` → `Agent._drain` | `_chat_session` → `build_agent(trace=store)` | ✓ WIRED | **Was ✗ NOT_WIRED.** Rows read back off a real SQLite file with stdlib `sqlite3` after a live conversation. |
+| `cli._chat_loop` | `ports.EngineError` | module-scope import, framework-free | ✓ WIRED | **Was ✗ NOT_WIRED.** `cli.py:63`; class identity confirmed at runtime across `paaf_llm`, `paaf_llm.ports` and `paaf_llm._engine`. |
+| `ModelProfile.endpoint()` | `paaf_core.Endpoint.url()` | `path` travels with the endpoint | ✓ WIRED | **Was ⚠️ PARTIAL.** Live: `base_url → http://127.0.0.1:11434/v1`, and that exact string is what the bound `ChatOpenAI` carries. The value Phase-9's offline check will classify is the value dialed. |
+| `ModelProfile.endpoint_unauthenticated` | `LangChainAdapter.model_kwargs` / `cache_key` | placeholder api_key + cache identity | ✓ WIRED | Two profiles differing only in the flag do not collide (tested); a profile without the flag still fails to bind with no credential (negative control, `delenv`'d). |
+| `cli.prompt` | `compose.PromptComposer.compose` | same `load_skill_fragments` source | ✓ WIRED | Byte-identity asserted against the message the adapter received; corroborated by the `prompts` column of a real trace row. |
 | `cli.chat --show-prompt` | `agent.Agent.system_prompt` | direct call | ✓ WIRED | `test_show_prompt_echoes_what_was_sent` compares against `adapter.calls[0]`. |
-| `cli.chat` | `agent.Agent.turn` | `build_agent` → `Agent.build` | ✓ WIRED | Multi-turn stdin loop tested (`test_multi_turn_conversation_continues_across_a_hop`). |
-| `cli._default_adapter` | `_engine.build_engine_adapter` | lazy in-function import | ✓ WIRED | Laziness asserted three ways: source-text indentation check, in-process `sys.modules` probe, pristine-subprocess probe. |
-| `cli._default_adapter` | `paaf_core` SecretStore | `build_engine_adapter(config, secret_store=…)` | ✗ NOT_WIRED | The parameter is never passed. Every `api_key_ref` profile is unusable from the CLI. **Gap 1.** |
-| `cli.chat` | `paaf_trace.TraceStore` | `build_agent(..., trace=…)` | ✗ NOT_WIRED | `chat` calls `build_agent(config)` with no sink → `Agent._drain` returns immediately. No run is ever persisted in production use. 03-07's SUMMARY assigned this to plan 03-09; 03-09's `files_modified` does not include `cli.py`. **Warning.** |
-| `agent._run_chain` | `ports.AdapterError.reason` | `except AdapterError as exc: trail.append(..., exc.reason.value)` | ✓ WIRED | Classification by reason, never by foreign exception type. |
-| `agent._drain` | `paaf_trace.store.RunEvent` | `self._trace.emit(RunEvent(...))` | ✓ WIRED | Verified by reading rows back out of a real SQLite file. |
-| `_engine.LangChainAdapter.base_url` | `paaf_core.net.endpoint.Endpoint` | `profile.endpoint()` | ⚠️ PARTIAL | Same Endpoint the offline registry classifies is the one dialed — good. But it carries no path, so `/v1` is unreachable. **Gap 1.** |
+| `agent._run_chain` | `ports.AdapterError.reason` | `trail.append(..., exc.reason.value)` | ✓ WIRED | Classification by reason, never by foreign exception type. Live trail strings match the terminal notice exactly. |
 
-### Data-Flow Trace (Level 4)
+---
+
+## Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |----------|---------------|--------|--------------------|--------|
-| `cli.render_profiles` | `config.profiles` | YAML → `LlmConfig.model_validate` | Yes — confirmed by running `paaf profiles` on a hand-written 3-provider YAML | ✓ FLOWING |
-| `cli.prompt` | `config.base_prompt` + `fragments` | YAML + `load_skill_fragments` | Base prompt: yes. Fragments: **`[]` by design (D-09)** | ⚠️ STATIC (deferred to Phase 6) |
-| `cli._chat_loop` | `result.text` / `result.served_by` / `result.fallback_trail` | `Agent.turn` → adapter stream | Yes | ✓ FLOWING |
-| `Agent._drain` → trace DB | `RunEvent` | `self._trace` | **`None` in the CLI path** — no run row is ever written by `paaf chat` | ✗ DISCONNECTED (warning) |
-| `LangChainAdapter.model_kwargs` | `api_key` | `self._secret_store.get(ref)` | **`self._secret_store` is `None` in the CLI path** | ✗ DISCONNECTED (gap) |
+| `cli.render_profiles` | `config.profiles` | YAML → `LlmConfig.model_validate` | Yes — ran `paaf profiles` on a hand-written 4-provider YAML incl. the new fields | ✓ FLOWING |
+| `cli.prompt` | `config.base_prompt` + `fragments` | YAML + `load_skill_fragments` | Base prompt: yes. Fragments: `[]` by design (D-09) | ⚠️ STATIC (deferred to Phase 6) |
+| `cli._chat_loop` | `result.text` / `served_by` / `fallback_trail` | `Agent.turn` → real provider stream | Yes — live replies from a real Ollama server over two provider bindings | ✓ FLOWING |
+| `Agent._drain` → trace DB | `RunEvent` | `self._trace` = `TraceStore(--trace-db)` | **Yes** — 2 committed rows read back with stdlib sqlite3 | ✓ FLOWING (was ✗ DISCONNECTED) |
+| `LangChainAdapter.model_kwargs` | `api_key` | `self._secret_store.get(ref)` | **Yes** — real encrypted store, real key, profile bound | ✓ FLOWING (was ✗ DISCONNECTED) |
+| `LangChainAdapter.base_url` | `endpoint_path` | `ModelProfile.endpoint()` → `Endpoint.url()` | **Yes** — `/v1` reached a real server that answered | ✓ FLOWING (was ⚠️ PARTIAL) |
 
-### Behavioral Spot-Checks
+---
+
+## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full workspace suite (no extra) | `uv run pytest -q --disable-socket` | 174 passed, 1 skipped (the skip is `test_engine_adapter.py::importorskip langchain`) | ✓ PASS |
-| Full workspace suite (with extra) | `uv sync --all-packages --extra engine && uv run pytest -q --disable-socket` | 200 passed, 0 skipped | ✓ PASS |
-| Real-adapter translation seam | `uv run pytest packages/paaf-llm/tests/test_engine_adapter.py -q` (extra installed) | 26 passed, 0 skipped | ✓ PASS |
-| Import boundary | `uv run lint-imports --no-cache` (run with AND without the extra) | 3 contracts kept, 0 broken. With the extra installed the `_engine -> langchain` and `_engine -> langchain_core` whitelist entries MATCH, proving the carve-out is load-bearing rather than decorative | ✓ PASS |
-| Negative controls bite | `uv run pytest tests/negcontrol/test_import_boundary.py -q` | 5 passed | ✓ PASS |
-| SC#1 gate | `bash scripts/check_framework_uninstalled.sh` | PASS — 102 passed in a clean off-repo venv, langchain+langgraph unimportable | ✓ PASS |
-| Wheel independence | `bash scripts/check_wheel_independence.sh` | PASS — paaf_voice and langchain both absent | ✓ PASS |
-| `paaf prompt` byte-exactness | `uv run paaf prompt --config <yaml> \| od -c` | Output ends `p l a i n l y .` with **no trailing newline** | ✓ PASS |
-| `paaf prompt --provenance` | `uv run paaf prompt --config <yaml> --provenance` | `--- base ---` + the verbatim base prompt | ✓ PASS |
-| `paaf profiles` manifest surface | `uv run paaf profiles --config <yaml>` | All 3 profiles, capabilities, peers, constraints, active/fallback roles, and the inert-graph note | ✓ PASS |
-| `paaf chat` against real providers | `echo hello \| uv run paaf chat --config <yaml>` | **Unhandled `EngineError` traceback.** First run: `could not bind 'openai:qwen3:32b': Missing credentials`. Second run: `profile declares api_key_ref 'anthropic_key' but no secret store was provided`. Notably the Ollama profile DID degrade correctly and the loop DID advance — real-socket ConnectionFailed translation works | ✗ FAIL |
-| `paaf chat` with env-var credential | `ANTHROPIC_API_KEY=… uv run paaf chat --config <yaml>` | Reached the real Anthropic API and returned a genuine `401 invalid x-api-key`. The Anthropic binding works over the wire — but only via the SDK env var, bypassing PAAF's SecretStore | ⚠️ PARTIAL |
-| Lint | `uv run ruff check packages/paaf-llm packages/paaf-trace scripts tests` | 2 errors, both the pre-existing `PLW1510` in `tests/negcontrol/test_import_boundary.py`. **No new findings from this phase's code**; the `test_wheel_smoke.py` I001 noted in `deferred-items.md` is now clean | ✓ PASS |
+| Full workspace suite (no extra) | `uv run pytest -q --disable-socket` | **206 passed, 1 skipped** (skip is `test_engine_adapter.py::importorskip langchain`, confirmed with `-rs`) | ✓ PASS |
+| Full workspace suite (with extra) | `uv sync --all-packages --extra engine && uv run pytest -q --disable-socket` | **241 passed, 0 skipped** | ✓ PASS |
+| Real-adapter seam | `uv run pytest packages/paaf-llm/tests/test_engine_adapter.py -q` (extra installed) | **35 passed, 0 skipped** | ✓ PASS |
+| Named gap-closure regressions | `pytest -k "a_failing_session_still_flushes_its_rows or the_cli_default_adapter_forwards_the_store_to_the_factory or an_unauthenticated_openai_compatible_profile_binds_at_a_v1_endpoint or a_bind_failure_is_reported_readably or an_unexpected_exception_still_escapes or chat_with_a_trace_db_writes_a_run_row"` | **6 passed** | ✓ PASS |
+| Import boundary | `uv run lint-imports --no-cache` (with AND without the extra) | 3 contracts kept, 0 broken. With the extra, `_engine -> langchain` and `_engine -> langchain_core` are absent from the "no matches" warnings — the whitelist matches real edges and is load-bearing, not decorative | ✓ PASS |
+| SC#1 gate | `bash scripts/check_framework_uninstalled.sh` | PASS — 128 tests in a clean off-repo venv; 11 fake-suite files shipped; langchain+langgraph unimportable | ✓ PASS |
+| **LIVE: two-turn Ollama conversation with a real fallback hop** | `printf '…chartreuse…\n…what colour…\n' \| paaf chat --config live.yaml --secrets secrets.json --trace-db live.db` | `↳ fell back to local (connection)` twice; `local> That sounds like an interesting choice for you!` then `local> You stated that chartreuse was your favorite color previously!` — **history crossed the hop**. Exit 0 | ✓ PASS |
+| **LIVE: degraded-but-reachable trigger** | `paaf chat --config slow.yaml --trace-db slow.db` (`first_token_budget_s: 0.005` on a *reachable* server) | `↳ fell back to patient (slow_first_token)` → `patient> Hi there! How can I help you today?`; trace row records the same reason | ✓ PASS |
+| **LIVE: unauthenticated openai_compatible at `/v1`** | `env -u OPENAI_API_KEY paaf chat --config oai2.yaml --trace-db oai2.db` | `vllm_like> banana`, exit 0, `served_by=vllm_like`, `fallback_trail=[]` | ✓ PASS |
+| **LIVE: two same-provider endpoints are distinct bindings** | `paaf chat --config two.yaml` (11435 dead, 11434 live) | `↳ fell back to box_b (connection)` → `box_b> banana`. A shared cached client would have let box_a answer | ✓ PASS |
+| **LIVE: api_key_ref through a real encrypted store** | `PAAF_SECRET_PASSPHRASE=… paaf chat --config local.yaml --secrets secrets.json` | Anthropic profile **bound** and failed at the socket (`cloud(connection)`), not at bind. Old behavior was `EngineError … no secret store was provided` | ✓ PASS |
+| **LIVE: no traceback on any failure surface** | three failing invocations, `grep -c Traceback` | **0** in every case; exit 1 with one readable line | ✓ PASS |
+| `paaf prompt` byte-exactness | `paaf prompt --config live.yaml \| od -c` | ends `s e n t e n c e .` — no trailing newline | ✓ PASS |
+| `paaf profiles` manifest surface | `paaf profiles --config paaf.yaml` | 4 profiles, capabilities, peers, role markers, inert-graph note | ✓ PASS |
+| No `--passphrase` on argv | `paaf chat --help` | Only `--config`, `--show-prompt`, `--secrets`, `--trace-db`. Passphrase is env-only | ✓ PASS |
+| Lint | `uv run ruff check packages scripts tests` | **3 errors, all pre-existing and all outside this phase's changed source** — 2× `PLW1510` in `tests/negcontrol/test_import_boundary.py`, 1× `RUF022` in `packages/paaf-core/src/paaf_core/secrets/__init__.py` (git blame: `960edbb`, **Phase 2**). No new findings | ✓ PASS |
+| Debt markers | `grep -rn -E "TODO\|FIXME\|XXX\|TBD\|HACK\|PLACEHOLDER"` over all `src/` and `scripts/` | **Zero matches.** The debt-marker gate is clean | ✓ PASS |
+| Venv restored | `uv sync --all-packages && pytest -q` | 206 passed, 1 skipped; `langchain importable: False` — workspace returned to its pre-verification state | ✓ PASS |
 
-### Probe Execution
+---
+
+## Probe Execution
 
 | Probe | Command | Result | Status |
 |-------|---------|--------|--------|
-| `scripts/check_framework_uninstalled.sh` | `bash scripts/check_framework_uninstalled.sh` | exit 0, "PASS: the full paaf-llm fake-adapter suite passes with the agent framework uninstalled" | PASS |
-| `scripts/check_wheel_independence.sh` | `bash scripts/check_wheel_independence.sh` | exit 0, "PASS: paaf-llm installs with its framework deps but WITHOUT the agent framework or paaf-voice" | PASS |
+| `scripts/check_framework_uninstalled.sh` | `bash scripts/check_framework_uninstalled.sh` | exit 0 — "PASS: the full paaf-llm fake-adapter suite passes with the agent framework uninstalled"; 128 passed in a clean off-repo venv | PASS |
 
-No `scripts/*/tests/probe-*.sh` exist in this repo; the two shell gates above are this phase's equivalent and both were executed by the verifier, not read from a SUMMARY.
+No `scripts/*/tests/probe-*.sh` exist in this repo; the shell gate above is this phase's equivalent and was executed by the verifier, not read from a SUMMARY. (`check_wheel_independence.sh` was executed in the initial pass and is unchanged by plans 03-10..03-13.)
 
-### Requirements Coverage
+---
 
-Requirement IDs declared across the 9 plans' frontmatter: MODEL-01/02/03/04/05/06/08, PERS-01/02/04/05. **This is exactly the ROADMAP phase set — no orphaned and no undeclared IDs.**
+## Requirements Coverage
+
+Requirement IDs declared across all **13** plans' frontmatter: MODEL-01/02/03/04/05/06/08, PERS-01/02/04/05. **This is exactly the ROADMAP phase set — no orphaned and no undeclared IDs.** REQUIREMENTS.md maps no additional ID to Phase 3 (MODEL-07 → Phase 11, PERS-03 → Phase 10).
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |-------------|----------------|-------------|--------|----------|
-| MODEL-01 | 03-01, 03-08 | Named model profiles — provider, model, endpoint, params — with no code | ✓ SATISFIED | `ModelProfile` + `LlmConfig`; YAML loaded end-to-end by `paaf prompt`/`profiles`/`chat` |
-| MODEL-02 | 03-08, 03-09 | Ollama, OpenAI-compatible, Anthropic | ✗ BLOCKED (partial) | Provider-string table + schema/table drift control pass. Ollama binds and reaches a real socket. Anthropic reaches the real API only via an SDK env var. **OpenAI-compatible cannot bind unauthenticated and cannot address a `/v1` server; no test binds one.** |
-| MODEL-03 | 03-06 | Ordered fallback chain surviving an unreachable provider mid-conversation | ✓ SATISFIED (fake) + human verify | `test_fallback_connection` proves the hop AND that history carries across AND that the chain restarts from the active profile each turn. Real WAN pull → human. |
-| MODEL-04 | 03-02, 03-06, 03-09 | Fallback on a degraded-but-reachable provider, not only a hard error | ✓ SATISFIED | Four triggers parametrized; `test_every_fallback_reason_has_a_trigger_in_this_file` and `test_adapter_error_subclasses_are_all_exercised` make the coverage non-vacuous |
-| MODEL-05 | 03-01, 03-07 | Capability manifest + peer graph in YAML, no code | ✓ SATISFIED | Free-text manifest, validated peer graph, surfaced by two commands, inertness negatively controlled |
-| MODEL-06 | 03-01, 03-08 | Same-provider multiple endpoints as distinct profiles | ✓ SATISFIED | Asserted at three levels: derived URL, cache identity, and the `base_url` on the actually-bound framework client. Plus the subtle control that two endpoint-less cloud profiles do not collide in the cache |
-| MODEL-08 | 03-03, 03-05, 03-06, 03-08, 03-09 | Public API exposes only PAAF types, proven with the framework uninstalled | ✓ SATISFIED | The strongest requirement in the phase. Signature walker + its own vacuity control + positive control that it reached real annotations; pristine-subprocess import probes; import-linter with a biting negcontrol; and the clean-venv wheel gate I ran myself |
-| PERS-01 | 03-04, 03-07 | User writes a base system prompt | ✓ SATISFIED | `LlmConfig.base_prompt`, surfaced verbatim |
-| PERS-02 | 03-04, 03-07 | Active skills contribute persona fragments | ⚠️ PARTIAL | The composition contract is real and byte-tested; **no skill source exists** (`load_skill_fragments` → `[]`). Deferred to Phase 6 SC#2 |
-| PERS-04 | 03-07 | Final composed prompt inspectable verbatim, exactly as sent | ✓ SATISFIED | Three-way byte identity including the message that crossed the port |
-| PERS-05 | 03-04, 03-07 | PAAF never injects instructions the user did not write | ✓ SATISFIED | `test_no_hidden_prompt` splits the output back apart; `test_prompt_adds_no_text_of_its_own` reconstructs from raw inputs independent of the composer |
+| MODEL-01 | 03-01, 03-08, 03-11, 03-12 | Named model profiles — provider, model, endpoint, params — with no code | ✓ SATISFIED | `ModelProfile` + `LlmConfig`; four YAML configs written by hand this session drove `prompt`, `profiles` and `chat` with no code changes |
+| MODEL-02 | 03-08, 03-09, 03-11, 03-12 | Ollama, OpenAI-compatible, Anthropic | ✓ SATISFIED (1 live confirmation → human) | **Was ✗ BLOCKED.** Ollama: live conversation. OpenAI-compatible: live conversation at `/v1`, unauthenticated, YAML-only. Anthropic: binds on a store-resolved key and dials a real socket; a live *completion* needs a paid key → human item 1 |
+| MODEL-03 | 03-06, 03-10 | Ordered fallback chain surviving an unreachable provider mid-conversation | ✓ SATISFIED | Live: hop taken, history carried, chain restarts from the active profile each turn (two hops in a two-turn session). `test_a_failure_before_the_reply_began_still_falls_back` guards against the Gap-2 fix eating the chain |
+| MODEL-04 | 03-02, 03-06, 03-09, 03-13 | Fallback on a degraded-but-reachable provider, not only a hard error | ✓ SATISFIED | **Live** `slow_first_token` against a reachable server, recorded in the trace. Four triggers parametrized against the fake with `test_every_fallback_reason_has_a_trigger_in_this_file` and `test_adapter_error_subclasses_are_all_exercised` making the coverage non-vacuous |
+| MODEL-05 | 03-01, 03-07 | Capability manifest + peer graph in YAML, no code | ✓ SATISFIED | Free-text manifest, validated peer graph, surfaced by two commands, inertness negatively controlled, `TurnResult.handoff` hardcoded `None` |
+| MODEL-06 | 03-01, 03-08, 03-12 | Same-provider multiple endpoints as distinct profiles | ✓ SATISFIED (physical confirmation → human) | **Live** proof two same-provider endpoints do not share a binding. Also asserted at cache-identity level, incl. two endpoint-less cloud profiles not colliding and two profiles differing only in path or auth flag not colliding |
+| MODEL-08 | 03-03, 03-05, 03-06, 03-08, 03-09, 03-10 | Public API exposes only PAAF types, proven with the framework uninstalled | ✓ SATISFIED | The clean-venv gate re-run by the verifier (128 tests, langchain unimportable). `EngineError` joining the port did not weaken it — `ports.py` still imports only stdlib, and import-linter stays 3/0 |
+| PERS-01 | 03-04, 03-07 | User writes a base system prompt | ✓ SATISFIED | `LlmConfig.base_prompt`, surfaced verbatim; corroborated by the trace row's `prompts` column |
+| PERS-02 | 03-04, 03-07 | Active skills contribute persona fragments | ⚠️ PARTIAL | The composition contract is real and byte-tested; no skill source exists (`load_skill_fragments` → `[]`). Deferred to Phase 6 SC#2 |
+| PERS-04 | 03-07 | Final composed prompt inspectable verbatim, exactly as sent | ✓ SATISFIED | Three-way byte identity including the message that crossed the port; `od -c` re-run this session |
+| PERS-05 | 03-04, 03-07 | PAAF never injects instructions the user did not write | ✓ SATISFIED | `test_no_hidden_prompt` splits the output back apart; `test_prompt_adds_no_text_of_its_own` reconstructs from raw inputs independent of the composer. The trace row contains the base prompt and nothing else |
 
-### Anti-Patterns Found
+---
+
+## Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| — | — | `TODO` / `FIXME` / `XXX` / `TBD` / `HACK` / `PLACEHOLDER` | — | **None found** in any file this phase modified. The debt-marker gate is clean. |
-| `packages/paaf-llm/src/paaf_llm/cli.py` | 103-111 | `load_skill_fragments` returns `[]` | ℹ️ Info | A documented, named seam (D-09), not a hidden stub. The docstring explains why it is a function rather than an inline `[]`, and Phase 6 replaces the body. Not classified as a stub: it is the deliberate deferral point and the fragment path is proven by repointing it. |
-| `packages/paaf-llm/src/paaf_llm/cli.py` | 138 | `build_engine_adapter(config)` — optional `secret_store` silently omitted | 🛑 Blocker | See Gap 1. |
-| `packages/paaf-llm/src/paaf_llm/cli.py` | 284 | `build_agent(config)` — optional `trace` silently omitted | ⚠️ Warning | See "Additional Warnings". |
-| `packages/paaf-llm/src/paaf_llm/cli.py` | 244-247 | Only `AllProvidersFailed` handled | 🛑 Blocker | See Gap 2. |
-| `tests/negcontrol/.importlinter-negcontrol` | 48-58 | `langchain_provider` contract omits the real config's `ignore_imports` whitelist | ℹ️ Info | The negcontrol proves a forbidden contract bites on a non-`_engine` importer, but does not directly prove the REAL config's whitelist cannot rescue one. Mitigated: the whitelist names `paaf_llm._engine` / `paaf_llm._engine.**` exactly (read directly), and it demonstrably matched the real `_engine -> langchain` edge once the extra was installed. Low risk. |
+| — | — | `TODO` / `FIXME` / `XXX` / `TBD` / `HACK` / `PLACEHOLDER` | — | **None found** in any `src/` or `scripts/` file. Debt-marker gate clean |
+| `packages/paaf-llm/src/paaf_llm/agent.py` | 281-285 | A provider that streams no content produces a served turn with an **empty reply**, printed as `<profile>> ` with nothing after it and exit 0 | ⚠️ Warning | **Reproduced live.** Ollama's OpenAI-compatible `/v1` shim streams a reasoning model's thinking in a non-standard `reasoning` field with `content: ""`; PAAF drops empty chunks (correctly, so the first-token deadline measures real content), and if the stream ends without content the turn is "served" silently. The behavior is documented and deliberate ("a served turn with an empty reply, not a degraded provider"), but the user gets no signal that the provider returned nothing. Not required or contradicted by any Phase-3 success criterion; flagged because "nothing hidden from the user" is this phase's thesis. Raised for a maintainer decision, not counted as a gap |
+| `packages/paaf-llm/src/paaf_llm/profiles.py` | 167-181 | `endpoint_unauthenticated: true` is accepted on a profile that declares **no** `endpoint_host`/`endpoint_port` | ℹ️ Info | `base_url` is then `None`, so the self-describing placeholder credential would be sent to the provider binding's DEFAULT base URL (api.openai.com). No secret leaks and the value announces what it is, but it is a request PAAF sends on the user's behalf to a public endpoint. A one-line validator addition would close it |
+| `packages/paaf-llm/src/paaf_llm/cli.py` | 243-246 | The TTY-interactive `click.prompt(hide_input=True)` branch has no test | ℹ️ Info | The *dangerous* half is well covered — on a pipe an absent passphrase is an error and the piped first message is asserted absent from the output (T-03-35). The interactive branch itself is exercised by nothing (`grep -rn "isatty\|hide_input\|click.prompt" packages/paaf-llm/tests/` → zero hits). This is the "one error path with no coverage" the disconfirmation pass is required to name |
+| trace DB file mode | — | `--trace-db` creates the SQLite file at `0644` while it stores composed prompts | ℹ️ Info | The secret store is correctly `0600` (verified). Filesystem conventions for the daemon are explicitly Phase 9/10 (APP-*), and `cli.py`'s own docstring says so, so this is a forward note rather than a Phase-3 defect |
+| `packages/paaf-llm/src/paaf_llm/cli.py` | 182-190 | `load_skill_fragments` returns `[]` | ℹ️ Info | A documented, named seam (D-09), not a hidden stub. Phase 6 replaces the body; the fragment path is proven now by tests that repoint the source |
+| `tests/negcontrol/test_import_boundary.py` · `paaf_core/secrets/__init__.py` | 56, 79 · 17 | 2× `PLW1510`, 1× `RUF022` | ℹ️ Info | Pre-existing, both outside this phase's changed source. `RUF022` traced by `git blame` to `960edbb` (**Phase 2**, 2026-07-25). No new lint findings from plans 03-10..03-13 |
 
-### Human Verification Required
+---
 
-#### 1. WAN pull mid-conversation (SC#3)
+## Disconfirmation Pass
 
-**Test:** Configure a real cloud profile as `active_profile` with a real local Ollama profile in `fallback_chain`. Start `paaf chat`, send one turn successfully, physically disconnect the WAN, send a second turn.
-**Expected:** The second turn prints `↳ fell back to <local> (connection)`, is answered by the local model, and the local model's reply shows it received the first turn's history.
-**Why human:** No test in the repo contacts a real provider (`--disable-socket` is a suite-wide default by design). Cutting a WAN link is a physical state change no automated check here can produce.
+Required by the verification protocol; recorded even though the phase passes.
 
-#### 2. Cold-model first-token budget (MODEL-04 / D-05)
+1. **A requirement only partially met.** PERS-02 — the persona-fragment composition contract is byte-tested but there is no skill source, so `load_skill_fragments` returns `[]`. Legitimately deferred to Phase 6 SC#2, and flagged as PARTIAL rather than SATISFIED.
+2. **A test that passes without testing the stated behavior.** `test_a_profile_with_api_key_ref_reaches_the_adapter_with_a_working_store` asserts on the store handed to a **spy** factory — it does not itself prove the real `build_engine_adapter` receives it. That joining line is covered only by `test_the_cli_default_adapter_forwards_the_store_to_the_factory`, which lives in the `[engine]`-gated file and therefore **skips in the default `uv run pytest` run**. Mitigated three ways and so not a gap: the dedicated `engine-adapter.yml` CI job runs it with an anti-silent-skip assertion, I ran it myself (35/35), and the live Anthropic bind is independent end-to-end evidence. Worth knowing that the default local suite alone does not cover it.
+3. **An error path with no test coverage.** The TTY-interactive passphrase prompt (`cli.py:243-246`) — see Anti-Patterns. The non-TTY refusal is tested; the prompt itself is not.
+4. **Does any documented DEVIATION change a must-have's meaning?** No. Plan 03-12 reversed 03-08's "record the missing path as a limitation" stance by making the path *declarable* — which strengthens rather than reinterprets SC#2, and preserves 03-08's actual principle (PAAF appends nothing the user did not write) via `test_base_url_appends_nothing_the_user_did_not_declare`.
+
+---
+
+## Human Verification Required
+
+### 1. Real Anthropic completion (SC#2 / MODEL-02)
+
+**Test:** Store a real Anthropic API key in an encrypted `paaf_core` secret store under the name a profile's `api_key_ref` declares, then `PAAF_SECRET_PASSPHRASE=… paaf chat --config <yaml> --secrets <store>` with that profile active.
+**Expected:** A genuine completion from api.anthropic.com printed as `<profile>> <reply>`.
+**Why human:** Requires a real, billable credential. Everything up to the wire is proven — the key resolves out of a real encrypted store, the Anthropic profile binds with it, and it opens a real socket. Only provider-side acceptance is outstanding. (03-VALIDATION.md Manual-Only. The initial verification separately observed a genuine `401` from api.anthropic.com, so the transport reaches Anthropic.)
+
+### 2. Physical WAN pull mid-conversation (SC#3 literal wording)
+
+**Test:** Real cloud profile active, real local Ollama in `fallback_chain`. One successful turn, then physically disconnect the WAN, then a second turn.
+**Expected:** `↳ fell back to <local> (connection)`, answered locally, history intact.
+**Why human:** A physical state change no automated check here can produce. The behavioral equivalent — unreachable active profile → real `ConnectionFailed` → hop to a real local model → history carried — was reproduced live during this verification, so this is confirmation that a WAN cut is indistinguishable from an unreachable endpoint.
+
+### 3. Cold-model first-token budget (MODEL-04 / D-05)
 
 **Test:** Cold-start a 14B Ollama model and send the first turn of a session.
-**Expected:** No spurious `slow_first_token` fallback inside the configured `first_token_budget_s` — `warmup()`/`preload()` absorbs the cold-load cost.
-**Why human:** Timing against a real cold-loading model cannot be asserted deterministically offline. Already listed as Manual-Only in `03-VALIDATION.md`.
+**Expected:** No spurious `slow_first_token` fallback inside the configured `first_token_budget_s` — `warmup()` / `preload()` absorbs the cold-load cost.
+**Why human:** 03-VALIDATION.md Manual-Only. Timing against a real cold-loading large model cannot be asserted deterministically offline; the verifier's local model is small and warm.
 
-#### 3. Real single-provider round-trip (MODEL-01/02)
+### 4. Two physical LAN machines (MODEL-06 headline)
 
-**Test:** With Ollama running, point a profile at it and hold a two-turn conversation via `paaf chat`.
-**Expected:** Both turns answer; the second shows the model saw the first.
-**Why human:** Requires a live provider. (Partial evidence already collected: `paaf chat` reached the real Anthropic API and returned a genuine `401`, so the transport path is live — but no successful completion was ever observed.)
-
-#### 4. Two physical LAN servers (MODEL-06)
-
-**Test:** Point two Ollama profiles at two DIFFERENT physical LAN machines and confirm each is served by its own box.
-**Expected:** `ollama ps` on each machine (or distinct model names) confirms which server ran.
-**Why human:** Proven at the binding level (two clients, two `base_url`s) but never against two real servers.
+**Test:** Point two Ollama profiles at two different physical LAN machines and confirm each answers from its own box (`ollama ps` on each, or distinct model names).
+**Expected:** Each named profile is served by its own server.
+**Why human:** Only one Ollama server is available here. Distinctness was proven live at the endpoint level (a dead port and a live port did not share a cached client) and at the cache-identity level in tests; two physical boxes is the remaining confirmation.
 
 ---
 
 ## Gaps Summary
 
-This phase is unusually well engineered. The test suite is not decorative: nearly every positive assertion is paired with a negative control that would catch the obvious cheat (an engine that always falls back; a deadline that wraps the whole stream instead of the first token; a signature walker that inspects nothing; a coverage list that silently misses a new enum member; an inspector that calls the composer twice instead of reading what crossed the port). MODEL-08 in particular is proven harder than the requirement asks — I executed the clean-venv gate myself and watched 102 tests pass with `langchain` genuinely unimportable. SC#1, SC#4 and SC#5 hold up under adversarial reading.
+**None.** All four gaps recorded on 2026-08-06 are closed, and each closure was verified by reading the current source and then running the shipped `paaf chat` against a real provider — not by reading a SUMMARY.
 
-The gaps are all in one place, and they share one shape: **the shipped `paaf chat` command does not wire the optional collaborators the library so carefully accepts.**
+The shape of the original finding was "the shipped command does not wire the optional collaborators the library so carefully accepts." That is no longer true of any of them:
 
-**Gap 1 — `paaf chat` cannot use PAAF's own credential mechanism (blocks SC#2).**
-`LangChainAdapter.__init__` takes a `secret_store`; `build_engine_adapter` takes a `secret_store`; `Agent.__init__` takes a `secret_store`. `paaf_core` ships a working `EncryptedFileSecretStore`. `ModelProfile.api_key_ref` exists precisely so the key value never touches YAML (CORE-04), and it is thoroughly unit-tested. And yet `cli._default_adapter` calls `build_engine_adapter(config)` with one argument, so in every real invocation `self._secret_store is None` and **any** profile declaring `api_key_ref` dies at bind. I reproduced this twice. The only credential path that actually works from `paaf chat` today is the provider SDK's own environment variable — which is the exact thing `api_key_ref` was built to replace. SC#2 names Anthropic explicitly; Anthropic is the provider most likely to need a key.
+- the secret store reaches the adapter factory, and a real encrypted store's key binds a real cloud profile;
+- the trace sink reaches the agent, and rows land on disk with the same reason string the user was shown;
+- `EngineError` lives in the port, so a framework-free CLI names it in an `except` clause and three named failure surfaces print one line instead of a traceback;
+- an OpenAI-compatible server under `/v1` with no credential is declarable in YAML and **held a real conversation**, closing the one provider that had zero binding-level coverage — the coverage hole that let both of that gap's defects ship.
 
-This is a one-line-plus-a-test fix, not a design flaw — which is why it should be closed rather than overridden.
+The closure plans also did the harder thing: each fix ships with a negative control that would turn red if the fix became a catch-all (`test_an_unexpected_exception_still_escapes` for the error handlers, `test_a_failure_before_the_reply_began_still_falls_back` for the fallback chain, `test_a_config_with_no_api_key_ref_never_opens_a_store` for the secret store, `test_an_openai_compatible_profile_without_the_auth_declaration_still_needs_a_credential` for the no-auth flag, `test_chat_without_a_trace_db_writes_nothing` for the trace). Suite grew 174 → 206 (no extra) and 200 → 241 (with extra) with zero regressions, zero new lint findings, zero debt markers, and the import boundary still 3 kept / 0 broken.
 
-**Gap 2 — `EngineError` escapes `paaf chat` as a raw traceback.**
-`_chat_loop` catches only `AllProvidersFailed`. `EngineError` is by the engine's own design the class for the most common real first-run failure (missing credential, wrong model name) — deliberately *not* an `AdapterError` so the fallback loop cannot swallow it. But nothing else catches it either, so the user sees a 30-line Python traceback. The same hole covers a post-first-token `AdapterError` (the engine intentionally does not catch those after commit). For a phase whose whole thesis is "nothing hidden from the user, readable output," a traceback on the headline command is worth closing.
+Status is `human_needed` rather than `passed` solely because four confirmations require resources this repo cannot supply: a paid API key, a physical WAN cut, a cold 14B model, and a second LAN machine.
 
-**Adjacent to SC#2, lower confidence on severity:** `paaf_core.Endpoint` has no path field, so an OpenAI-compatible server at `http://host:8080/v1` cannot be declared — that is where vLLM, llama.cpp's server and LM Studio actually serve, and the project's own tech-stack doc names all three. Plan 03-08 documented this rather than silently appending a suffix, which is the right call on the *hidden-behavior* axis. But the consequence is that the "OpenAI-compatible endpoints" leg of SC#2 is largely theoretical: combined with the missing unauthenticated-bind path, there is currently no working configuration for a local OpenAI-compatible server. It is also the one provider with zero binding-level test coverage, which is very likely why neither failure was noticed. This deserves an explicit maintainer decision: fix it, or record it in ROADMAP/REQUIREMENTS as an accepted Phase-3 limitation rather than leaving it only in a plan SUMMARY.
+### Verifier Side Effects (disclosed)
 
-### Additional Warnings (not gaps)
-
-- **`paaf chat` never writes a trace row.** Plan 03-02 added `served_by` + `fallback_trail` to the `runs` table and plan 03-06 drains them from `Agent`; both are verified against a real SQLite file. But `chat` calls `build_agent(config)` with no `trace=` sink, so `Agent._drain` returns immediately and nothing is persisted in production use. 03-07's SUMMARY explicitly assigned this wiring to plan 03-09 ("trace wiring is plan 03-09's"); 03-09's `files_modified` does not include `cli.py`. The seam is real, the wiring is missing — a wave-handoff dropped item, not a design flaw.
-- **`paaf chat` prints the completed reply rather than streaming tokens.** Recorded as a Known Stub by 03-07 and accurate: `Agent.turn` aggregates and exposes no token iterator. Not required by any Phase-3 success criterion; flagged because the project's TTS design depends on token streaming later.
-- **Phase mode/goal mismatch.** ROADMAP declares `Mode: mvp` but the goal is not a User Story. Reconcile with `/gsd mvp-phase 3` or drop the mode marker.
-- **Verifier side effect, disclosed:** during behavioral spot-checks I ran `paaf chat` with `ANTHROPIC_API_KEY=sk-ant-fake`, which made one outbound request to `api.anthropic.com` that was rejected with a 401. No credential was used and no billable work occurred. The workspace venv was restored to `uv sync --all-packages` (no `[engine]` extra) afterwards and the suite re-confirmed at 174 passed / 1 skipped.
+- Installed the `[engine]` extra to run the framework-present suite, then **restored** the workspace with `uv sync --all-packages` and re-confirmed 206 passed / 1 skipped with `langchain importable: False`.
+- Sent requests to a **local** Ollama server on `127.0.0.1:11434` (native API and its OpenAI-compatible `/v1` shim). **No outbound WAN request was made and no real credential was used** — the only Anthropic profile exercised was pointed at `127.0.0.1:9` and carried a fake key value (`sk-ant-NOT-A-REAL-KEY-…`) written into a throwaway encrypted store under the session scratchpad.
+- All config files, secret stores and trace databases were written under the session scratchpad, not the repository.
 
 ---
 
-_Verified: 2026-08-06_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-08-06T17:02:03Z_
+_Verifier: Claude (gsd-verifier) — re-verification after gap closure_
