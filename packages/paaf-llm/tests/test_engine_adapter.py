@@ -361,6 +361,69 @@ def test_two_profiles_differing_only_in_the_auth_declaration_do_not_share_a_bind
     assert adapter.bind(no_auth) is adapter.bind(no_auth)  # still cached per profile
 
 
+def test_an_openai_compatible_profile_without_the_auth_declaration_still_needs_a_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NEGATIVE CONTROL on the flag — the test that makes the flag load-bearing.
+
+    Without this, a ``model_kwargs`` that supplied the placeholder
+    UNCONDITIONALLY would satisfy every positive assertion above while sending an
+    invented credential to every OpenAI-compatible endpoint, authenticated or
+    not. Removing the declaration must reproduce the verifier's original
+    ``Missing credentials`` failure, and here it does.
+
+    ``delenv`` is what makes it deterministic: on a developer machine with
+    ``OPENAI_API_KEY`` exported the bind would succeed on an ambient credential
+    and the control would silently stop controlling anything.
+
+    ``not isinstance(..., AdapterError)`` is the second load-bearing assertion. A
+    missing credential is a configuration error, not a degraded provider; if it
+    were the latter the ordered fallback chain would swallow it and let another
+    model quietly answer for the profile the user configured.
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    profile = _openai_compatible(unauthenticated=False)
+    adapter = LangChainAdapter()  # no secret store, and the profile names no ref
+
+    with pytest.raises(EngineError) as raised:
+        adapter.bind(profile)
+
+    assert not isinstance(raised.value, AdapterError)
+
+
+def test_base_url_appends_nothing_the_user_did_not_declare() -> None:
+    """NEGATIVE CONTROL on the path: PAAF adds no segment the user did not write.
+
+    Plan 03-08 refused to append a ``/v1`` suffix on the user's behalf, and that
+    decision survives the path becoming expressible: declaring it is now the
+    user's to make, and an undeclared one stays undeclared.
+
+    Asserted with ``==`` against the whole string rather than ``in`` or
+    ``startswith``, so a trailing slash or a helpfully-invented ``/v1`` fails
+    here instead of reaching a dialed URL.
+    """
+    profile = _openai_compatible(path=None)
+    assert LangChainAdapter.base_url(profile) == "http://192.168.1.20:8000"
+
+
+def test_two_profiles_differing_only_in_the_endpoint_path_do_not_share_a_binding() -> (
+    None
+):
+    """MODEL-06 applied to the provider that had no binding coverage at all.
+
+    The same reasoning that makes two LAN Ollama boxes two clients makes two
+    paths two clients: ``/v1`` and the server's root are different servers as far
+    as a request is concerned, and one cache entry answering for both would serve
+    one endpoint's client to the other.
+    """
+    adapter = LangChainAdapter()
+    with_path = _openai_compatible(path="/v1")
+    without_path = _openai_compatible(path=None)
+
+    assert adapter.cache_key(with_path) != adapter.cache_key(without_path)
+    assert adapter.bind(with_path) is not adapter.bind(without_path)
+
+
 # ------------------------------------------------------ CORE-04: key by ref --
 
 
