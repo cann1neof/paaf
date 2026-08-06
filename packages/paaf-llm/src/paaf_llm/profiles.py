@@ -58,6 +58,20 @@ class ModelProfile(BaseModel):
     endpoint_scheme: str = Field(
         "http", json_schema_extra={"reload_tier": ReloadTier.RESTART}
     )
+    # RESTART: the URL path the declared server serves under — OpenAI-compatible
+    # servers commonly serve at `/v1` (vLLM, llama.cpp's server, LM Studio all
+    # do). Opt-in: PAAF appends only what the user wrote here, never a guess.
+    endpoint_path: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.RESTART}
+    )
+    # RESTART: the user's EXPLICIT statement that this endpoint accepts requests
+    # with no credential. It is a declared field rather than an inference from an
+    # absent `api_key_ref` because an absent reference is ambiguous between "no
+    # auth is needed" and "I forgot" — and guessing the first would send
+    # unauthenticated requests to a server on the user's behalf.
+    endpoint_unauthenticated: bool = Field(
+        False, json_schema_extra={"reload_tier": ReloadTier.RESTART}
+    )
 
     # CORE-04: the NAME of a SecretStore key. Never the key value.
     api_key_ref: str | None = Field(
@@ -99,6 +113,11 @@ class ModelProfile(BaseModel):
         offline refusal) as a `paaf_core` :class:`Endpoint`. A cloud profile
         that relies on the provider's own base URL declares nothing here — it
         is not hidden, it simply has no PAAF-declared endpoint to classify.
+
+        A declared ``endpoint_path`` travels WITH the endpoint rather than being
+        re-attached downstream, so the value Phase-9's offline check classifies
+        is identical to the one actually dialed. ``path`` is addressing only:
+        :meth:`Endpoint.is_lan` reads the host and never the path.
         """
         if self.endpoint_host is None or self.endpoint_port is None:
             return None
@@ -106,7 +125,62 @@ class ModelProfile(BaseModel):
             host=self.endpoint_host,
             port=self.endpoint_port,
             scheme=self.endpoint_scheme,
+            path=self.endpoint_path or "",
         )
+
+    @model_validator(mode="after")
+    def _check_endpoint(self) -> ModelProfile:
+        """Reject a malformed endpoint declaration at LOAD, and never repair one.
+
+        A hand-edited config is untrusted input (T-03-02/T-03-36), and this
+        field's value ends up inside a URL PAAF dials. So a malformed path is
+        *reported* — named, with the offending value — rather than stripped,
+        prepended, or rewritten into something plausible. Silently normalizing it
+        would mean dialing a URL the user never wrote, which is the same hidden
+        behavior a guessed ``/v1`` suffix would be.
+        """
+        if self.endpoint_path is not None:
+            path = self.endpoint_path
+            if self.endpoint_host is None or self.endpoint_port is None:
+                raise ValueError(
+                    f"endpoint_path {path!r} needs a declared endpoint_host and "
+                    f"endpoint_port — a path alone addresses nothing"
+                )
+            if not path.startswith("/"):
+                raise ValueError(f"endpoint_path {path!r} must start with '/'")
+            if path.endswith("/"):
+                raise ValueError(
+                    f"endpoint_path {path!r} must not end with '/' — the path is "
+                    f"appended verbatim, so a trailing slash would be dialed"
+                )
+            for character in ("?", "#"):
+                if character in path:
+                    raise ValueError(
+                        f"endpoint_path {path!r} must not contain {character!r}; "
+                        f"it is a path, not a query string or a fragment"
+                    )
+            if any(character.isspace() for character in path):
+                raise ValueError(
+                    f"endpoint_path {path!r} must not contain whitespace"
+                )
+
+        if self.endpoint_unauthenticated:
+            if self.api_key_ref is not None:
+                raise ValueError(
+                    f"endpoint_unauthenticated is true but api_key_ref "
+                    f"{self.api_key_ref!r} is also declared — a profile cannot "
+                    f"both need no credential and name one"
+                )
+            if self.provider != "openai_compatible":
+                raise ValueError(
+                    f"endpoint_unauthenticated is not valid for provider "
+                    f"{self.provider!r}; the flag exists for openai_compatible "
+                    f"servers, because the local ollama binding already needs no "
+                    f"credential and a hosted anthropic endpoint cannot be "
+                    f"unauthenticated"
+                )
+
+        return self
 
 
 class LlmConfig(BaseModel):

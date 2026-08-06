@@ -36,6 +36,31 @@ class Endpoint:
     host: str
     port: int
     scheme: str
+    #: The URL path this component serves under, empty by default and appended
+    #: VERBATIM by :meth:`url`. An OpenAI-compatible server commonly serves at
+    #: ``/v1``; PAAF never guesses that suffix, it only carries the one the user
+    #: declared. Classification does not read this field — see :meth:`is_lan`.
+    #:
+    #: Declared LAST, and defaulted, because existing callers construct
+    #: ``Endpoint(host, port, scheme)`` positionally; an inserted field would
+    #: silently reassign their arguments.
+    path: str = ""
+
+    def url(self) -> str:
+        """Return this endpoint as one URL string: scheme, host, port, path.
+
+        The assembly lives here rather than in each caller so there is exactly
+        one answer to "what URL does this endpoint mean" — and so the value a
+        component dials is character-for-character the value the registry (and
+        Phase-9's APP-08 offline check) classifies.
+
+        ``path`` is appended exactly as declared: nothing is stripped, prepended,
+        rewritten, or guessed. A URL segment PAAF invented would be one the user
+        never wrote, which is the hidden behavior this project refuses. A path
+        that is malformed is a config error the DECLARING schema rejects at load,
+        not something this method repairs.
+        """
+        return f"{self.scheme}://{self.host}:{self.port}{self.path}"
 
     def is_lan(self) -> bool:
         """Return ``True`` when this endpoint is provably LAN-local offline.
