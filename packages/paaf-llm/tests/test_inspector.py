@@ -28,6 +28,7 @@ exercised end to end without a provider, a socket, or the ``[engine]`` extra.
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -949,3 +950,77 @@ def test_a_wrong_passphrase_is_readable_and_never_echoed(
     assert str(store_path) in result.output
     assert "the-wrong-one" not in result.output
     assert not isinstance(result.exception, InvalidPassphraseError)
+
+
+# ------------------------------------------- MODEL-04 / D-06: the trace on disk --
+#
+# Gap 4 of 03-VERIFICATION: `paaf chat` built its agent with no `trace=` sink, so
+# `Agent._drain` returned on its first line and the shipped command never wrote a
+# row. Both sides of the seam were built and tested — the `runs` schema carries
+# `served_by` and `fallback_trail`, and `_drain` fills them — but nothing joined
+# them, so SC#4's "authoritative record" and D-06's "each trigger reason is
+# recorded" were true of the library and false of the command.
+#
+# Every assertion below reads the database back with the STANDARD LIBRARY
+# `sqlite3` module rather than through `paaf_trace`. That is deliberate: it proves
+# a real file with real committed rows exists on disk, independently of the code
+# under test. Reading through the store would let a store that never wrote
+# anything satisfy its own reader.
+
+
+def read_runs(db_path: Path | str) -> list[dict[str, Any]]:
+    """Return the ``runs`` rows of the SQLite file at ``db_path`` as dictionaries.
+
+    Opened with the stdlib :mod:`sqlite3` — see the section comment. The
+    connection is closed in a ``finally`` so a failing assertion cannot leave a
+    handle open on a ``tmp_path`` file the fixture will try to remove.
+    """
+    connection = sqlite3.connect(str(db_path))
+    try:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute("SELECT * FROM runs ORDER BY id").fetchall()
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
+
+
+def test_chat_with_a_trace_db_writes_a_run_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One turn through ``--trace-db`` leaves one committed row on disk (Gap 4).
+
+    The ``prompts`` comparison is the load-bearing one, and it is held to the
+    same standard as the byte-exact inspector tests at the top of this file: the
+    recorded prompt is compared against the ``system`` message the adapter
+    ACTUALLY received, not against a second derivation of it. A trace that
+    recorded its own composition could understate what was sent (T-03-17/18).
+
+    That the row is readable AFTER the command returned is itself the proof that
+    ``stop()`` ran and the bounded queue was drained — an abandoned writer task
+    would leave the file empty, or absent entirely.
+    """
+    path = write_config(tmp_path, make_config())
+    db_path = tmp_path / "trace.db"
+    adapter = FakeAdapter()
+    adapter.program("local", tokens=["ok"])
+    inject(monkeypatch, adapter)
+
+    result = CliRunner().invoke(
+        main,
+        ["chat", "--config", path, "--trace-db", str(db_path)],
+        input="hello\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert db_path.exists()
+
+    rows = read_runs(db_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["served_by"] == "local"
+    assert row["model"] == "local"
+    assert row["fallback_trail"] == "[]"
+
+    _key, messages = adapter.calls[0]
+    assert messages[0].role == "system"
+    assert row["prompts"] == messages[0].content
