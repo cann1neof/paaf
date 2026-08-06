@@ -99,3 +99,9 @@ packages = ["src/paaf_llm"]
 "tests/test_fallback.py" = "paaf_llm/tests/test_fallback.py"
 "tests/test_inspector.py" = "paaf_llm/tests/test_inspector.py"
 "tests/test_no_leak.py" = "paaf_llm/tests/test_no_leak.py"
+# Phase 4 / SC#5: the mesh suite. Listed here for a reason that is not
+# bookkeeping — SC#5 is stated in terms of the clean-venv gate, so a mesh test
+# left off this list would pass locally and be invisible to the only run that
+# counts. `check_framework_uninstalled.sh`'s non-vacuity guard turns that
+# omission into a red build rather than a cheerful green one.
+"tests/test_mesh.py" = "paaf_llm/tests/test_mesh.py"

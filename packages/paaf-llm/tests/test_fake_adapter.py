@@ -30,19 +30,34 @@ from paaf_llm.ports import (
     RateLimited,
     RequestTimedOut,
     ServerError,
+    ToolCall,
+    ToolCallingChatAdapter,
+    ToolSpec,
     Usage,
 )
 from paaf_llm.profiles import ModelProfile
 
 _HELLO = [Message("user", "hi")]
+_TRANSFER_TO_CHEF = ToolSpec("transfer_to_chef", "cooks things", {})
 
 
 async def _drain(adapter: FakeAdapter, profile: ModelProfile) -> list[str]:
     return [token async for token in adapter.stream(profile, _HELLO)]
 
 
+async def _drain_with_tools(
+    adapter: FakeAdapter, profile: ModelProfile, tools: list[ToolSpec]
+) -> list[str]:
+    return [token async for token in adapter.stream_with_tools(profile, _HELLO, tools)]
+
+
 def test_fake_adapter_satisfies_the_chat_adapter_protocol() -> None:
     assert isinstance(FakeAdapter(), ChatAdapter)
+
+
+def test_fake_adapter_satisfies_the_tool_calling_protocol() -> None:
+    """SC#5 reaches the mesh only because the shipped fake can be offered tools."""
+    assert isinstance(FakeAdapter(), ToolCallingChatAdapter)
 
 
 async def test_streams_the_scripted_tokens_in_order(
@@ -151,8 +166,107 @@ async def test_records_the_messages_it_was_handed(
     assert fake_adapter.calls == [("local", tuple(messages))]
 
 
+async def test_records_what_tools_were_offered(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """MESH-02's capability-removal substrate: what was OFFERED is observable."""
+    fake_adapter.program("host", tokens=["ok"])
+    await _drain_with_tools(fake_adapter, make_profile("host"), [_TRANSFER_TO_CHEF])
+    assert fake_adapter.tool_offers == [("host", ("transfer_to_chef",))]
+
+
+async def test_plain_stream_records_no_tool_offer(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """Negative control: ``stream`` offers nothing, so it records nothing."""
+    fake_adapter.program("host", tokens=["ok"])
+    await _drain(fake_adapter, make_profile("host"))
+    assert fake_adapter.tool_offers == []
+
+
+async def test_scripted_tool_calls_publish_after_the_stream_drains(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """The same publish-after-aggregation rule ``last_usage`` follows (SPIKE-05).
+
+    Read mid-stream, a real provider has only partial argument JSON — so the fake
+    must not reward a mid-stream read either.
+    """
+    call = ToolCall("transfer_to_chef", {})
+    fake_adapter.program("host", tokens=["a", "b"], tool_calls=[call])
+    profile = make_profile("host")
+
+    gen = fake_adapter.stream_with_tools(profile, _HELLO, [_TRANSFER_TO_CHEF])
+    assert await gen.__anext__() == "a"
+    assert fake_adapter.last_tool_calls() == ()  # not yet — the stream is live
+    assert [token async for token in gen] == ["b"]
+    assert fake_adapter.last_tool_calls() == (call,)
+
+
+async def test_scripted_tool_calls_are_not_published_by_plain_stream(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """Negative control: no tools offered means no tool call can come back.
+
+    Without this, an engine that never offered the handoff tools could still
+    "receive" a handoff from the fake, and the test written to catch that would
+    pass.
+    """
+    fake_adapter.program(
+        "host", tokens=["a"], tool_calls=[ToolCall("transfer_to_x", {})]
+    )
+    await _drain(fake_adapter, make_profile("host"))
+    assert fake_adapter.last_tool_calls() == ()
+
+
+async def test_tool_calls_default_to_empty(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """The ordinary case: the awake agent just answered and called nothing."""
+    fake_adapter.program("host", tokens=["a"])
+    await _drain_with_tools(fake_adapter, make_profile("host"), [_TRANSFER_TO_CHEF])
+    assert fake_adapter.last_tool_calls() == ()
+
+
+async def test_unprogrammed_profile_fails_loudly_with_tools_too(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """The two entry points share one body, so they fail the same loud way."""
+    gen = fake_adapter.stream_with_tools(
+        make_profile("never-programmed"), _HELLO, [_TRANSFER_TO_CHEF]
+    )
+    with pytest.raises(LookupError) as raised:
+        await gen.__anext__()
+    assert not isinstance(raised.value, AdapterError)
+    assert "never-programmed" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ConnectionFailed, RequestTimedOut, ServerError, RateLimited],
+)
+async def test_degraded_triggers_fire_on_the_tool_path_too(
+    fake_adapter: FakeAdapter,
+    make_profile: Callable[..., ModelProfile],
+    failure: type[AdapterError],
+) -> None:
+    """Offering tools is not a different mode — fallback still classifies it."""
+    fake_adapter.program("host", fail=failure)
+    gen = fake_adapter.stream_with_tools(
+        make_profile("host"), _HELLO, [_TRANSFER_TO_CHEF]
+    )
+    with pytest.raises(failure):
+        await gen.__anext__()
+
+
 def test_fake_source_imports_no_agent_framework() -> None:
     """Source assertion (SC#1): the shipped fake may not name the framework."""
     source = Path(fake_module.__file__ or "").read_text(encoding="utf-8")
     for forbidden in ("import langchain", "import langgraph", "from langchain"):
         assert forbidden not in source
+    # The tool-calling half is the newest surface and the likeliest place a
+    # framework tool type would be reached for. It is covered by the same
+    # assertion because it lives in the same file — stated here so a future
+    # split into a submodule does not silently drop it from the guard.
+    assert "def stream_with_tools" in source
+    assert "def last_tool_calls" in source

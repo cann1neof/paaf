@@ -18,7 +18,7 @@ name so that ``fake_adapter.program("local", ...)`` drives the profile
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from typing import Any
 
 import pytest
@@ -78,6 +78,59 @@ def make_llm_config(
             active_profile=active,
             profiles={name: make_profile(name) for name in names},
             fallback_chain=list(fallbacks),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_mesh_config(
+    make_profile: Callable[..., ModelProfile],
+) -> Callable[..., LlmConfig]:
+    """Build an :class:`LlmConfig` whose profiles carry a declared peer graph.
+
+    ``peers`` is the graph itself — ``{"host": ["chef"], "chef": []}`` reads as
+    "host may hand off to chef; chef may hand off to nobody". Every key AND every
+    named peer is declared as a profile, for the same reason
+    :func:`make_llm_config` declares every fallback entry: ``LlmConfig`` rejects a
+    peer that names no declared profile, so the fixture cannot hand back a config
+    the schema would refuse.
+
+    Declaring a profile that is in NO peer list is deliberately possible — pass it
+    as a key with an empty list. That is the shape MESH-02's guard test needs: a
+    profile that exists in ``LlmConfig.profiles`` and is still not reachable from
+    the awake agent. A guard written against ``profiles`` instead of
+    ``awake.peers`` passes every other test and fails that one (Pitfall 4).
+
+    ``capabilities`` maps a profile name to its free-text manifest (D-08), which
+    is what the generated handoff tool descriptions are built from.
+    """
+
+    def _make(
+        active: str = "host",
+        peers: Mapping[str, Sequence[str]] | None = None,
+        base_prompt: str = "",
+        capabilities: Mapping[str, str] | None = None,
+    ) -> LlmConfig:
+        graph = dict(peers or {})
+        manifests = dict(capabilities or {})
+
+        # dict.fromkeys preserves declaration order while de-duplicating, so the
+        # profiles dict reads in the order the test wrote the graph.
+        names = dict.fromkeys(
+            [active, *graph, *(peer for edges in graph.values() for peer in edges)]
+        )
+        return LlmConfig(
+            base_prompt=base_prompt,
+            active_profile=active,
+            profiles={
+                name: make_profile(
+                    name,
+                    peers=list(graph.get(name, ())),
+                    capabilities=manifests.get(name, ""),
+                )
+                for name in names
+            },
         )
 
     return _make

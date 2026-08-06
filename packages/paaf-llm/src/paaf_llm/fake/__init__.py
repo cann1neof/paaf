@@ -13,8 +13,19 @@ against the import graph.
 
 It is driven entirely by an **injected script**, never by wall-clock luck or a
 live provider: :meth:`FakeAdapter.program` records, per profile, the tokens to
-emit, an optional degraded failure to raise, an optional first-token delay, and
-the usage to report. Every fallback test in this phase is a different program.
+emit, an optional degraded failure to raise, an optional first-token delay, the
+usage to report, and — since Phase 4 — the tool calls to emit. Every fallback and
+mesh test in these phases is a different program.
+
+**Phase 4 (MESH-01/02): this fake is also a**
+:class:`~paaf_llm.ports.ToolCallingChatAdapter`. That is what makes SC#5 reach the
+mesh rather than stopping at the single-agent loop — the whole handoff suite runs
+here, framework-uninstalled. Two properties are load-bearing and easy to lose:
+:attr:`FakeAdapter.tool_offers` records what was OFFERED (so capability removal is
+provable, not merely asserted), and ``program(tool_calls=...)`` deliberately does
+**not** validate its names against the offered set (so the runtime peer guard has
+a negative control — a model calling a tool nobody bound is a routine failure
+mode, not a hypothetical).
 
 **The one thing this fake deliberately does NOT do** is decide that a first token
 was too slow. ``first_token_delay_s`` makes the fake *slow*; classifying that as
@@ -38,7 +49,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..ports import AdapterError, Message, Usage
+from ..ports import AdapterError, Message, ToolCall, ToolSpec, Usage
 
 if TYPE_CHECKING:
     from ..profiles import ModelProfile
@@ -62,6 +73,10 @@ class _Program:
     fail: type[AdapterError] | None = None
     first_token_delay_s: float = 0.0
     usage: Usage = DEFAULT_USAGE
+    #: MESH-01: the tool calls this profile emits once its stream has drained.
+    #: Published ONLY on the :meth:`FakeAdapter.stream_with_tools` path — a
+    #: provider that was offered no tools cannot call one.
+    tool_calls: tuple[ToolCall, ...] = ()
 
 
 class FakeAdapter:
@@ -83,10 +98,19 @@ class FakeAdapter:
     def __init__(self) -> None:
         self._programs: dict[str, _Program] = {}
         self._last_usage: Usage = DEFAULT_USAGE
+        self._last_tool_calls: tuple[ToolCall, ...] = ()
         #: Every ``(profile_key, messages)`` this adapter was asked to stream, in
         #: order — the substrate for multi-turn history and composed-prompt
         #: assertions (a test can prove what actually crossed the port).
         self.calls: list[tuple[str, tuple[Message, ...]]] = []
+        #: Every ``(profile_key, offered_tool_names)`` this adapter was asked to
+        #: stream WITH tools, in order. This is the substrate for proving
+        #: capability removal (MESH-02): a test reads it to show the peer graph —
+        #: and nothing else — shaped what the model could even call. Without a
+        #: record of what was OFFERED, "only declared peers are reachable" could
+        #: only be tested through the guard, which is the second line of defence,
+        #: not the first.
+        self.tool_offers: list[tuple[str, tuple[str, ...]]] = []
 
     def program(
         self,
@@ -96,6 +120,7 @@ class FakeAdapter:
         fail: type[AdapterError] | None = None,
         first_token_delay_s: float = 0.0,
         usage: Usage | None = None,
+        tool_calls: Sequence[ToolCall] | None = None,
     ) -> None:
         """Script what ``profile_name`` does on its next (and every) stream.
 
@@ -109,26 +134,29 @@ class FakeAdapter:
                 engine's deadline decides whether that is too slow; this adapter
                 never does (D-04/D-05).
             usage: what :meth:`last_usage` reports once the stream is aggregated.
+            tool_calls: what :meth:`last_tool_calls` reports once the stream is
+                aggregated, on the :meth:`stream_with_tools` path (MESH-01). The
+                names here are NOT checked against what was offered, and that is
+                the point: scripting a call to a tool the engine never bound is
+                how the MESH-02 runtime guard gets a negative control at all
+                (Pitfall 4). A real model does this; the fake must be able to.
         """
         self._programs[profile_name] = _Program(
             tokens=list(tokens or []),
             fail=fail,
             first_token_delay_s=first_token_delay_s,
             usage=usage if usage is not None else DEFAULT_USAGE,
+            tool_calls=tuple(tool_calls or ()),
         )
 
-    async def stream(
-        self, profile: ModelProfile, messages: Sequence[Message]
-    ) -> AsyncIterator[str]:
-        """Emit ``profile``'s scripted tokens, or raise its scripted failure.
+    async def _scripted(self, key: str, *, tools_offered: bool) -> AsyncIterator[str]:
+        """Run ``key``'s program — the ONE body both entry points share.
 
-        Raises:
-            AdapterError: the subclass the program named, on the first token.
-            LookupError: when ``profile`` was never programmed.
+        Extracted rather than duplicated so :meth:`stream` and
+        :meth:`stream_with_tools` cannot drift: a degraded trigger, a delay, or
+        the publish-after-drain rule fixed on one path but not the other would
+        make half the suite quietly test a different adapter.
         """
-        key = self.program_key(profile)
-        self.calls.append((key, tuple(messages)))
-
         program = self._programs.get(key)
         if program is None:
             raise LookupError(
@@ -150,12 +178,66 @@ class FakeAdapter:
 
         # Usage is published only after the whole stream drained — several real
         # providers report it on the final message only (SPIKE-05), so reading it
-        # mid-stream would be an anti-pattern this fake must not reward.
+        # mid-stream would be an anti-pattern this fake must not reward. Tool
+        # calls are published in the SAME place for a sharper version of the same
+        # reason: mid-stream a real provider emits argument JSON in fragments, so
+        # there is no call to read until the stream is aggregated.
         self._last_usage = program.usage
+        # A provider that was offered no tools cannot have called one. Publishing
+        # the scripted calls on the plain `stream` path would let an engine that
+        # never offers tools still "receive" a handoff — and the test written to
+        # catch exactly that would pass.
+        self._last_tool_calls = program.tool_calls if tools_offered else ()
+
+    async def stream(
+        self, profile: ModelProfile, messages: Sequence[Message]
+    ) -> AsyncIterator[str]:
+        """Emit ``profile``'s scripted tokens, or raise its scripted failure.
+
+        Raises:
+            AdapterError: the subclass the program named, on the first token.
+            LookupError: when ``profile`` was never programmed.
+        """
+        key = self.program_key(profile)
+        self.calls.append((key, tuple(messages)))
+        async for token in self._scripted(key, tools_offered=False):
+            yield token
+
+    async def stream_with_tools(
+        self,
+        profile: ModelProfile,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[str]:
+        """Stream ``profile`` with ``tools`` offered, recording what was offered.
+
+        Behaviorally identical to :meth:`stream` — same script, same degraded
+        triggers, same publish-after-drain rule — plus the :attr:`tool_offers`
+        recording and the scripted :meth:`last_tool_calls` publication.
+
+        Raises:
+            AdapterError: the subclass the program named, on the first token.
+            LookupError: when ``profile`` was never programmed. Pointedly not an
+                ``AdapterError``, for the reason the class docstring gives.
+        """
+        key = self.program_key(profile)
+        self.calls.append((key, tuple(messages)))
+        self.tool_offers.append((key, tuple(tool.name for tool in tools)))
+        async for token in self._scripted(key, tools_offered=True):
+            yield token
 
     def last_usage(self) -> Usage:
         """Return the usage published by the most recently aggregated stream."""
         return self._last_usage
+
+    def last_tool_calls(self) -> tuple[ToolCall, ...]:
+        """Return the tool calls published by the most recently aggregated stream.
+
+        Empty unless the last stream went through :meth:`stream_with_tools` AND
+        its program scripted calls — the ordinary case being a profile that just
+        answered.
+        """
+        return self._last_tool_calls
 
     @staticmethod
     def program_key(profile: ModelProfile) -> str:
