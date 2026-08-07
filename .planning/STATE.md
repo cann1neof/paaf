@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Agent Mesh
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-08-07T05:22:19.086Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-08-07T05:35:30.356Z"
 last_activity: 2026-08-06
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 41
-  completed_plans: 33
+  completed_plans: 34
   percent: 23
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 04 (Agent Mesh) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-08-06 — Phase 04 execution started
 
@@ -74,6 +74,7 @@ Progress: [█░░░░░░░░░] 11%  (1/9 plans in phase 04)
 | Phase 02 P08 | 4min | 3 tasks | 7 files |
 | Phase 02 P09 | 12min | 2 tasks | 4 files |
 | Phase 04 P01 | 50m | 3 tasks | 11 files |
+| Phase 04 P02 | ~35 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-01: UndeclaredPeer is a taxonomy sibling of AllProvidersFailed/EngineError — never an AdapterError, so the fallback loop cannot swallow a routing violation
 - [Phase ?]: 04-01: peer enforcement is belt-and-braces — capability removal in handoff_tools() AND a runtime guard checking awake.peers, never LlmConfig.profiles
 - [Phase ?]: 04-01: Agent.awake_agent is sticky in-process and not persisted; _chain() now starts from it rather than config.active_profile
+- [Phase ?]: 04-02: mesh trace uses NEW FK-free tables (handoffs, turn_legs) — never a column on runs, since the migration-less executescript schema makes an added column a silent no-op on an existing trace.db (Pitfall 5)
+- [Phase ?]: 04-02: observer columns (observer_verdict/profile/rerouted_to) declared before the observer exists (04-07) because there is no path to add them later
 
 ### Pending Todos
 
@@ -152,6 +155,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-07T05:22:00.437Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-agent-mesh/04-CONTEXT.md
+Last session: 2026-08-07T05:35:22.283Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: None
