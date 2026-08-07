@@ -96,6 +96,104 @@ class ToolCallEvent:
 
 
 @dataclass(slots=True)
+class TurnLegEvent:
+    """One AGENT LEG of a possibly multi-agent turn (MESH-05, OQ-5, SC#4).
+
+    A handed-off turn is several legs, each answered by a different agent and each with
+    its OWN ``served_by`` and its OWN ``fallback_trail`` — per-agent fallback provenance
+    is not reconstructible from a single per-turn row. Siblings are correlated by
+    ``turn_id``, an engine-generated uuid4 hex string, never a database-assigned id: the
+    fire-and-forget writer never surfaces ``lastrowid``, which is why this table carries
+    no FK (see schema.sql).
+
+    ``TraceStore`` needs no change to accept this: the writer is event-agnostic and just
+    executes whatever ``as_sql()`` yields, so a new record type is a dataclass plus a
+    ``CREATE TABLE``.
+    """
+
+    turn_id: str
+    leg_seq: int
+    agent: str | None = None
+    served_by: str | None = None
+    fallback_trail: str | None = None
+    started_at: float | None = None
+    ended_at: float | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+
+    def as_sql(self) -> tuple[str, tuple[object, ...]]:
+        return (
+            (
+                "INSERT INTO turn_legs "
+                "(turn_id, leg_seq, agent, served_by, fallback_trail, "
+                "started_at, ended_at, prompt_tokens, completion_tokens) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                self.turn_id,
+                self.leg_seq,
+                self.agent,
+                self.served_by,
+                self.fallback_trail,
+                self.started_at,
+                self.ended_at,
+                self.prompt_tokens,
+                self.completion_tokens,
+            ),
+        )
+
+
+@dataclass(slots=True)
+class HandoffEvent:
+    """One handoff ATTEMPT — accepted or rejected (MESH-05, T-04-07).
+
+    Rejected attempts matter most: they produce no ``runs`` row and no ``turn_legs`` row,
+    so without this table a wrong reroute leaves no trace at all. Everything except the
+    correlation keys (``turn_id`` / ``seq``) therefore defaults to ``None``, so a bare
+    rejection — no observer, no reroute, no timing — constructs cleanly.
+
+    ``to_agent`` and ``detail`` carry model-influenced text. The INSERT is parameterized
+    with an explicit column list and never interpolates (T-04-06); the placeholder/param
+    balance test is what keeps a hand-built query from creeping in.
+
+    ``TraceStore`` is unmodified — the writer is event-agnostic by design.
+    """
+
+    turn_id: str
+    seq: int
+    from_agent: str | None = None
+    to_agent: str | None = None
+    outcome: str | None = None
+    observer_verdict: str | None = None
+    observer_profile: str | None = None
+    rerouted_to: str | None = None
+    detail: str | None = None
+    at: float | None = None
+
+    def as_sql(self) -> tuple[str, tuple[object, ...]]:
+        return (
+            (
+                "INSERT INTO handoffs "
+                "(turn_id, seq, from_agent, to_agent, outcome, "
+                "observer_verdict, observer_profile, rerouted_to, detail, at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ),
+            (
+                self.turn_id,
+                self.seq,
+                self.from_agent,
+                self.to_agent,
+                self.outcome,
+                self.observer_verdict,
+                self.observer_profile,
+                self.rerouted_to,
+                self.detail,
+                self.at,
+            ),
+        )
+
+
+@dataclass(slots=True)
 class TtfaUpdate:
     """Record time_to_first_audio for an existing run row (see metrics.py)."""
 

@@ -2,9 +2,10 @@
 
 Out-of-scope discoveries found during execution. Logged, not fixed (executor scope boundary).
 
-## 1. Pre-existing `ruff format` drift across `packages/paaf-llm`
+## 1. Pre-existing `ruff format` drift across `packages/paaf-llm` and `packages/paaf-trace`
 
-**Found during:** plan 04-01, Task 1.
+**Found during:** plan 04-01, Task 1 (`paaf-llm`); confirmed again in plan 04-02, Task 1
+(`paaf-trace`).
 
 `uv run ruff format --check packages/paaf-llm` reports 6 files that would be reformatted at
 baseline — before this phase touched anything:
@@ -15,6 +16,13 @@ baseline — before this phase touched anything:
 - `packages/paaf-llm/tests/test_engine_adapter.py`
 - `packages/paaf-llm/tests/test_inspector.py`
 - `packages/paaf-llm/tests/test_profiles.py`
+
+`uv run ruff format --check packages/paaf-trace` reports 4 more, likewise untouched by this phase:
+
+- `packages/paaf-trace/src/paaf_trace/metrics.py`
+- `packages/paaf-trace/tests/test_trace_no_egress.py`
+- `packages/paaf-trace/tests/test_trace_queue.py`
+- `packages/paaf-trace/tests/test_ttfa_regression.py`
 
 Every diff is cosmetic (a blank line after a module docstring, string-concat wrapping). The cause
 is that `ruff` is declared unpinned in the dev group (`pyproject.toml`) and the locally resolved

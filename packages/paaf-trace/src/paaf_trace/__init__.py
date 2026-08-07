@@ -17,7 +17,11 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 
 def read_schema() -> str:
-    """Return the trace-store DDL (``runs`` + ``tool_calls``) as raw SQL text."""
+    """Return the trace-store DDL as raw SQL text.
+
+    Four tables: ``runs`` + ``tool_calls`` (Phase 3) and the FK-free mesh pair
+    ``turn_legs`` + ``handoffs`` (Phase 4, MESH-05).
+    """
     return SCHEMA_PATH.read_text(encoding="utf-8")
 
 
