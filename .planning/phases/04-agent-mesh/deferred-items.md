@@ -36,6 +36,19 @@ plan's real diff. Files this phase actually touches are kept format-clean indivi
 `uv run ruff format` once across the workspace, and add a `ruff format --check` step to CI so the
 drift cannot silently return.
 
+**Widened in plan 04-04.** That plan's verification runs `ruff` over the whole workspace
+(`packages scripts`) rather than over `paaf-llm` alone, which surfaces two more baseline facts:
+
+- `ruff format --check packages scripts` reports **25 files** would be reformatted, not 6 — the rest
+  are in `paaf-core`, `paaf-session` and `paaf-trace`, all untouched by this phase.
+- `ruff check packages scripts` reports **one real lint error**, likewise pre-existing:
+  `RUF022 __all__ is not sorted` in `packages/paaf-core/src/paaf_core/secrets/__init__.py`, last
+  touched by `960edbb` (plan 02-05). It is auto-fixable (`ruff check --fix`).
+
+**No CI workflow runs `ruff` at all** — `ci.yml` runs only `lint-imports` — which is why a fixable
+lint error has sat green since Phase 2. The suggested fix above should therefore add
+`ruff check` as well as `ruff format --check`.
+
 ## 2. A SQL error inside `TraceStore._writer` kills the writer and deadlocks `stop()`
 
 **Found during:** plan 04-02, Task 2 — while proving the Pitfall-5 reopen test is non-vacuous.

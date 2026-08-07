@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Agent Mesh
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-08-07T06:08:20.909Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-08-07T06:38:42.957Z"
 last_activity: 2026-08-06
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 41
-  completed_plans: 35
+  completed_plans: 36
   percent: 23
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 04 (Agent Mesh) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-08-06 — Phase 04 execution started
 
-Progress: [███░░░░░░░] 33%  (3/9 plans in phase 04)
+Progress: [████░░░░░░] 44%  (4/9 plans in phase 04)
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [███░░░░░░░] 33%  (3/9 plans in phase 04)
 | Phase 04 P01 | 50m | 3 tasks | 11 files |
 | Phase 04 P02 | ~35 min | 2 tasks | 6 files |
 | Phase 04 P03 | ~30 min | 3 tasks | 9 files |
+| Phase 04 P04 | 25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,9 @@ Recent decisions affecting current work:
 - [Phase 04]: At budget exhaustion with no default_agent, the currently-awake agent answers with the tools withdrawn (OQ-2) — That is the absence of a further move, not a guess, so D-09 holds. Falling back to active_profile would be PAAF choosing an agent in the one situation where the user declined to.
 - [Phase 04]: _run_chain takes tool_path separately from tools, so an EMPTY tool tuple still crosses the port on the mesh path — At the wall, no-moves is a statement rather than an absence. A call shape derived from bool(tools) could not tell the withdrawn leg apart from a Phase-3 single-agent turn, and the wall would be unobservable exactly where the budget test needs to see it.
 - [Phase 04]: FakeAdapter publishes scripted tool calls on the tool COUNT, not the code path — A leg offered zero tools cannot have called one. Keying on the path alone would let the fake publish a handoff for the withdrawn leg, which is precisely the engine bug the budget test exists to catch.
+- [Phase 04]: A bind_tools failure raises an unconditional EngineError, NOT via _translate — _translate classifies by exception TYPE NAME, so a binding error named like a transport failure would be reported as a degraded provider and swallowed by the fallback loop. Binding contacts nobody, so it raises the way bind() raises.
+- [Phase 04]: The tool binding is NOT cached with the model — the offered surface changes per leg (04-03's wall withdraws it entirely), so a cached binding would serve one leg's moves to the next. bind_tools wraps the cached model, so re-binding per call costs no connection.
+- [Phase 04]: Assumption A1 CONFIRMED by measurement, not inference: langchain-ollama==1.1.0 / Ollama 0.32.1 stream 45-57 text chunks with a handoff tool bound (ttft 1.9-6.2s) on qwen3.5:2b and :9b, and aggregate exactly one PAAF ToolCall with dict arguments. Secondary finding: both models return the tool call with ZERO prose, which bears on D-11.
 
 ### Pending Todos
 
@@ -160,6 +164,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-07T06:08:20.847Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-08-07T06:38:27.503Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
