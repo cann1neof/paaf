@@ -75,7 +75,7 @@ The framework is organized around skills and agents, where an agent is another m
 
 - [ ] **MESH-01**: Routing between models is decided by the currently-awake model itself (LLM-driven handoff); there are no deterministic, user-written routing rules anywhere in the system
 - [ ] **MESH-02**: A model may hand off only to peers declared in its peer graph; a handoff to an undeclared peer is rejected and recorded, never silently followed
-- [ ] **MESH-03**: A handoff transfers control and the full conversation context to the receiving agent, which becomes the awake agent until it hands off again — including handing back to a prior agent
+- [x] **MESH-03**: A handoff transfers control and the full conversation context to the receiving agent, which becomes the awake agent until it hands off again — including handing back to a prior agent
 - [ ] **MESH-04**: Each agent's handoff explainer is generated from its capability manifest and peer graph and is present verbatim in the composed-prompt inspector — no hidden instructions steer the routing
 - [ ] **MESH-05**: The trace records every handoff, which agent was awake each turn, and whether each turn was served by a fallback, so a wrong reroute is observable after the fact
 - [ ] **MESH-06**: A user may declare optional hard constraints on an agent that the system enforces regardless of the model's choice
@@ -267,7 +267,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | PERS-05 | Phase 3 — paaf-llm Core (single agent) | Pending |
 | MESH-01 | Phase 4 — Agent Mesh | Pending |
 | MESH-02 | Phase 4 — Agent Mesh | Pending |
-| MESH-03 | Phase 4 — Agent Mesh | Pending |
+| MESH-03 | Phase 4 — Agent Mesh | Complete |
 | MESH-04 | Phase 4 — Agent Mesh | Pending |
 | MESH-05 | Phase 4 — Agent Mesh | Pending |
 | MESH-06 | Phase 4 — Agent Mesh | Pending |
