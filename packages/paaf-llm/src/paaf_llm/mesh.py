@@ -39,6 +39,20 @@ condition** under which a handoff should happen, and adding one would be a
 routing DSL written in English — banned by MESH-01 and Phase-3 D-08 no matter
 what language it is written in (T-04-22).
 
+**The observer's surface lives here too, and it is the same mechanism a third
+time (MESH-06, D-04).** :func:`observer_tools` builds what the supervising model
+may DO about a handoff attempt — a retry tool when it was granted
+``generic_retry``, one ``reroute_to_<peer>`` tool per CALLER peer when it was
+granted ``reroute``, and nothing else. The observer's powers are its grant, not a
+mode flag and not a sentence in its prompt, for the same reason the hop wall
+withdraws the tool rather than asking the model to stop. And because the
+re-route specs are emitted for the CALLER's peers, the observer is confined to
+the graph the calling agent already had — checked a second time by
+:func:`resolve_handoff` with the caller's own profile (D-06). :func:`retry_text`
+generates the refusal a veto puts in front of the calling agent, from a template,
+under its own provenance label, so a refusal the model reads is a refusal the
+user can read (OQ-1, PERS-05).
+
 The module is stdlib-only by design: it imports no agent framework and no other
 PAAF package, so the half of the mesh that decides what is reachable cannot
 depend on anything swappable (SC#5).
@@ -51,7 +65,7 @@ from typing import TYPE_CHECKING
 from .ports import ToolSpec, UndeclaredPeer
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from .ports import ToolCall
     from .profiles import LlmConfig, ModelProfile
@@ -67,6 +81,93 @@ if TYPE_CHECKING:
 #: hallucinate, mistype, or smuggle something into, and the set of names it was
 #: offered IS the set of moves available.
 HANDOFF_TOOL_PREFIX = "transfer_to_"
+
+#: The RESERVED profile name the observer occupies (D-03). Written here once, so
+#: the schema that reserves it, the engine that looks it up, and the tests that
+#: prove it unreachable all say the same word.
+#:
+#: The observer is an ORDINARY :class:`~paaf_llm.profiles.ModelProfile` sitting
+#: under this key — which is what buys it ``Endpoint`` declaration (and therefore
+#: Phase-10's offline refusal), ``ReloadTier`` metadata, ``extra="forbid"`` and
+#: secret-by-reference for free, and what makes it configurable down to its own
+#: system prompt (Pattern 5). It is never awake, so it is never a handoff target;
+#: :meth:`~paaf_llm.profiles.LlmConfig._check_refs` rejects a config that makes it
+#: one, because enabling the observer must not silently add an edge to the graph.
+OBSERVER_PROFILE_NAME = "observer"
+
+#: The two powers an observer may be granted (D-04). Declared here and spelled
+#: again as a ``Literal`` on ``LlmConfig.observer_grants``, because a Pydantic
+#: ``Literal`` cannot be built from a variable — ``test_observer.py`` asserts the
+#: two spellings agree, so the duplication cannot drift silently.
+OBSERVER_GRANT_RETRY = "generic_retry"
+OBSERVER_GRANT_REROUTE = "reroute"
+OBSERVER_GRANTS = (OBSERVER_GRANT_RETRY, OBSERVER_GRANT_REROUTE)
+
+#: The tool an observer calls to KILL a handoff attempt and bounce it back to the
+#: calling agent (D-05). It takes no parameters, for the same reason the handoff
+#: tools take none: the meaning is entirely in the name, so there is no argument
+#: for a model to hallucinate or smuggle anything into.
+OBSERVER_RETRY_TOOL = "request_retry"
+
+#: The prefix on the observer's re-route tools, completed by a CALLER peer's name
+#: (``reroute_to_chef``). One tool per peer rather than one tool with a ``target``
+#: argument, so D-06's confinement is a property of the SURFACE and not only of a
+#: later check — see :func:`observer_tools`.
+OBSERVER_REROUTE_PREFIX = "reroute_to_"
+
+#: The retry tool's description — steering text the observer reads, so it is held
+#: to PERS-05 like every other string this module generates. It says what calling
+#: the tool DOES and states no condition under which to call it: a sentence like
+#: "call this when the target violates a constraint" would be a routing rule for
+#: the supervisor, banned by MESH-01 in English exactly as in YAML (T-04-22).
+OBSERVER_RETRY_DESCRIPTION = (
+    "Refuse this handoff. The transfer does not happen and the agent that asked "
+    "for it is asked again, told that you refused and why. Calling nothing at "
+    "all lets the handoff proceed."
+)
+
+#: ``Segment.source`` for the refusal text a veto puts in front of the calling
+#: agent (OQ-1). Its own label, distinct from :data:`MESH_EXPLAINER_SOURCE`, so a
+#: reader of ``--provenance`` can tell the standing explainer apart from a
+#: one-off refusal — two very different claims about what the model was told.
+MESH_RETRY_SOURCE = "mesh:observer-retry"
+
+#: Where :func:`retry_text` substitutes the refused target and the observer's own
+#: stated reason. Substituted with :meth:`str.replace` for the same reason
+#: :data:`EXPLAINER_PEERS_PLACEHOLDER` is: the surrounding text is prose, and
+#: prose contains braces.
+RETRY_TARGET_PLACEHOLDER = "{target}"
+RETRY_REASON_PLACEHOLDER = "{reason}"
+
+#: The refusal a vetoed agent is shown (OQ-1, D-05), generated from the same
+#: machinery :func:`explainer_for` uses and labelled with its own provenance
+#: source so the inspector can render it.
+#:
+#: It reaches the calling agent as a TRANSIENT prompt segment on the retry leg's
+#: message list only — never as a widened :data:`~paaf_llm.ports.Role`, and never
+#: in ``Agent.history``. Either would re-open Pitfall 1's dangling tool-call bug,
+#: which the Phase-3 message model closes by construction (OQ-1 option 1 is
+#: explicitly forbidden).
+#:
+#: Like the explainer it states no routing rule: it reports what happened and
+#: names the two moves that were already available (hand to a different peer, or
+#: answer). It contains no instruction the user cannot read.
+DEFAULT_RETRY_TEMPLATE = (
+    f"Your attempt to hand this conversation to {RETRY_TARGET_PLACEHOLDER} was "
+    "refused, so the hand-over did not happen and you are still the one "
+    "answering.\n"
+    "\n"
+    f"The reason given: {RETRY_REASON_PLACEHOLDER}\n"
+    "\n"
+    "You may hand the conversation to a different agent, or answer the user "
+    "yourself. Do not mention this refusal to the user."
+)
+
+#: What :func:`retry_text` prints when the observer refused without saying why.
+#: Spelled out rather than left blank: an empty reason in the middle of the
+#: refusal reads as a truncated sentence, and PAAF does not invent a reason on a
+#: model's behalf.
+NO_STATED_REASON = "none given"
 
 #: The smallest hop budget a user may configure (D-08, Assumption A2).
 #:
@@ -265,6 +366,89 @@ def _describe(peer: str, profile: ModelProfile | None) -> str:
     """
     manifest = profile.capabilities.strip() if profile is not None else ""
     return manifest or f"Hand the conversation to {peer}."
+
+
+def observer_tools(
+    grants: Sequence[str],
+    caller_peers: Sequence[str],
+    profiles: Mapping[str, ModelProfile] | None = None,
+) -> tuple[ToolSpec, ...]:
+    """Return the moves the OBSERVER has on one handoff attempt (D-04).
+
+    **The observer's powers are its tool grant, and nothing else.** Not a mode
+    flag, not a sentence in its system prompt — the same mechanism the hop wall
+    uses (D-08), for the same reason: a model cannot talk its way past a tool it
+    does not have, and that is the only property that survives contact with a
+    supervisor someone has argued with. ``grants`` comes from validated config
+    and defaults to retry-only, so the shipped observer can bounce a handoff and
+    can do nothing else.
+
+    **This surface is the FIRST of two enforcement layers for D-06, and it is
+    not the last one.** One ``reroute_to_<peer>`` spec is emitted per CALLER
+    peer, so the observer is not even offered a target the calling agent could
+    not have reached itself. The second layer is :func:`resolve_handoff`, which
+    the engine runs the observer's named target through with the CALLER's
+    profile — the same function, the same ``awake.peers`` check, the same
+    :class:`~paaf_llm.ports.UndeclaredPeer`. One graph, one guard, no second
+    privilege tier. The surface alone would make D-06 contingent on the provider
+    never emitting a tool nobody bound, which is Pitfall 4 all over again.
+
+    One tool per peer rather than one tool taking a ``target`` argument, exactly
+    as the handoff surface is shaped: the name IS the move, so there is no
+    argument for the model to get wrong and no free-text field for it to name
+    something outside the graph in.
+
+    An unknown grant string cannot reach here — ``LlmConfig`` rejects it at load
+    — so this reads the two it knows and ignores nothing silently.
+
+    Args:
+        grants: the validated ``LlmConfig.observer_grants``.
+        caller_peers: the peers of the agent that ASKED to hand off. Never the
+            observer's own peers (it declares none and may declare none), and
+            never every declared profile.
+        profiles: the declared profiles, read ONLY for each peer's manifest —
+            through the same :func:`_describe` the handoff surface uses, so the
+            observer and the agent are told the same thing about the same peer.
+    """
+    known = profiles if profiles is not None else {}
+    tools: list[ToolSpec] = []
+    if OBSERVER_GRANT_RETRY in grants:
+        tools.append(
+            ToolSpec(
+                name=OBSERVER_RETRY_TOOL,
+                description=OBSERVER_RETRY_DESCRIPTION,
+                parameters={},
+            )
+        )
+    if OBSERVER_GRANT_REROUTE in grants:
+        tools.extend(
+            ToolSpec(
+                name=f"{OBSERVER_REROUTE_PREFIX}{peer}",
+                description=_describe(peer, known.get(peer)),
+                parameters={},
+            )
+            for peer in caller_peers
+        )
+    return tuple(tools)
+
+
+def retry_text(target: str, reason: str, template: str | None = None) -> str:
+    """Return the refusal a vetoed agent is shown, from the same machinery (OQ-1).
+
+    Generated exactly the way :func:`explainer_for` generates the explainer —
+    one template, ``str.replace`` substitution, no ``str.format`` — because this
+    is steering text under PERS-05 and it must be renderable by the inspector
+    verbatim. A refusal the model reads and the user cannot is precisely what
+    the project's "nothing hidden" rule forbids.
+
+    ``reason`` is the observer's own words, quoted rather than summarized, for
+    the same reason a peer's manifest is quoted: rewriting it would put words
+    the user never saw in front of the calling agent.
+    """
+    chosen = template if template is not None else DEFAULT_RETRY_TEMPLATE
+    return chosen.replace(RETRY_TARGET_PLACEHOLDER, target).replace(
+        RETRY_REASON_PLACEHOLDER, reason.strip() or NO_STATED_REASON
+    )
 
 
 def explainer_for(

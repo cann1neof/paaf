@@ -25,8 +25,12 @@ Three deliberate constraints shape this module:
 The three mesh-shaped fields on this tree mean three different things and are
 kept apart on purpose — see :class:`LlmConfig`'s docstring. ``hop_budget`` and
 ``default_agent`` are a counter and a name; **neither is, or can become, a
-routing rule** (MESH-01). ``extra="forbid"`` on both models is the mechanism
-that keeps it that way, and it is asserted directly by the tests.
+routing rule** (MESH-01). The observer's three knobs are the same shape: a grant
+(``observer_grants``) and two window sizes. A grant says what the supervisor MAY
+DO, never when to do it — the "when" is the observer's own judgement, read out of
+free text, exactly as a handoff is the awake model's. ``extra="forbid"`` on both
+models is the mechanism that keeps it that way, and it is asserted directly by
+the tests.
 
 Secret VALUES never live here: ``api_key_ref`` holds the NAME of a
 ``paaf_core`` SecretStore key (CORE-04), so no schema, YAML file, or log line
@@ -41,7 +45,7 @@ from paaf_core.config.schema import ReloadTier
 from paaf_core.net.endpoint import Endpoint
 from pydantic import BaseModel, Field, model_validator
 
-from .mesh import DEFAULT_HOP_BUDGET, HOP_BUDGET_FLOOR
+from .mesh import DEFAULT_HOP_BUDGET, HOP_BUDGET_FLOOR, OBSERVER_PROFILE_NAME
 
 
 class ModelProfile(BaseModel):
@@ -268,6 +272,21 @@ class LlmConfig(BaseModel):
     so every Phase-3 config, none of which declares a per-agent chain, behaves
     identically. What the two scopes never become is a *fourth* meaning: a chain
     entry at either scope still grants no handoff edge (T-04-30).
+
+    **The observer is a RESERVED NAME in this same namespace, not a subsystem**
+    (D-03, MESH-06). A profile keyed ``observer`` is the supervising model that
+    judges every handoff attempt, and it is configured exactly like any other
+    profile — same provider, same endpoint, same ``api_key_ref``, same reload
+    tiers, down to its own ``system_prompt``. Declaring none is a legitimate
+    configuration and not a gap PAAF fills in: "on by default" means the slot is
+    reserved and wired, never that PAAF invents a model to put in it (D-07).
+
+    Reserving the name is what stops enabling the observer from silently making
+    every agent reachable from every agent. :meth:`_check_refs` refuses to let it
+    be a handoff target, the ``active_profile``, or a ``fallback_chain`` entry at
+    either scope — all three would put a supervisor into the conversation as a
+    participant, which is a different thing from supervising it (T-04-36). Its
+    powers over a handoff are ``observer_grants`` and nothing else.
     """
 
     model_config = {"extra": "forbid"}
@@ -337,6 +356,48 @@ class LlmConfig(BaseModel):
         True, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 
+    # --- the observer (MESH-06, D-03/D-04/D-15) ---
+    # WARM: what the observer is ALLOWED to do about a handoff attempt. This is
+    # a GRANT, never a mode: capability removal, never instruction, because a
+    # model cannot talk its way past a tool it does not have (D-04) — the same
+    # mechanism `hop_budget` uses at the wall, and the only one that holds
+    # whatever the observer is persuaded of. The default is retry-only, so the
+    # shipped observer can kill a handoff and can do nothing else; adding
+    # "reroute" is a deliberate, readable edit to this line.
+    #
+    # The spelling is duplicated from `mesh.OBSERVER_GRANTS` because a Pydantic
+    # `Literal` cannot be built from a variable; `test_observer.py` asserts the
+    # two agree, so the duplication cannot drift unnoticed.
+    observer_grants: list[Literal["generic_retry", "reroute"]] = Field(
+        default_factory=lambda: ["generic_retry"],
+        json_schema_extra={"reload_tier": ReloadTier.WARM},
+    )
+    # WARM: how much CONVERSATION the observer sees on each attempt (D-15). The
+    # default window is 0 extra messages, meaning exactly what D-15 specifies:
+    # the last user message, the handoff decision, and the calling agent's own
+    # stated reasoning if it gave any. This widens it to the N last messages of
+    # the conversation as well.
+    #
+    # Know this before turning it up (Pitfall 7): a CLOUD observer profile with a
+    # wide window ships a slice of your conversation off-box on every single
+    # handoff attempt, including the ones that are then rejected — a frequency
+    # and a shape quite unlike a normal reply. The observer is an ordinary
+    # profile, so its endpoint is declared and Phase-9's offline refusal sees it;
+    # this knob is still the one that decides how much goes.
+    observer_window_messages: int = Field(
+        0, ge=0, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    # WARM: how many of THIS turn's earlier handoff attempts the observer sees
+    # (D-15). It exists for one specific purpose rather than for symmetry: an
+    # observer that can see it is inside a handoff loop can break the loop
+    # gracefully, before the deterministic wall withdraws the tools and the turn
+    # ends by exhaustion (D-08 — the budget guarantees termination, the observer
+    # makes termination graceful). With 0 the observer judges each attempt with
+    # no memory of the previous ones.
+    observer_window_handoffs: int = Field(
+        0, ge=0, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+
     @model_validator(mode="after")
     def _check_refs(self) -> LlmConfig:
         """Reject any name that does not resolve to a declared profile.
@@ -349,8 +410,37 @@ class LlmConfig(BaseModel):
         ``default_agent`` is held to the same rule, and it is the sharpest case:
         a dangling home agent would only be discovered at budget exhaustion —
         three hops into a turn, at the exact moment the mesh has no other move.
+
+        **It also enforces the reserved observer name** (D-03, T-04-36). The
+        observer is never awake, so it must never be reachable as a handoff
+        target, must never be the ``active_profile``, and must never appear in a
+        ``fallback_chain`` at either scope. Each of those would put a supervisor
+        into the conversation as a participant, and the peer case is the one that
+        actually matters: without it, enabling the observer would quietly add an
+        edge every agent could take. Rejected by name, with the offending profile
+        named, in this module's established style.
         """
         names = set(self.profiles)
+
+        # Rule 3 (D-03): the reserved name is not a participant. Checked BEFORE
+        # the reference-integrity rules below so the message says "reserved"
+        # rather than "undeclared" — the user's mistake is the former, and
+        # telling them to declare an `observer` profile they cannot use here
+        # would send them in exactly the wrong direction.
+        if self.active_profile == OBSERVER_PROFILE_NAME:
+            raise ValueError(
+                f"active_profile is the reserved name '{OBSERVER_PROFILE_NAME}'; "
+                f"the observer supervises handoffs and is never awake, so it "
+                f"cannot be the agent that answers"
+            )
+
+        for name in self.fallback_chain:
+            if name == OBSERVER_PROFILE_NAME:
+                raise ValueError(
+                    f"fallback_chain references the reserved name "
+                    f"'{OBSERVER_PROFILE_NAME}'; the observer is not a provider "
+                    f"another agent falls back to"
+                )
 
         if self.active_profile not in names:
             raise ValueError(
@@ -372,6 +462,18 @@ class LlmConfig(BaseModel):
             for peer in profile.peers:
                 if peer == profile_name:
                     raise ValueError(f"profile '{profile_name}' lists itself as a peer")
+                # Rule 2 (D-03/T-04-36): the reserved name is not a handoff
+                # target. This is the load-bearing half of reserving it — the
+                # observer judges attempts, and an agent that could hand the
+                # conversation TO its supervisor would turn the supervisor into
+                # a participant. It is also the case that would otherwise make
+                # enabling the observer add an edge to the graph.
+                if peer == OBSERVER_PROFILE_NAME:
+                    raise ValueError(
+                        f"profile '{profile_name}'.peers lists the reserved name "
+                        f"'{OBSERVER_PROFILE_NAME}'; the observer is never awake "
+                        f"and must not be a handoff target"
+                    )
                 if peer not in names:
                     raise ValueError(
                         f"profile '{profile_name}'.peers references "
@@ -388,6 +490,12 @@ class LlmConfig(BaseModel):
             # name is the key it sits under), which is why the self-PEER check
             # has always lived here too.
             for entry in profile.fallback_chain:
+                if entry == OBSERVER_PROFILE_NAME:
+                    raise ValueError(
+                        f"profile '{profile_name}'.fallback_chain references the "
+                        f"reserved name '{OBSERVER_PROFILE_NAME}'; the observer "
+                        f"is not a provider another agent falls back to"
+                    )
                 if entry == profile_name:
                     raise ValueError(
                         f"profile '{profile_name}' lists itself in its own "

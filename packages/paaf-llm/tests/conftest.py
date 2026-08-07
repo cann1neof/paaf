@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 from paaf_llm.fake import FakeAdapter
+from paaf_llm.mesh import OBSERVER_PROFILE_NAME
 from paaf_llm.profiles import LlmConfig, ModelProfile
 from paaf_trace.store import TraceStore
 
@@ -122,6 +123,19 @@ def make_mesh_config(
     can express "this agent has its own prompt and that one does not" without
     hand-building an :class:`LlmConfig`. ``explainer_template`` is the global
     override that a per-agent ``explainers`` entry outranks.
+
+    ``observer=True`` declares a profile under the reserved name (D-03), and it
+    is OPT-IN here rather than on by default so that every existing mesh test
+    keeps taking the unobserved path byte for byte — "with no observer declared
+    the mesh behaves exactly as it did before" is a claim this fixture must not
+    quietly make untrue. ``observer_grants`` / ``observer_window_messages`` /
+    ``observer_window_handoffs`` pass straight through for the same reason
+    ``hop_budget`` does: the schema's own defaults stay the single source of
+    truth, so a test that cares about a default reads it off the model.
+
+    The observer profile is deliberately given NO peers and is listed in nobody
+    else's ``peers`` — ``LlmConfig`` would refuse it, which is the point of the
+    reservation (T-04-36).
     """
 
     def _make(
@@ -136,6 +150,10 @@ def make_mesh_config(
         personas: Mapping[str, str] | None = None,
         explainers: Mapping[str, str] | None = None,
         explainer_template: str | None = None,
+        observer: bool = False,
+        observer_grants: Sequence[str] | None = None,
+        observer_window_messages: int | None = None,
+        observer_window_handoffs: int | None = None,
     ) -> LlmConfig:
         graph = dict(peers or {})
         manifests = dict(capabilities or {})
@@ -151,9 +169,16 @@ def make_mesh_config(
                 *graph,
                 *(peer for edges in graph.values() for peer in edges),
                 *([default_agent] if default_agent else []),
+                *([OBSERVER_PROFILE_NAME] if observer else []),
             ]
         )
         extra: dict[str, Any] = {}
+        if observer_grants is not None:
+            extra["observer_grants"] = list(observer_grants)
+        if observer_window_messages is not None:
+            extra["observer_window_messages"] = observer_window_messages
+        if observer_window_handoffs is not None:
+            extra["observer_window_handoffs"] = observer_window_handoffs
         if hop_budget is not None:
             extra["hop_budget"] = hop_budget
         if default_agent is not None:

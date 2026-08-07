@@ -106,3 +106,4 @@ packages = ["src/paaf_llm"]
 # omission into a red build rather than a cheerful green one.
 "tests/test_mesh.py" = "paaf_llm/tests/test_mesh.py"
 "tests/test_mesh_trace.py" = "paaf_llm/tests/test_mesh_trace.py"
+"tests/test_observer.py" = "paaf_llm/tests/test_observer.py"
