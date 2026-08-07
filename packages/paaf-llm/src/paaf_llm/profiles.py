@@ -13,7 +13,11 @@ Three deliberate constraints shape this module:
   check sees model endpoints through the same one interface as everything else.
 * ``capabilities`` is **free text**, never structured fields (D-08/D-12).
   Structured capability fields would be a routing DSL by the back door; the mesh
-  reads natural language, and the user can read it too.
+  reads natural language, and the user can read it too. The Phase-4 prompt layer
+  — ``system_prompt``, ``persona``, ``handoff_explainer`` and the config-level
+  ``handoff_explainer_template`` — is free text for the identical reason: an
+  explainer with a structured "hand off when…" field would be an if-then routing
+  rule wearing a different hat.
 * ``peers`` is **live** as of Phase 4 (MESH-02): it is the reachability graph the
   handoff tool surface is built from and validated against. ``constraints`` stays
   free text and is enforced by the observer (MESH-06, D-13).
@@ -119,6 +123,37 @@ class ModelProfile(BaseModel):
     # observer (D-13), which reads them the same way the model reads a manifest.
     constraints: list[str] = Field(
         default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+
+    # --- the per-agent prompt layer (D-16 layer 3, D-17, D-18) ---
+    # All three are FREE TEXT, for the same reason `capabilities` is: a
+    # structured version would be a routing DSL by the back door (MESH-01,
+    # Phase-3 D-08). `extra="forbid"` is unchanged, so a smuggled sibling key is
+    # still rejected at load.
+    #
+    # WARM: THIS agent's own base prompt. `None` means "use the shared
+    # `LlmConfig.base_prompt`" — the global stays meaningful as the shared base
+    # and these overrides are ADDITIVE rather than a replacement of the global
+    # concept (Assumption A4). `None` and `""` are deliberately different: a user
+    # who wrote an empty per-agent prompt asked for an empty one, and only an
+    # absent declaration may fall back.
+    system_prompt: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    # WARM: how this agent talks to the user (D-16 layer 3) — voice and manner,
+    # kept apart from `system_prompt` because "who you are" and "how you sound"
+    # are separately editable in every assistant the user has ever configured,
+    # and collapsing them would force a rewrite of one to change the other.
+    persona: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    # WARM: a PER-AGENT override of the generated handoff explainer (D-18). When
+    # set it is used verbatim — PAAF renders no template around it — and it still
+    # appears in `paaf prompt --provenance` under exactly the same label the
+    # generated one does. Overriding the explainer changes what the user reads
+    # by changing what the model was told, never only one of the two.
+    handoff_explainer: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 
     def endpoint(self) -> Endpoint | None:
@@ -248,6 +283,18 @@ class LlmConfig(BaseModel):
     # tools withdrawn (OQ-2). Defaulting to `active_profile` would be PAAF
     # picking an agent on the user's behalf, which D-09 rejects outright.
     default_agent: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    # WARM: a GLOBAL override of the handoff explainer template (D-18). Free
+    # text, and `paaf_llm.mesh` substitutes the peer list into it wherever the
+    # user put `mesh.EXPLAINER_PEERS_PLACEHOLDER`; a template that omits the
+    # placeholder simply gets no peer list, which is a legitimate thing to ask
+    # for and not an error to correct.
+    #
+    # Precedence is per-agent, then global, then the generated default —
+    # narrowest declaration wins, the same shape `ModelProfile.system_prompt`
+    # follows over `base_prompt`.
+    handoff_explainer_template: str | None = Field(
         None, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 

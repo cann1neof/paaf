@@ -206,7 +206,9 @@ def test_a_profile_declaring_no_prompt_layer_leaves_both_fields_none() -> None:
     assert plain.persona is None
     assert plain.handoff_explainer is None
 
-    declared = ModelProfile(provider="ollama", model="m", system_prompt="you are the cook")
+    declared = ModelProfile(
+        provider="ollama", model="m", system_prompt="you are the cook"
+    )
     assert declared.system_prompt == "you are the cook"
 
 
