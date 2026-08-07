@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Agent Mesh
 status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-08-07T10:49:54.809Z"
+stopped_at: Completed 04-07-PLAN.md
+last_updated: "2026-08-07T11:17:03.481Z"
 last_activity: 2026-08-07
 last_activity_desc: 04-05 complete (per-agent prompts, generated explainer, visible tool surface)
 progress:
   total_phases: 13
   completed_phases: 3
   total_plans: 41
-  completed_plans: 38
+  completed_plans: 39
   percent: 23
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 ## Current Position
 
 Phase: 04 (Agent Mesh) — EXECUTING
-Plan: 7 of 9
+Plan: 8 of 9
 Status: Ready to execute
-Last activity: 2026-08-07 — 04-05 complete (per-agent prompts, generated explainer, visible tool surface)
+Last activity: 2026-08-07 — 04-07 complete (the observer: bounded by its tool grant, confined to the caller's peer graph)
 
-Progress: [█████░░░░░] 56%  (5/9 plans in phase 04)
+Progress: [████████░░] 78%  (7/9 plans in phase 04)
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Progress: [█████░░░░░] 56%  (5/9 plans in phase 04)
 | Phase 04 P04 | 25min | 2 tasks | 4 files |
 | Phase 04 P05 | 55min | 3 tasks | 9 files |
 | Phase 04 P06 | ~65 min | 3 tasks | 9 files |
+| Phase 04 P07 | ~70 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-06: one runs + one turn_legs row per agent LEG, correlated by an engine-generated uuid4 turn_id; never a new column on runs (Pitfall 5)
 - [Phase ?]: 04-06: pre-handoff prose is recorded on the accepted handoffs row's detail column — the trace has never had a completion-text column, so dropping it is presentation, not loss (T-04-31)
 - [Phase ?]: 04-06: MESH-05 left Pending — 04-09 also carries it and the observer columns 04-07 owns are still NULL (the 04-02 precedent)
+- [Phase ?]: 04-07: the observer's grant answers 'may it re-route at all'; mesh.resolve_handoff answers 'may it reach that target' — two layers, one graph
+- [Phase ?]: 04-07: a veto SPENDS a hop, so the deterministic wall still guarantees termination under a refusing observer
+- [Phase ?]: 04-07: the observer's leg writes no runs/turn_legs row — it is never awake, so a leg row would make turn_legs.agent lie
 
 ### Pending Todos
 
@@ -175,6 +179,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-07T10:49:44.214Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-08-07T11:17:03.476Z
+Stopped at: Completed 04-07-PLAN.md
 Resume file: None
