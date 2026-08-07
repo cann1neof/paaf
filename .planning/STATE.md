@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 03
-current_phase_name: paaf-llm-core
+current_phase: 04
+current_phase_name: Agent Mesh
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-08-06T22:20:08.667Z"
+last_updated: "2026-08-07T05:22:19.086Z"
 last_activity: 2026-08-06
-last_activity_desc: Phase 03 execution started
+last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 13
   completed_phases: 3
-  total_plans: 32
-  completed_plans: 32
+  total_plans: 41
+  completed_plans: 33
   percent: 23
 ---
 
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 03 — paaf-llm-core
+**Current focus:** Phase 04 — Agent Mesh
 
 ## Current Position
 
-Phase: 03 (paaf-llm-core) — EXECUTING
-Plan: 1 of 13
+Phase: 04 (Agent Mesh) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-08-06 — Phase 03 execution started
+Last activity: 2026-08-06 — Phase 04 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 11%  (1/9 plans in phase 04)
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P07 | 25min | 3 tasks | 8 files |
 | Phase 02 P08 | 4min | 3 tasks | 7 files |
 | Phase 02 P09 | 12min | 2 tasks | 4 files |
+| Phase 04 P01 | 50m | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,10 @@ Recent decisions affecting current work:
 - [Phase ?]: App license recorded as OPEN governance question — framework Apache-2.0 locked, apps default Apache-2.0 v1, AGPL not chosen (Plan 08)
 - [Phase ?]: Governance rot-guard (tests/test_governance.py) globs packages/*/src/**/*.py and fails CI on any source file missing the SPDX Apache-2.0 header (FOUND-07, Plan 08)
 - [Phase 02]: TTFA accuracy guard proven non-vacuous via constant + whole-round-trip negative controls (Pitfall 3); BUDGET is a measurement/overhead-regression guardrail, not a shipped-latency claim (D-09)
+- [Phase ?]: 04-01: ToolCallingChatAdapter extends ChatAdapter as a second runtime_checkable Protocol — the Phase-3 port definition stays byte-identical (D-02)
+- [Phase ?]: 04-01: UndeclaredPeer is a taxonomy sibling of AllProvidersFailed/EngineError — never an AdapterError, so the fallback loop cannot swallow a routing violation
+- [Phase ?]: 04-01: peer enforcement is belt-and-braces — capability removal in handoff_tools() AND a runtime guard checking awake.peers, never LlmConfig.profiles
+- [Phase ?]: 04-01: Agent.awake_agent is sticky in-process and not persisted; _chain() now starts from it rather than config.active_profile
 
 ### Pending Todos
 
@@ -147,6 +152,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-06T18:02:49.792Z
+Last session: 2026-08-07T05:22:00.437Z
 Stopped at: Phase 4 context gathered
 Resume file: .planning/phases/04-agent-mesh/04-CONTEXT.md

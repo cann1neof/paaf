@@ -193,13 +193,13 @@ Plans:
   4. Each agent applies its own fallback chain, and the trace records the full handoff chain — who was awake each turn, every handoff, and whether a turn was served by a fallback — so a wrong reroute is observable after the fact.
   5. Optional hard constraints declared on an agent are enforced by the system regardless of what the model attempts, and the entire mesh runs headless in CI against the fake adapter with the agent framework uninstalled and no audio present.
 
-**Plans**: 9 plans
+**Plans**: 1/9 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Handoff happens: the tool-calling port seam, the peer guard and its negative control, and the receiving agent sees the full conversation (MESH-01/02/03)
+- [x] 04-01-PLAN.md — Handoff happens: the tool-calling port seam, the peer guard and its negative control, and the receiving agent sees the full conversation (MESH-01/02/03)
 - [ ] 04-02-PLAN.md — The trace store records a handoff chain, and a pre-existing trace.db survives it — new tables only, no migration path (MESH-05, Pitfall 5)
 
 **Wave 2** *(blocked on Wave 1)*
@@ -391,7 +391,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
 | 3. paaf-llm Core (single agent) | 13/13 | Complete   | 2026-08-06 |
-| 4. Agent Mesh | 0/TBD | Not started | - |
+| 4. Agent Mesh | 1/9 | In Progress|  |
 | 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
 | 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
