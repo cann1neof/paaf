@@ -44,6 +44,7 @@ uninstalled (SC#5), and none of them opens a socket.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -52,7 +53,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 from paaf_llm import cli, mesh
-from paaf_llm.agent import Agent
+from paaf_llm.agent import PRE_HANDOFF_JOINER, Agent
 from paaf_llm.cli import (
     FALLBACK_NOTICE,
     MESH_LIMITS,
@@ -72,6 +73,7 @@ from paaf_llm.ports import (
     UndeclaredPeer,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
+from paaf_trace.store import TraceStore
 
 _TRANSFER_TO_CHEF = ToolCall("transfer_to_chef", {})
 _TRANSFER_TO_ADMIN = ToolCall("transfer_to_admin", {})
@@ -442,7 +444,13 @@ async def test_budget_stops_a_loop_and_withdraws_the_tool(
 
     # Exactly three hops, so four legs: A→B→A→B, and B answers with no tool.
     assert [key for key, _ in mesh_adapter.calls] == ["a", "b", "a", "b"]
-    assert result.text == "b speaking"
+    # Every leg of this runaway is scripted to SPEAK before handing off, and
+    # `keep_pre_handoff_prose` defaults to keeping it (D-11), so the reply is all
+    # four legs joined. What matters here is the shape of the wall, not the
+    # prose: `served_by` names the leg that ended the turn.
+    assert result.text == PRE_HANDOFF_JOINER.join(
+        ["a speaking", "b speaking", "a speaking", "b speaking"]
+    )
     assert result.served_by == "b"
 
     # The wall, stated as capability removal rather than as a count.
@@ -459,11 +467,13 @@ async def test_budget_stops_a_loop_and_withdraws_the_tool(
     assert exhausted[0].detail == "3"
     assert exhausted[0].turn_id
 
-    # One question in, one answer out (D-10) — the hops left no residue.
+    # One question in, one answer out (D-10) — the hops left no residue. Four
+    # legs, and still exactly two history entries.
     assert agent.history == [
         Message("user", "keep going"),
-        Message("assistant", "b speaking"),
+        Message("assistant", result.text),
     ]
+    assert len(agent.history) == 2
 
 
 async def test_budget_exhaustion_hands_to_declared_home_agent(
@@ -495,7 +505,11 @@ async def test_budget_exhaustion_hands_to_declared_home_agent(
 
     assert [key for key, _ in mesh_adapter.calls] == ["a", "b", "a", "home"]
     assert result.served_by == "home"
-    assert result.text == "home speaking"
+    # The three hopping legs spoke before handing off and the default keeps that
+    # (D-11); the home agent's own words are the last of the four.
+    assert result.text == PRE_HANDOFF_JOINER.join(
+        ["a speaking", "b speaking", "a speaking", "home speaking"]
+    )
     # The home agent is now awake — it holds the conversation it just answered.
     assert agent.awake_agent == "home"
     # Withdrawn for the home agent too: the terminator terminates.
@@ -602,6 +616,119 @@ async def test_hand_back_to_prior_agent_does_not_restart(
     ]
     # The wall was never reached, so nothing announced that it was.
     assert signals.of_kind(MeshSignalKind.BUDGET_EXHAUSTED) == []
+
+
+# ------------------------------------------------------------------- D-11 --
+#
+# What happens to a "let me get the cook" line an agent emitted just before it
+# handed off. Three facts sit next to each other and none of them is the whole
+# story on its own:
+#
+#   1. The generated explainer DISCOURAGES the style in prose (plan 04-05).
+#   2. The user's setting decides whether such a line reaches them (below).
+#   3. Mechanical enforcement — refusing or stripping a leg that spoke before
+#      calling handoff — is a deliberate v2 item the founder flagged as really
+#      important, NOT an oversight in this phase. Nothing here enforces it.
+
+
+async def test_pre_handoff_prose_is_kept_by_default(
+    fake_adapter: FakeAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """The default is to SHOW what the model said, because PAAF does not edit it.
+
+    A user who reads "let me get the cook" and then the cook's answer has an
+    accurate picture of what happened. A user who reads only the cook has a
+    tidier one that PAAF manufactured — and D-10's silence about routing is
+    about not NARRATING the hop, not about deleting the agent's own words.
+    """
+    config = make_mesh_config(active="host", peers={"host": ["chef"], "chef": []})
+    assert config.keep_pre_handoff_prose is True  # the schema's default, read here
+    fake_adapter.program(
+        "host", tokens=["let me ", "get the cook"], tool_calls=[_TRANSFER_TO_CHEF]
+    )
+    fake_adapter.program("chef", tokens=["risotto, obviously"])
+    agent = Agent.build(config, fake_adapter)
+
+    result = await agent.turn("what's for dinner?")
+
+    assert result.text == f"let me get the cook{PRE_HANDOFF_JOINER}risotto, obviously"
+    # The final agent still answered, and is still the one credited.
+    assert result.served_by == "chef"
+    # One question in, one answer out (D-10) — kept prose is part of THE reply,
+    # not a second assistant turn, so history grows by exactly two.
+    assert len(agent.history) == 2
+    assert agent.history[1] == Message("assistant", result.text)
+
+
+async def test_pre_handoff_prose_dropped_is_still_recoverable_from_the_trace(
+    fake_adapter: FakeAdapter,
+    make_mesh_config: Callable[..., LlmConfig],
+    trace_store: TraceStore,
+    tmp_path: Path,
+) -> None:
+    """D-11 off: the user chose not to SEE it, which is not the same as losing it.
+
+    The trace assertion is the load-bearing half and the reason this test is not
+    just ``assert "let me" not in result.text``. A drop test that only checked
+    absence would pass against a genuinely lossy implementation — one where the
+    text the model produced is gone from every record the user owns — and that
+    is a hidden edit rather than a presentation choice (T-04-31).
+
+    It is asserted against the ``handoffs`` row rather than the leg's ``runs``
+    row because the trace has never carried completion text: ``runs.prompts``
+    records what was SENT, and there is no column for what came back. The attempt
+    row is where the prose belongs anyway — it is the handoff that discarded it.
+    """
+    config = make_mesh_config(
+        active="host",
+        peers={"host": ["chef"], "chef": []},
+        keep_pre_handoff_prose=False,
+    )
+    fake_adapter.program(
+        "host", tokens=["let me ", "get the cook"], tool_calls=[_TRANSFER_TO_CHEF]
+    )
+    fake_adapter.program("chef", tokens=["risotto, obviously"])
+    agent = Agent.build(config, fake_adapter, trace=trace_store)
+
+    result = await agent.turn("what's for dinner?")
+
+    assert result.text == "risotto, obviously"
+    assert "let me get the cook" not in result.text
+    assert len(agent.history) == 2
+    assert agent.history[1] == Message("assistant", "risotto, obviously")
+
+    await trace_store.stop()
+    assert trace_store.dropped == 0
+    connection = sqlite3.connect(str(tmp_path / "trace.db"))
+    try:
+        details = [
+            row[0]
+            for row in connection.execute("SELECT detail FROM handoffs ORDER BY seq")
+        ]
+    finally:
+        connection.close()
+
+    assert details == ["let me get the cook"]
+
+
+async def test_a_silent_handoff_adds_no_separator_to_the_reply(
+    fake_adapter: FakeAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """The common case, and the one the joining code must not disfigure.
+
+    Plan 04-04 measured both gate models and found they emit the handoff tool
+    call with ZERO accompanying prose, so an empty pre-handoff leg is the normal
+    turn rather than an edge case. An implementation that joined unconditionally
+    would prefix every single handed-off reply with a blank line — visible on the
+    headline command, and passing every assertion written about the kept case.
+    """
+    config = make_mesh_config(active="host", peers={"host": ["chef"], "chef": []})
+    fake_adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    fake_adapter.program("chef", tokens=["risotto, obviously"])
+
+    result = await Agent.build(config, fake_adapter).turn("what's for dinner?")
+
+    assert result.text == "risotto, obviously"
 
 
 async def test_awake_agent_is_sticky_across_turns(

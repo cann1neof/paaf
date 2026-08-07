@@ -131,3 +131,22 @@ thinking as its own channel? extend the budget for models that think? both?) rat
 (`langchain-ollama` can surface it via reasoning content blocks) or whether `first_token_budget_s`
 needs a "model is thinking" exemption. Whichever, take the measurement above into Phase 9's TTFA gate
 so the gate is not calibrated on non-reasoning models alone.
+
+## 3. `ruff check packages` is red at baseline on `paaf-core` (RUF022)
+
+**Found during:** plan 04-06, Task 3 verification.
+
+`uv run ruff check packages` reports `RUF022 __all__ is not sorted` in
+`packages/paaf-core/src/paaf_core/secrets/__init__.py` — a file plan 04-06 never
+touched and which no plan in this phase touches. Same root cause as deferred
+item 1: `ruff` is unpinned in the dev group and no CI job runs `ruff check`
+across the whole `packages/` tree, so the drift accumulated unnoticed.
+
+Not fixed here: reformatting a `paaf-core` secrets module inside a mesh plan
+would bury the plan's real diff, and `__all__` ordering is load-bearing for
+nobody. Every package this phase touches (`paaf-llm`, `paaf-trace`) is clean:
+`uv run ruff check packages/paaf-llm packages/paaf-trace` passes.
+
+**Suggested fix:** pin `ruff`, run `ruff check --fix packages` once in a
+dedicated chore commit, and add the check to CI so the next drift is caught at
+the commit that introduces it.

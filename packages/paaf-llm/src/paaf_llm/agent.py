@@ -79,6 +79,28 @@ one (D-09), and otherwise stays with whoever is awake (OQ-2). Never to
 where the user declined to. Either way a ``BUDGET_EXHAUSTED`` signal is emitted,
 because a turn that quietly stopped hopping looks exactly like one that never
 wanted to.
+
+**Every leg is recorded, and so is every attempt (MESH-05, OQ-5).** A multi-agent
+turn writes one ``runs`` row AND one ``turn_legs`` row per leg — each with that
+leg's own ``served_by`` and its own ``fallback_trail``, which is what makes SC#4's
+per-agent resilience *observable* rather than merely implemented — plus one
+``handoffs`` row per handoff ATTEMPT. Attempts include the refused ones, and that
+is the point: a rejected handoff runs no leg, so it leaves no ``runs`` row, and
+without an attempt record a turn on which the model reached for an agent it was
+never allowed to reach would be indistinguishable from one on which it never
+tried. Everything is correlated by an engine-generated ``uuid4`` ``turn_id``,
+never a ``lastrowid`` — the fire-and-forget writer does not surface one — and
+never by a new column on ``runs``, which the migration-less schema step would
+silently drop on every database that already exists (Pitfall 5).
+
+**A "let me get the cook" line is the user's call (D-11).** Prose a leg emitted
+before handing off is KEPT by default and prefixed to the final agent's answer,
+because PAAF does not silently edit what a model said. Setting
+``keep_pre_handoff_prose`` to false shows only the final reply — and even then
+nothing is lost, because the accepted ``handoffs`` row carries the prose
+verbatim. Phase 4 ships **no** mechanism that forbids or strips such a line: the
+generated explainer discourages the style in prose, and mechanical enforcement is
+a deliberate v2 item, not an omission.
 """
 
 from __future__ import annotations
@@ -128,6 +150,13 @@ Hop = tuple[str, str, str]
 HANDOFF_ACCEPTED = "accepted"
 HANDOFF_UNDECLARED_PEER = "undeclared_peer"
 HANDOFF_BUDGET_EXHAUSTED = "budget_exhausted"
+
+#: What separates a kept pre-handoff line from the answer that followed it
+#: (D-11). A blank line rather than a label: PAAF does not narrate the routing
+#: (D-10), so a "— handing off to chef —" marker here would reintroduce exactly
+#: the per-hop notice the design declined. Empty legs are dropped before joining,
+#: so a silent handoff — the measured common case — adds nothing at all.
+PRE_HANDOFF_JOINER = "\n\n"
 
 
 class SecretResolver(Protocol):
@@ -374,6 +403,10 @@ class Agent:
         # that ran no leg at all — a refused target and the wall (MESH-05).
         leg_seq = 0
         attempt_seq = 0
+        # D-11: what each NON-FINAL leg said before handing off. Kept or dropped
+        # from the returned text by the user's own setting; recorded on the
+        # accepted `handoffs` row either way, so neither choice loses it.
+        pre_handoff: list[str] = []
         budget = self._config.hop_budget
         # LOCAL for the duration of the turn, written back to `self.awake_agent`
         # only on success (see the write-back below). A turn that raised part-way
@@ -492,6 +525,7 @@ class Agent:
             attempt_seq += 1
 
             accepted = HandoffRequest(from_agent=awake, to_agent=target)
+            pre_handoff.append(reply)
             awake = target
             hops += 1
 
@@ -499,8 +533,25 @@ class Agent:
                 awake = self._exhausted(turn_id, attempt_seq, awake, budget)
                 attempt_seq += 1
 
+        # D-11: ONE reply for however many legs ran. With the setting on (the
+        # default) the non-final legs' own words are shown ahead of the answer;
+        # with it off only the final agent's reply reaches the user, and the
+        # dropped text is still on that handoff's `handoffs` row. Empty legs are
+        # filtered rather than joined, because a silent handoff is the measured
+        # common case and a leading blank line on every handed-off reply would be
+        # a visible defect on the headline command.
+        spoken = (
+            [*pre_handoff, reply] if self._config.keep_pre_handoff_prose else [reply]
+        )
+        text = PRE_HANDOFF_JOINER.join(part for part in spoken if part)
+
         # Appended only now, and only on success — the existing rule (D-01), and
         # the reason a refused handoff leaves no trace in the conversation.
+        #
+        # The assistant entry is the text the USER was shown, so a kept line is
+        # carried forward into the next turn's context exactly as the user sees
+        # it. That is the residual risk Pitfall 2 names, and it is the user's own
+        # explicit and visible choice rather than something PAAF decided.
         #
         # Pitfall 1: the handoff TOOL CALL is never appended here, in any form.
         # Carrying it would leave an assistant message with an unanswered
@@ -509,7 +560,7 @@ class Agent:
         # no `tool` member so it is unrepresentable — keeping it that way is a
         # decision (OQ-1 forbids widening `Role`), not an accident.
         self.history.append(Message("user", user_text))
-        self.history.append(Message("assistant", reply))
+        self.history.append(Message("assistant", text))
         # Written back only now, and only on success (MESH-03, Assumption A3):
         # the agent that ended this turn awake starts the next one. Sticky
         # within the process and deliberately not persisted — history is already
@@ -517,7 +568,7 @@ class Agent:
         self.awake_agent = awake
 
         return TurnResult(
-            text=reply,
+            text=text,
             served_by=served_by,
             usage=usage,
             fallback_trail=trail,

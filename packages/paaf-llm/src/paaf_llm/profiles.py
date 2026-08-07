@@ -319,6 +319,23 @@ class LlmConfig(BaseModel):
     handoff_explainer_template: str | None = Field(
         None, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
+    # WARM: what happens to a "let me get the cook" line an agent emitted just
+    # before it handed off (D-11). The default is True, and the reason is the
+    # reason rather than the value: PAAF does not silently edit what a model
+    # said, so the default is to SHOW it. The user opts INTO dropping it, and
+    # even then the text is not lost — the accepted `handoffs` row records the
+    # prose verbatim, so the setting is a presentation choice rather than a
+    # hidden edit (T-04-31).
+    #
+    # Two adjacent facts, so nobody reads this field as the whole story:
+    # (1) the generated handoff explainer DISCOURAGES the style in prose, and
+    # (2) mechanical enforcement — refusing or stripping a leg that spoke before
+    #     calling handoff — is a deliberate v2 item the founder flagged as really
+    #     important, NOT an oversight. Phase 4 ships no such mechanism, and this
+    #     field is not one: it governs presentation only.
+    keep_pre_handoff_prose: bool = Field(
+        True, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
 
     @model_validator(mode="after")
     def _check_refs(self) -> LlmConfig:

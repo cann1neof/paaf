@@ -110,6 +110,11 @@ def make_mesh_config(
     reads the value it is testing in its own body and the schema's own default
     (and its floor) stay the single source of truth.
 
+    ``keep_pre_handoff_prose`` is D-11's user setting, passed straight through
+    for the same reason ``hop_budget`` is: the schema's own default stays the
+    single source of truth, so a test that cares about the default reads it from
+    the model rather than from this fixture.
+
     ``system_prompts``, ``personas`` and ``explainers`` are the per-agent prompt
     layer (D-16 layer 3 / D-17 / D-18), keyed by profile name exactly as
     ``capabilities`` is. A name absent from a mapping declares nothing and gets
@@ -126,6 +131,7 @@ def make_mesh_config(
         capabilities: Mapping[str, str] | None = None,
         hop_budget: int | None = None,
         default_agent: str | None = None,
+        keep_pre_handoff_prose: bool | None = None,
         system_prompts: Mapping[str, str] | None = None,
         personas: Mapping[str, str] | None = None,
         explainers: Mapping[str, str] | None = None,
@@ -152,6 +158,8 @@ def make_mesh_config(
             extra["hop_budget"] = hop_budget
         if default_agent is not None:
             extra["default_agent"] = default_agent
+        if keep_pre_handoff_prose is not None:
+            extra["keep_pre_handoff_prose"] = keep_pre_handoff_prose
         if explainer_template is not None:
             extra["handoff_explainer_template"] = explainer_template
         return LlmConfig(
