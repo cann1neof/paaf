@@ -163,6 +163,17 @@ HANDOFF_OBSERVER_REROUTE = "observer_reroute"
 PRE_HANDOFF_JOINER = "\n\n"
 
 
+def _with_note(note: str | None, text: str) -> str:
+    """Return ``text`` with ``note`` in front of it, dropping either if empty.
+
+    Used for the ``handoffs.detail`` column, which is free text and has always
+    carried the pre-handoff prose. A note is prefixed rather than appended so it
+    is readable in a truncated view, and an empty half is dropped rather than
+    joined — the same reason :data:`PRE_HANDOFF_JOINER` filters empty legs.
+    """
+    return "\n".join(part for part in (note, text) if part)
+
+
 class SecretResolver(Protocol):
     """The slice of ``paaf_core``'s SecretStore an adapter needs (CORE-04).
 
@@ -689,7 +700,14 @@ class Agent:
                 # ever carried reply text — the trace records prompts, not
                 # completions — and the attempt row is the one place the prose
                 # belongs anyway: it is the handoff that discarded it.
-                detail=reply,
+                #
+                # T-04-37: an observer that reached for a power it was not
+                # granted would otherwise vanish — the handoff proceeds
+                # unchanged, so nothing else about this row would differ. The
+                # offending tool name rides here instead, in front of the prose,
+                # so "the supervisor tried something it could not do" is a
+                # readable fact rather than an inference from a missing effect.
+                detail=_with_note(decision.ungranted, reply),
                 observer_verdict=verdict,
                 observer_profile=decision.served_by,
                 rerouted_to=rerouted_to,

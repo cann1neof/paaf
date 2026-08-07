@@ -152,9 +152,16 @@ class ObserverDecision:
     (D-06). Resolving it here would be a second guard, and two copies of a
     reachability rule is one copy plus a future divergence.
 
-    ``detail`` is the observer's own words, plus — when it reached for a power it
-    was not granted — the offending tool name. That is the whole of T-04-37's
-    mitigation: the attempt is in the record rather than silently swallowed.
+    ``detail`` is the observer's own words, verbatim — never a summary, because
+    it is quoted back to the vetoed agent by :func:`paaf_llm.mesh.retry_text` and
+    the user reads the same bytes.
+
+    ``ungranted`` is set — and the verdict is :attr:`ObserverVerdict.APPROVE` —
+    when the observer reached for a power it was not granted. It is a separate
+    field rather than a fourth verdict because a verdict says what HAPPENED to
+    the handoff, and this one left it alone. The engine writes it onto the
+    attempt row's ``detail``, which is the whole of T-04-37's mitigation: the
+    attempt is in the record rather than silently swallowed.
 
     ``served_by`` names the profile that ACTUALLY served the observer's leg,
     which may be a fallback down its own chain (SC#4 applies to it like any other
@@ -166,6 +173,7 @@ class ObserverDecision:
     target: str | None = None
     detail: str = ""
     served_by: str | None = None
+    ungranted: str | None = None
 
 
 class LegRunner(Protocol):
@@ -352,12 +360,34 @@ class Observer:
     ) -> ObserverDecision:
         """Map the emitted tool call onto a verdict, or onto a recorded non-answer.
 
-        The grant check is explicit and singular: ``offered`` is the surface that
-        was just built, so a name outside it is a power that was not granted, and
-        the only honest response is to not exercise it. Translating an ungranted
-        re-route into a retry would look helpful and would be PAAF deciding what
-        the model meant — the thing this project refuses everywhere else, and the
-        boundary ``grant_bounds`` pins.
+        **The grant check is explicit and singular, and it is read off the surface
+        that was just built.** ``tools`` is
+        :func:`paaf_llm.mesh.observer_tools`'s output for THIS call, so there is
+        exactly one place that decides what the observer may do and it is the same
+        place that decided what the observer was offered. A grant check written
+        against ``LlmConfig.observer_grants`` separately would be a second opinion
+        about the same question, and two of those is one plus a future divergence.
+
+        **The POWER and the REACH are two questions, and only the first is
+        answered here** — that separation is what keeps D-06 honest. Whether the
+        observer may re-route AT ALL is this method's business, and it is decided
+        by whether a ``reroute_to_*`` spec was offered. Whether a *particular*
+        target is reachable is emphatically not: that name is handed on
+        unvalidated so the engine can run it through
+        :func:`paaf_llm.mesh.resolve_handoff` with the CALLER's profile, raising
+        the same :class:`~paaf_llm.ports.UndeclaredPeer` an agent's target would.
+        Rejecting an out-of-graph name here instead would make the second layer
+        unreachable and quietly reduce a two-layer guard to one — the exact
+        belt-and-braces shape ``handoff_tools`` + ``resolve_handoff`` has always
+        had, for the reason Pitfall 4 gives.
+
+        **An emission outside the grant is APPROVE, recorded.** Translating an
+        ungranted re-route into a retry would look helpful and would be PAAF
+        deciding on the model's behalf what it meant. The honest non-answer is to
+        not exercise a power that was not granted, let the handoff proceed as
+        originally named, and put the offending tool name in the record — no
+        silent swallow either (T-04-37). That is the boundary ``grant_bounds``
+        pins, with both halves.
         """
         if not calls:
             return ObserverDecision(
@@ -366,24 +396,28 @@ class Observer:
 
         name = calls[0].name
         offered = {tool.name for tool in tools}
-        if name not in offered:
-            note = UNGRANTED_EMISSION.format(name=name, offered=sorted(offered))
-            return ObserverDecision(
-                ObserverVerdict.APPROVE,
-                detail=f"{note} {reply}".strip(),
-                served_by=served_by,
-            )
 
-        if name == mesh.OBSERVER_RETRY_TOOL:
+        if name == mesh.OBSERVER_RETRY_TOOL and name in offered:
             return ObserverDecision(
                 ObserverVerdict.GENERIC_RETRY, detail=reply, served_by=served_by
             )
 
+        may_reroute = any(
+            candidate.startswith(mesh.OBSERVER_REROUTE_PREFIX) for candidate in offered
+        )
+        if name.startswith(mesh.OBSERVER_REROUTE_PREFIX) and may_reroute:
+            return ObserverDecision(
+                ObserverVerdict.REROUTE,
+                target=name[len(mesh.OBSERVER_REROUTE_PREFIX) :],
+                detail=reply,
+                served_by=served_by,
+            )
+
         return ObserverDecision(
-            ObserverVerdict.REROUTE,
-            target=name[len(mesh.OBSERVER_REROUTE_PREFIX) :],
+            ObserverVerdict.APPROVE,
             detail=reply,
             served_by=served_by,
+            ungranted=UNGRANTED_EMISSION.format(name=name, offered=sorted(offered)),
         )
 
 

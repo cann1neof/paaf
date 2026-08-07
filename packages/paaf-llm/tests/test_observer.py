@@ -18,15 +18,21 @@ half means anything alone.**
   emits. On its own it is satisfied by an implementation that ignores re-routes
   *entirely*. So it carries both halves: with the grant the same emission does
   redirect, and without it the handoff proceeds to the originally named target.
+* ``reroute_guarded`` proves a granted observer still cannot reach outside the
+  CALLER's peer graph — and it is paired with ``grant_bounds``' second half,
+  which shows a *declared* peer does redirect. An engine that refused every
+  re-route would pass ``reroute_guarded`` alone.
 
-**What the two D-04/D-06 rows prove together** is the whole security shape of the
-observer: its POWERS come from its tool grant, and its REACH comes from the
-calling agent's own peer graph. Neither can be argued into existence by
-conversation content, because neither is decided by reading the observer's
-output — the recognized tool set is derived from :func:`paaf_llm.mesh.observer_tools`
-for that very call, and a named re-route target is run through the same
-:func:`paaf_llm.mesh.resolve_handoff` an agent's target goes through, with the
-CALLER's profile. One graph, one guard, no second privilege tier.
+**What ``grant_bounds`` and ``reroute_guarded`` prove TOGETHER** is the whole
+security shape of the observer, and neither states it by itself: the observer's
+**powers come from its grant** and its **reach comes from the calling agent's own
+graph**. So neither can be argued into existence by conversation content — a
+window full of text making the case for a re-route meets a tool that was never
+offered (D-04), and a re-route to an agent the caller was never connected to
+meets the same :func:`paaf_llm.mesh.resolve_handoff`, with the CALLER's profile,
+that an agent's own target meets (D-06). One graph, one guard, no second
+privilege tier, and no PAAF-invented reinterpretation of what the model meant in
+between.
 
 **OQ-1 is why the veto looks the way it does.** A refusal reaches the calling
 agent as a transient labelled prompt segment on that leg's message list only. It
@@ -57,12 +63,14 @@ from paaf_llm.compose import PromptComposer
 from paaf_llm.fake import FakeAdapter
 from paaf_llm.observer import ObserverVerdict
 from paaf_llm.ports import (
+    HandoffRequest,
     MeshSignal,
     MeshSignalKind,
     Message,
     Role,
     ToolCall,
     ToolSpec,
+    UndeclaredPeer,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
 from paaf_trace.store import TraceStore
@@ -760,6 +768,227 @@ class _NullRunner:
         tools: Sequence[ToolSpec],
     ) -> tuple[str, str, list[tuple[str, str, str]], tuple[ToolCall, ...]]:
         raise AssertionError("this test must not run an observer leg")
+
+
+# ------------------------------------------- the grant and the graph (D-04/D-06) --
+
+
+async def test_grant_bounds_a_reroute_the_observer_was_never_given(
+    observer_adapter: _ObserverTestAdapter,
+    make_mesh_config: Callable[..., LlmConfig],
+    trace_store: TraceStore,
+    tmp_path: Path,
+) -> None:
+    """D-04: an ungranted power is not exercisable, whatever the observer emits.
+
+    The SAME emission is run twice against the SAME script, differing only in the
+    config's ``observer_grants``, and that pairing is what makes the row mean
+    something: without the granted half, an implementation that ignored re-routes
+    entirely would pass the ungranted half perfectly.
+
+    T-04-32 is the threat this closes. The observer's window carries user and
+    model text that may argue for a re-route; the answer is that the power is not
+    there to be argued into. And the non-answer is deliberate — an ungranted
+    re-route is NOT reinterpreted as a retry, because that would be PAAF deciding
+    what the model meant (T-04-37).
+    """
+    reroute_to_cook = ToolCall(f"{mesh.OBSERVER_REROUTE_PREFIX}cook", {})
+
+    # --- half 1: the default retry-only grant ---------------------------------
+    config = observed_kitchen(make_mesh_config)
+    assert config.observer_grants == [mesh.OBSERVER_GRANT_RETRY]
+    observer_adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    observer_adapter.program(
+        mesh.OBSERVER_PROFILE_NAME,
+        tokens=["cook would be better"],
+        tool_calls=[reroute_to_cook],
+    )
+    observer_adapter.program("chef", tokens=["risotto, obviously"])
+    # `cook` is left UNPROGRAMMED on purpose — a structural negative control on
+    # top of the assertions below. An engine that honoured the ungranted
+    # re-route raises `LookupError` from the fake, which is pointedly not an
+    # `AdapterError` the fallback loop could swallow as one more plausible hop.
+    agent = Agent.build(config, observer_adapter, trace=trace_store)
+
+    result = await agent.turn("what's for dinner?")
+    rows = await handoff_rows(trace_store, tmp_path)
+
+    # The surface never carried a re-route tool — capability removal first.
+    offered = dict(observer_adapter.tool_offers)[mesh.OBSERVER_PROFILE_NAME]
+    assert offered == (mesh.OBSERVER_RETRY_TOOL,)
+    assert not any(name.startswith(mesh.OBSERVER_REROUTE_PREFIX) for name in offered)
+
+    # The handoff went where the MODEL named it, not where the observer wished.
+    assert result.served_by == "chef"
+    assert "cook" not in [key for key, _ in observer_adapter.calls]
+    assert rows[0]["outcome"] == HANDOFF_ACCEPTED
+    assert rows[0]["rerouted_to"] is None
+    # Not silently swallowed, and not reinterpreted as a retry either.
+    assert rows[0]["observer_verdict"] == ObserverVerdict.APPROVE.value
+    assert reroute_to_cook.name in rows[0]["detail"]
+
+    # --- half 2: the same emission, with the grant ----------------------------
+    granted = observed_kitchen(
+        make_mesh_config,
+        observer_grants=[mesh.OBSERVER_GRANT_RETRY, mesh.OBSERVER_GRANT_REROUTE],
+    )
+    twin = _ObserverTestAdapter()
+    twin.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    twin.program(
+        mesh.OBSERVER_PROFILE_NAME,
+        tokens=["cook would be better"],
+        tool_calls=[reroute_to_cook],
+    )
+    twin.program("chef", tokens=["risotto, obviously"])
+    twin.program("cook", tokens=["pasta, actually"])
+    signals = SignalRecorder()
+    corrected = Agent.build(granted, twin, signals=signals)
+
+    result = await corrected.turn("what's for dinner?")
+
+    assert dict(twin.tool_offers)[mesh.OBSERVER_PROFILE_NAME] == (
+        mesh.OBSERVER_RETRY_TOOL,
+        f"{mesh.OBSERVER_REROUTE_PREFIX}chef",
+        f"{mesh.OBSERVER_REROUTE_PREFIX}cook",
+    )
+    assert result.text == "pasta, actually"
+    assert result.served_by == "cook"
+    assert result.handoff == HandoffRequest(from_agent="host", to_agent="cook")
+    assert "chef" not in [key for key, _ in twin.calls]
+    assert corrected.awake_agent == "cook"
+
+    # D-05: a correction is announced, headless, when it happens.
+    rerouted = signals.of_kind(MeshSignalKind.OBSERVER_REROUTE)
+    assert len(rerouted) == 1
+    assert (rerouted[0].from_agent, rerouted[0].to_agent) == ("host", "cook")
+
+
+async def test_reroute_guarded_by_the_callers_own_peer_graph(
+    observer_adapter: _ObserverTestAdapter,
+    make_mesh_config: Callable[..., LlmConfig],
+    trace_store: TraceStore,
+    tmp_path: Path,
+) -> None:
+    """D-06 / MESH-02: one graph, one guard, no second privilege tier.
+
+    ``admin`` is a declared profile that ``host`` may not reach — the same shape
+    ``test_undeclared_target_raises`` uses in ``test_mesh.py``, and for the same
+    reason: a guard written against ``LlmConfig.profiles`` resolves it happily.
+    The observer names it with the re-route grant in hand, and what must come
+    back is not *an* error but the SAME error, from the same function, naming the
+    CALLER's declared peers.
+
+    Enabling the observer must never silently make every agent reachable from
+    every agent (T-04-33). The attempt is recorded before the exception
+    propagates, which is the only ordering that survives it.
+    """
+    config = observed_kitchen(
+        make_mesh_config,
+        observer_grants=[mesh.OBSERVER_GRANT_RETRY, mesh.OBSERVER_GRANT_REROUTE],
+    )
+    observer_adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    observer_adapter.program(
+        mesh.OBSERVER_PROFILE_NAME,
+        tokens=["admin should take this"],
+        tool_calls=[ToolCall(f"{mesh.OBSERVER_REROUTE_PREFIX}admin", {})],
+    )
+    observer_adapter.program("chef", tokens=["risotto, obviously"])
+    observer_adapter.program("admin", tokens=["root shell, coming right up"])
+    signals = SignalRecorder()
+    agent = Agent.build(config, observer_adapter, trace=trace_store, signals=signals)
+
+    with pytest.raises(UndeclaredPeer) as raised:
+        await agent.turn("what's for dinner?")
+    rows = await handoff_rows(trace_store, tmp_path)
+
+    message = str(raised.value)
+    assert "admin" in message  # the target the observer named
+    assert "chef" in message and "cook" in message  # the CALLER's declared peers
+    assert "host" in message  # whose graph was consulted
+
+    # The same failure an agent would get — asserted as the same TYPE, since
+    # `test_mesh.py::test_undeclared_target_raises` asserts this exact class.
+    assert isinstance(raised.value, UndeclaredPeer)
+    # Never followed: admin was not streamed even though it is a real profile,
+    # and the refused turn left nothing in the conversation.
+    assert "admin" not in [key for key, _ in observer_adapter.calls]
+    assert agent.history == []
+    assert agent.awake_agent == "host"
+
+    # Recorded BEFORE the re-raise, with the observer's fingerprints on it.
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "undeclared_peer"
+    assert rows[0]["to_agent"] == "admin"
+    assert rows[0]["observer_verdict"] == ObserverVerdict.REROUTE.value
+    assert rows[0]["observer_profile"] == mesh.OBSERVER_PROFILE_NAME
+    assert rows[0]["rerouted_to"] == "admin"
+    assert signals.of_kind(MeshSignalKind.UNDECLARED_PEER)[0].to_agent == "admin"
+
+
+def test_enabling_the_observer_adds_no_reachable_target(
+    make_mesh_config: Callable[..., LlmConfig],
+) -> None:
+    """The claim D-06 makes in one line, as a set comparison over the whole graph.
+
+    Whatever the grant, the observer's re-route surface for a caller is a SUBSET
+    of that caller's own handoff surface. Anything else would be a second
+    privilege tier — and the useful failure mode this catches is an
+    implementation that builds the observer's targets from
+    ``LlmConfig.profiles``, which reads perfectly and hands the supervisor the
+    whole graph.
+    """
+    config = observed_kitchen(make_mesh_config)
+
+    for name, profile in config.profiles.items():
+        reachable = {
+            mesh.target_of(ToolCall(tool.name, {}))
+            for tool in mesh.handoff_tools(name, profile, config.profiles)
+        }
+        for grants in ((), mesh.OBSERVER_GRANTS):
+            observed = {
+                tool.name[len(mesh.OBSERVER_REROUTE_PREFIX) :]
+                for tool in mesh.observer_tools(grants, profile.peers, config.profiles)
+                if tool.name.startswith(mesh.OBSERVER_REROUTE_PREFIX)
+            }
+            assert observed <= reachable, name
+    # And the graph really does contain an unreachable profile, so the subset
+    # assertion above is not trivially true of everything.
+    assert "admin" not in config.profiles["host"].peers
+    assert "admin" in config.profiles
+
+
+# ------------------------------------------------------------- exhaustiveness --
+
+#: Every :class:`ObserverVerdict`, mapped to the ``-k`` selector of the test that
+#: exercises it end to end. Declared as data — the same shape ``test_fallback.py``
+#: uses for ``FallbackReason`` — so a verdict added later without a test turns
+#: this file red instead of shipping untested while the file still looks
+#: exhaustive.
+VERDICT_COVERAGE: dict[ObserverVerdict, str] = {
+    ObserverVerdict.APPROVE: "allows",
+    ObserverVerdict.GENERIC_RETRY: "vetoes",
+    ObserverVerdict.REROUTE: "reroute_guarded",
+}
+
+
+def test_every_observer_verdict_is_exercised_in_this_file() -> None:
+    """Control: the coverage map spans the WHOLE verdict enum, and each row exists.
+
+    Two assertions, and the second is the one that stops the map from becoming a
+    comment: the selector must actually name a test function in this file's own
+    source, so a renamed test breaks this rather than silently leaving a verdict
+    unmeasured.
+    """
+    assert set(VERDICT_COVERAGE) == set(ObserverVerdict)
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    names = [
+        line.removeprefix("async def ").removeprefix("def ").split("(")[0]
+        for line in source.splitlines()
+        if line.startswith(("def test_", "async def test_"))
+    ]
+    for verdict, selector in VERDICT_COVERAGE.items():
+        assert any(selector in name for name in names), verdict
 
 
 # ------------------------------------------------------------------- framework --
