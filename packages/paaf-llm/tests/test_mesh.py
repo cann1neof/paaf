@@ -30,14 +30,23 @@ profile in the guard test precisely so that a guard written as
 ``profiles[target]`` — the natural wrong implementation — resolves it happily and
 fails here.
 
+**The budget test and the hand-back test are a PAIR, and neither means much
+alone** (D-08 / MESH-03). An engine with no wall at all passes
+``test_hand_back_to_prior_agent_does_not_restart`` perfectly. An engine that
+walls at one hop passes ``test_budget_stops_a_loop_and_withdraws_the_tool``
+perfectly. Only an engine whose wall stands *above* the legitimate A→B→A
+hand-back — which is why the floor is 3 and not 1 — passes both. Read them
+together or not at all.
+
 Every test runs against the shipped ``FakeAdapter`` with the agent framework
 uninstalled (SC#5), and none of them opens a socket.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 from paaf_llm import mesh
@@ -45,15 +54,117 @@ from paaf_llm.agent import Agent
 from paaf_llm.fake import FakeAdapter
 from paaf_llm.ports import (
     HandoffRequest,
+    MeshSignal,
+    MeshSignalKind,
     Message,
     Role,
     ToolCall,
+    ToolSpec,
     UndeclaredPeer,
 )
-from paaf_llm.profiles import LlmConfig
+from paaf_llm.profiles import LlmConfig, ModelProfile
 
 _TRANSFER_TO_CHEF = ToolCall("transfer_to_chef", {})
 _TRANSFER_TO_ADMIN = ToolCall("transfer_to_admin", {})
+_TRANSFER_TO_A = ToolCall("transfer_to_a", {})
+_TRANSFER_TO_B = ToolCall("transfer_to_b", {})
+
+
+class SignalRecorder:
+    """A four-line :class:`~paaf_llm.ports.MeshSignalSink` (D-05).
+
+    The port is narrow precisely so a listener can be this cheap — Phase 10's
+    WebSocket channel and this list satisfy the same contract.
+    """
+
+    def __init__(self) -> None:
+        self.signals: list[MeshSignal] = []
+
+    def signal(self, event: MeshSignal) -> None:
+        self.signals.append(event)
+
+    def of_kind(self, kind: MeshSignalKind) -> list[MeshSignal]:
+        return [event for event in self.signals if event.kind is kind]
+
+
+class MeshTestAdapter(FakeAdapter):
+    """A :class:`FakeAdapter` with the two things a multi-LEG turn needs.
+
+    **A hard leg cap.** The budget tests script a mesh that hands off forever,
+    so an engine that failed to withdraw the tools would not fail them — it
+    would never return, and a hung suite reads as an infrastructure problem
+    rather than as the missing wall it actually is. The cap converts that into
+    a named assertion. It is set far above any budget under test, so it can
+    only fire when the engine's own wall did not.
+
+    **A per-leg script queue.** :meth:`FakeAdapter.program` is static per
+    profile on purpose — a program is a fact about a provider, not a queue —
+    but a WITHIN-TURN hand-back needs ``a`` to hand off on its first leg and to
+    *answer* on its second, which is the whole shape of A→B→A. Rather than give
+    the shipped fake a stateful-script feature no production code would want,
+    the statefulness lives here. The re-program lands AFTER the leg has fully
+    drained, so the tool calls that leg published are the ones it was scripted
+    with.
+    """
+
+    #: Generous on purpose: it must never be the thing that ends a turn a
+    #: correct engine would have ended itself.
+    MAX_LEGS = 20
+
+    def __init__(self) -> None:
+        super().__init__()
+        #: profile key -> queued ``program(...)`` kwargs, one per subsequent leg.
+        self.next_programs: dict[str, list[dict[str, Any]]] = {}
+        self.legs = 0
+
+    def _count_leg(self, profile: ModelProfile) -> None:
+        self.legs += 1
+        assert self.legs <= self.MAX_LEGS, (
+            f"the turn ran {self.legs} legs without ending — the engine never "
+            f"withdrew the handoff tools, so the hop budget is not a wall"
+        )
+
+    def _advance(self, profile: ModelProfile) -> None:
+        queued = self.next_programs.get(self.program_key(profile))
+        if queued:
+            self.program(self.program_key(profile), **queued.pop(0))
+
+    async def stream(
+        self, profile: ModelProfile, messages: Sequence[Message]
+    ) -> AsyncIterator[str]:
+        self._count_leg(profile)
+        async for token in super().stream(profile, messages):
+            yield token
+        self._advance(profile)
+
+    async def stream_with_tools(
+        self,
+        profile: ModelProfile,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[str]:
+        self._count_leg(profile)
+        async for token in super().stream_with_tools(profile, messages, tools):
+            yield token
+        self._advance(profile)
+
+
+@pytest.fixture
+def mesh_adapter() -> MeshTestAdapter:
+    """A fresh :class:`MeshTestAdapter` per test, for the same reason as the fake."""
+    return MeshTestAdapter()
+
+
+def _loop_forever(adapter: FakeAdapter) -> None:
+    """Script ``a`` and ``b`` to hand off to each other on every single leg.
+
+    The runaway mesh, expressed as four lines. Every leg that is offered a
+    handoff tool calls it, so nothing but the engine's own wall can end the
+    turn — which is what makes the budget tests non-vacuous: an engine that
+    forgot to withdraw the tools does not fail these tests, it never returns.
+    """
+    adapter.program("a", tokens=["a speaking"], tool_calls=[_TRANSFER_TO_B])
+    adapter.program("b", tokens=["b speaking"], tool_calls=[_TRANSFER_TO_A])
 
 
 # --------------------------------------------------------------------- MESH-01 --
@@ -276,6 +387,232 @@ async def test_history_clean_of_tool_calls(
     )
     # The structural guarantee itself: no `tool` role exists to put one in.
     assert set(Role.__args__) == {"system", "user", "assistant"}
+
+
+# ------------------------------------------------------- D-08 / D-09 / OQ-2 --
+
+
+def test_tools_for_leg_withdraws_the_surface_at_the_wall(
+    make_mesh_config: Callable[..., LlmConfig],
+) -> None:
+    """The withdrawal rule as a pure function — one place decides it (D-08).
+
+    Unit-testable without driving a turn, and the engine has exactly one place
+    that asks. The positive half is the negative control: a predicate that
+    returned ``()`` always would satisfy the wall assertion completely.
+    """
+    config = make_mesh_config(active="a", peers={"a": ["b"], "b": ["a"]})
+    profile = config.profiles["a"]
+    args = ("a", profile, config.profiles)
+
+    # Below the wall: the declared peers, in the user's order.
+    assert [tool.name for tool in mesh.tools_for_leg(*args, 0, 3)] == ["transfer_to_b"]
+    assert [tool.name for tool in mesh.tools_for_leg(*args, 2, 3)] == ["transfer_to_b"]
+    # At it and past it: nothing. Not a smaller set, not a flag — nothing.
+    assert mesh.tools_for_leg(*args, 3, 3) == ()
+    assert mesh.tools_for_leg(*args, 9, 3) == ()
+
+
+async def test_budget_stops_a_loop_and_withdraws_the_tool(
+    mesh_adapter: MeshTestAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """D-08 / T-04-10: a runaway mesh terminates because the tool is taken away.
+
+    Both agents are scripted to hand off on every leg they are offered a tool,
+    so nothing inside the model's control ends this turn. The engine's own count
+    does — by *withdrawing* the surface, not by instructing anything. The empty
+    tuple in ``tool_offers`` is the evidence: the final leg ran, and it was
+    offered zero moves.
+    """
+    config = make_mesh_config(active="a", peers={"a": ["b"], "b": ["a"]}, hop_budget=3)
+    _loop_forever(mesh_adapter)
+    signals = SignalRecorder()
+    agent = Agent.build(config, mesh_adapter, signals=signals)
+
+    result = await agent.turn("keep going")
+
+    # Exactly three hops, so four legs: A→B→A→B, and B answers with no tool.
+    assert [key for key, _ in mesh_adapter.calls] == ["a", "b", "a", "b"]
+    assert result.text == "b speaking"
+    assert result.served_by == "b"
+
+    # The wall, stated as capability removal rather than as a count.
+    assert mesh_adapter.tool_offers[-1] == ("b", ())
+    assert [names for _key, names in mesh_adapter.tool_offers[:-1]] == [
+        ("transfer_to_b",),
+        ("transfer_to_a",),
+        ("transfer_to_b",),
+    ]
+
+    # Never silent (OQ-2), and never noisy either — once for the turn.
+    exhausted = signals.of_kind(MeshSignalKind.BUDGET_EXHAUSTED)
+    assert len(exhausted) == 1
+    assert exhausted[0].detail == "3"
+    assert exhausted[0].turn_id
+
+    # One question in, one answer out (D-10) — the hops left no residue.
+    assert agent.history == [
+        Message("user", "keep going"),
+        Message("assistant", "b speaking"),
+    ]
+
+
+async def test_budget_exhaustion_hands_to_declared_home_agent(
+    mesh_adapter: MeshTestAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """D-09: the user named who speaks when the mesh runs out of moves.
+
+    ``home`` declares a peer of its OWN, and that is load-bearing rather than
+    scenery. If the home agent had an empty peer list, its leg would be offered
+    nothing whether or not the wall existed, and the withdrawal assertion below
+    would be green against an engine with no budget at all. With a peer
+    declared, an empty offer can only mean the wall.
+
+    Nobody lists ``home`` as a peer, though: declaring a home agent grants no
+    handoff edge (T-04-12). ``test_profiles.py`` asserts that half directly.
+    """
+    config = make_mesh_config(
+        active="a",
+        peers={"a": ["b"], "b": ["a"], "home": ["a"]},
+        hop_budget=3,
+        default_agent="home",
+    )
+    _loop_forever(mesh_adapter)
+    mesh_adapter.program("home", tokens=["home speaking"])
+    signals = SignalRecorder()
+    agent = Agent.build(config, mesh_adapter, signals=signals)
+
+    result = await agent.turn("keep going")
+
+    assert [key for key, _ in mesh_adapter.calls] == ["a", "b", "a", "home"]
+    assert result.served_by == "home"
+    assert result.text == "home speaking"
+    # The home agent is now awake — it holds the conversation it just answered.
+    assert agent.awake_agent == "home"
+    # Withdrawn for the home agent too: the terminator terminates.
+    assert mesh_adapter.tool_offers[-1] == ("home", ())
+
+    exhausted = signals.of_kind(MeshSignalKind.BUDGET_EXHAUSTED)
+    assert len(exhausted) == 1
+    assert (exhausted[0].from_agent, exhausted[0].to_agent) == ("b", "home")
+
+
+async def test_exhaustion_no_default_agent_awake_answers(
+    mesh_adapter: MeshTestAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """OQ-2: with no home agent declared, whoever is awake answers — no guess.
+
+    ``active_profile`` is ``a`` and the agent awake at the wall is ``b``, so the
+    two differ *by construction*. That is the whole design of this test: falling
+    back to ``active_profile`` is the natural wrong implementation and D-09
+    rejects it outright, but with a==b it would pass unnoticed.
+    """
+    config = make_mesh_config(active="a", peers={"a": ["b"], "b": ["a"]}, hop_budget=3)
+    assert config.default_agent is None
+    _loop_forever(mesh_adapter)
+    signals = SignalRecorder()
+    agent = Agent.build(config, mesh_adapter, signals=signals)
+
+    result = await agent.turn("keep going")
+
+    assert result.served_by == "b"
+    assert result.served_by != config.active_profile  # not a guess, an absence
+    assert agent.awake_agent == "b"
+    assert mesh_adapter.tool_offers[-1] == ("b", ())
+
+    exhausted = signals.of_kind(MeshSignalKind.BUDGET_EXHAUSTED)
+    assert len(exhausted) == 1
+    # from and to are the same agent: nobody took over, the moves simply ran out.
+    assert (exhausted[0].from_agent, exhausted[0].to_agent) == ("b", "b")
+
+
+async def test_hand_back_to_prior_agent_does_not_restart(
+    mesh_adapter: MeshTestAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """MESH-03, and the budget's negative control: A→B→A inside the wall.
+
+    Two hops, under a floor of three. An engine that walled at one hop would
+    pass ``test_budget_stops_a_loop_and_withdraws_the_tool`` and fail here,
+    which is the pairing the module docstring describes.
+
+    "Does not restart" is asserted at the strongest available point: all three
+    legs of the turn were handed the IDENTICAL message list. Not a similar one —
+    the same tuple. A conversation that restarted, or an engine that gave the
+    receiving agent a trimmed transcript, could not produce that.
+    """
+    config = make_mesh_config(
+        active="a",
+        peers={"a": ["b"], "b": ["a"]},
+        base_prompt="you are paaf",
+        hop_budget=3,
+    )
+    signals = SignalRecorder()
+    agent = Agent.build(config, mesh_adapter, signals=signals)
+
+    # A prior turn, so "the whole prior conversation" is a non-empty thing.
+    mesh_adapter.program("a", tokens=["hello there"])
+    await agent.turn("hi")
+
+    # a hands off on its first leg of the NEXT turn and answers on its second.
+    mesh_adapter.program("a", tokens=[], tool_calls=[_TRANSFER_TO_B])
+    mesh_adapter.next_programs["a"] = [{"tokens": ["risotto, obviously"]}]
+    mesh_adapter.program("b", tokens=[], tool_calls=[_TRANSFER_TO_A])
+
+    result = await agent.turn("what's for dinner?")
+
+    assert [key for key, _ in mesh_adapter.calls] == ["a", "a", "b", "a"]
+    assert result.text == "risotto, obviously"
+    assert result.served_by == "a"
+    assert result.handoff == HandoffRequest(from_agent="b", to_agent="a")
+    assert agent.awake_agent == "a"
+
+    expected = (
+        Message("system", agent.system_prompt()),
+        Message("user", "hi"),
+        Message("assistant", "hello there"),
+        Message("user", "what's for dinner?"),
+    )
+    turn_two = [messages for _key, messages in mesh_adapter.calls[1:]]
+    assert turn_two == [expected, expected, expected]
+
+    # ONE reply for three legs, and exactly two new history entries (D-10).
+    assert agent.history == [
+        Message("user", "hi"),
+        Message("assistant", "hello there"),
+        Message("user", "what's for dinner?"),
+        Message("assistant", "risotto, obviously"),
+    ]
+    # The wall was never reached, so nothing announced that it was.
+    assert signals.of_kind(MeshSignalKind.BUDGET_EXHAUSTED) == []
+
+
+async def test_awake_agent_is_sticky_across_turns(
+    mesh_adapter: MeshTestAdapter, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """MESH-03 / Assumption A3: the agent that ended a turn awake starts the next.
+
+    Sticky WITHIN the process and deliberately not persisted — Phase-3 history is
+    already ephemeral (D-01), so a persisted awake agent would come back
+    remembering nothing that was said to it.
+
+    The second turn scripts no handoff at all, so ``b`` streaming first is only
+    explicable by stickiness: an engine that reset to ``active_profile`` would
+    show ``a`` streaming and handing off again.
+    """
+    config = make_mesh_config(active="a", peers={"a": ["b"], "b": ["a"]})
+    mesh_adapter.program("a", tokens=[], tool_calls=[_TRANSFER_TO_B])
+    mesh_adapter.program("b", tokens=["b answers"])
+    agent = Agent.build(config, mesh_adapter)
+
+    await agent.turn("first question")
+    assert agent.awake_agent == "b"
+
+    result = await agent.turn("second question")
+
+    assert [key for key, _ in mesh_adapter.calls] == ["a", "b", "b"]
+    assert result.served_by == "b"
+    assert result.handoff is None  # nobody handed off; b was simply already up
+    assert agent.awake_agent == "b"
 
 
 # ------------------------------------------------------------------- framework --

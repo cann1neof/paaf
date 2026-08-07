@@ -104,6 +104,11 @@ def make_mesh_config(
 
     ``capabilities`` maps a profile name to its free-text manifest (D-08), which
     is what the generated handoff tool descriptions are built from.
+
+    ``hop_budget`` and ``default_agent`` are the two mesh-level knobs (D-08/D-09).
+    They are passed straight through rather than defaulted here, so a budget test
+    reads the value it is testing in its own body and the schema's own default
+    (and its floor) stay the single source of truth.
     """
 
     def _make(
@@ -111,6 +116,8 @@ def make_mesh_config(
         peers: Mapping[str, Sequence[str]] | None = None,
         base_prompt: str = "",
         capabilities: Mapping[str, str] | None = None,
+        hop_budget: int | None = None,
+        default_agent: str | None = None,
     ) -> LlmConfig:
         graph = dict(peers or {})
         manifests = dict(capabilities or {})
@@ -118,8 +125,18 @@ def make_mesh_config(
         # dict.fromkeys preserves declaration order while de-duplicating, so the
         # profiles dict reads in the order the test wrote the graph.
         names = dict.fromkeys(
-            [active, *graph, *(peer for edges in graph.values() for peer in edges)]
+            [
+                active,
+                *graph,
+                *(peer for edges in graph.values() for peer in edges),
+                *([default_agent] if default_agent else []),
+            ]
         )
+        extra: dict[str, Any] = {}
+        if hop_budget is not None:
+            extra["hop_budget"] = hop_budget
+        if default_agent is not None:
+            extra["default_agent"] = default_agent
         return LlmConfig(
             base_prompt=base_prompt,
             active_profile=active,
@@ -131,6 +148,7 @@ def make_mesh_config(
                 )
                 for name in names
             },
+            **extra,
         )
 
     return _make

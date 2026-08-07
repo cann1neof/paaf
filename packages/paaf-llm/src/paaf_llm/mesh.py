@@ -121,6 +121,43 @@ def handoff_tools(
     )
 
 
+def tools_for_leg(
+    awake_name: str,
+    awake: ModelProfile,
+    profiles: Mapping[str, ModelProfile],
+    hops_used: int,
+    budget: int,
+) -> tuple[ToolSpec, ...]:
+    """Return the moves available on ONE leg: the peer tools, or none at the wall.
+
+    The hop budget and the peer graph are the same mechanism seen twice — both
+    decide what is *offerable*, and neither instructs the model about anything
+    (D-08). Past the wall this returns an empty tuple, so the awake agent answers
+    with no further move available. That is the absence of an option rather than
+    a request to stop, which is the only form of the rule that holds no matter
+    what the model decides.
+
+    It is a pure function of five values so the rule is testable without driving
+    a turn, and so the engine has exactly ONE place that decides it. A budget
+    checked at the call site instead would be a second copy of the wall, and two
+    copies of a safety rule is one copy plus a future divergence.
+
+    ``hops_used >= budget`` rather than ``>``: the budget counts handoffs, so
+    after the third hop of a three-hop budget there is nothing left to spend.
+
+    Args:
+        awake_name: the agent this leg belongs to (see :func:`handoff_tools`).
+        awake: its profile — the ``peers`` list is the reachable set.
+        profiles: the declared profiles, read only for each peer's manifest.
+        hops_used: handoffs already made in THIS user turn.
+        budget: ``LlmConfig.hop_budget``, never a constant read from here — the
+            wall's height belongs to the user (floor :data:`HOP_BUDGET_FLOOR`).
+    """
+    if hops_used >= budget:
+        return ()
+    return handoff_tools(awake_name, awake, profiles)
+
+
 def _describe(peer: str, profile: ModelProfile | None) -> str:
     """Return the tool description for ``peer`` — its manifest, verbatim.
 

@@ -63,6 +63,22 @@ Three properties of the handoff loop are load-bearing and cheap to destroy:
 * **The handoff tool call never enters** :attr:`Agent.history`. ``Role`` has no
   ``tool`` member, so it is structurally unrepresentable — and keeping it that
   way is a decision (OQ-1 forbids widening ``Role``), not an accident.
+
+**The loop terminates because of a wall, not because of a prompt (D-08).** The
+engine counts hops and asks :func:`paaf_llm.mesh.tools_for_leg` for this leg's
+moves; past ``LlmConfig.hop_budget`` that is the empty tuple, so the awake agent
+answers with nothing left to call. A model cannot talk past a tool it does not
+have, which is the only property that survives contact with a model that has
+decided to keep hopping. The budget's floor is three because the legitimate
+A→B→A hand-back costs two, so the wall must stand *above* the behavior MESH-03
+requires — and the mesh suite proves both halves as a pair.
+
+At the wall, control goes to the user's declared ``default_agent`` if there is
+one (D-09), and otherwise stays with whoever is awake (OQ-2). Never to
+``active_profile``: that would be PAAF picking an agent in the one situation
+where the user declined to. Either way a ``BUDGET_EXHAUSTED`` signal is emitted,
+because a turn that quietly stopped hopping looks exactly like one that never
+wanted to.
 """
 
 from __future__ import annotations
@@ -190,7 +206,7 @@ class Agent:
 
     # ---------------------------------------------------------------- chain --
 
-    def _chain(self) -> list[tuple[str, ModelProfile]]:
+    def _chain(self, awake: str | None = None) -> list[tuple[str, ModelProfile]]:
         """Return ``[(name, profile), ...]`` in the user's declared order.
 
         The NAME is carried alongside the profile because it is not *on* it:
@@ -205,8 +221,14 @@ class Agent:
         the two are the same value, which is why this changed nothing for Phase 3.
         The fallback chain itself is still the global one; per-agent chains
         (SC#4) arrive in plan 04-06.
+
+        ``awake`` names the agent explicitly. :meth:`turn` passes it because the
+        agent serving the current leg is a LOCAL value during a turn — it is
+        written back to :attr:`awake_agent` only once the turn has succeeded, so
+        a turn that raised part-way cannot leave a phantom agent awake. Omitting
+        it falls back to the attribute, which is what :meth:`warmup` wants.
         """
-        names = [self.awake_agent, *self._config.fallback_chain]
+        names = [awake or self.awake_agent, *self._config.fallback_chain]
         return [(name, self._config.profiles[name]) for name in names]
 
     def system_prompt(self) -> str:
@@ -240,9 +262,11 @@ class Agent:
 
         One question in, one answer out (D-10): a handoff resolves INSIDE this
         call, so the caller sees a single reply from whichever agent ended up
-        answering. Each leg is a full model round-trip, which is why the hop count
-        is bounded from the first line of mesh code that ever shipped (Pitfall 6,
-        T-04-04) rather than left for the plan that makes it configurable.
+        answering. Each leg is a full model round-trip, and handoff is silent, so
+        a hopping turn is an assistant going quiet (Pitfall 6, T-04-04) — which
+        is why the loop is walled by ``LlmConfig.hop_budget`` (default 3, floor
+        3) and why the wall is enforced by taking the tools away rather than by
+        asking the model to stop.
 
         Raises:
             AllProvidersFailed: every profile in the awake agent's chain degraded.
@@ -262,18 +286,30 @@ class Agent:
 
         accepted: HandoffRequest | None = None
         hops = 0
+        budget = self._config.hop_budget
+        # LOCAL for the duration of the turn, written back to `self.awake_agent`
+        # only on success (see the write-back below). A turn that raised part-way
+        # must not leave a phantom agent awake holding a conversation it never
+        # answered — the same rule `history` already follows (D-01).
+        awake = self.awake_agent
+        # The mesh path is taken only when there is a mesh: an adapter that can
+        # be offered tools AND a config in which somebody declared a peer. With
+        # no graph at all this is the Phase-3 single-agent turn, unchanged.
+        mesh_active = tool_calling and any(
+            profile.peers for profile in self._config.profiles.values()
+        )
 
         while True:
-            awake = self.awake_agent
             profile = self._config.profiles[awake]
 
-            # Capability removal (MESH-02) and the hop wall (T-04-04) are the same
-            # mechanism: past the budget the tools are simply not offered, so the
-            # awake agent answers with no further move available. That is the
-            # absence of an option, not an instruction the model could ignore.
+            # ONE place decides the surface (mesh.tools_for_leg): the declared
+            # peers, or nothing at all once the budget is spent. D-08 — at the
+            # wall the tool is WITHDRAWN, and the model is never told to stop.
+            # Capability removal is the only mechanism that holds regardless of
+            # what the model decides; an instruction is a request it may decline.
             tools: tuple[ToolSpec, ...] = (
-                mesh.handoff_tools(awake, profile, self._config.profiles)
-                if tool_calling and hops < mesh.DEFAULT_HOP_BUDGET
+                mesh.tools_for_leg(awake, profile, self._config.profiles, hops, budget)
+                if mesh_active
                 else ()
             )
 
@@ -288,7 +324,9 @@ class Agent:
                 Message("user", user_text),
             ]
 
-            served_by, reply, trail = await self._run_chain(messages, tools)
+            served_by, reply, trail = await self._run_chain(
+                messages, tools, awake=awake, tool_path=mesh_active
+            )
 
             # Read tool calls ONCE, after the stream aggregated, and only if this
             # leg actually offered tools — an adapter's last-call state is stale
@@ -310,8 +348,11 @@ class Agent:
                 raise
 
             accepted = HandoffRequest(from_agent=awake, to_agent=target)
-            self.awake_agent = target
+            awake = target
             hops += 1
+
+            if hops >= budget:
+                awake = self._exhausted(turn_id, awake, budget)
 
         # SPIKE-05: read usage ONCE, after the stream fully aggregated. Several
         # providers publish counts only on the final message, so a per-chunk
@@ -334,6 +375,11 @@ class Agent:
         # decision (OQ-1 forbids widening `Role`), not an accident.
         self.history.append(Message("user", user_text))
         self.history.append(Message("assistant", reply))
+        # Written back only now, and only on success (MESH-03, Assumption A3):
+        # the agent that ended this turn awake starts the next one. Sticky
+        # within the process and deliberately not persisted — history is already
+        # ephemeral, so a persisted awake agent would return remembering nothing.
+        self.awake_agent = awake
 
         return TurnResult(
             text=reply,
@@ -342,6 +388,44 @@ class Agent:
             fallback_trail=trail,
             handoff=accepted,
         )
+
+    def _exhausted(self, turn_id: str, awake: str, budget: int) -> str:
+        """Say the wall was hit, and return who serves the final leg (D-09/OQ-2).
+
+        Two branches, and the second is the one worth reading twice.
+
+        With a ``default_agent`` declared, the home agent the USER named takes
+        over and becomes awake (D-09). That is the whole point of the field:
+        somebody has to speak when the mesh has run out of moves, and PAAF does
+        not pick them.
+
+        With none declared, the currently-awake agent answers — with the handoff
+        tools withdrawn, because :func:`mesh.tools_for_leg` is already past the
+        wall. This is **not** PAAF guessing a fallback: it is the absence of a
+        further move, which is exactly what exhaustion means, and it composes
+        with D-08 rather than adding a rule. Falling back to
+        ``config.active_profile`` is the natural wrong implementation and is
+        explicitly rejected (OQ-2) — it would be PAAF choosing an agent on the
+        user's behalf, in the one situation where the user said nothing.
+
+        Emitted BEFORE the final leg runs, and exactly once per turn, because
+        the loop reaches ``hops >= budget`` only on the hop that spends the last
+        of the budget. Exhaustion must never be silent: a turn that quietly
+        stopped hopping is indistinguishable from one that never wanted to
+        (T-04-13). The matching ``handoffs`` row (``outcome="budget_exhausted"``,
+        declared in plan 04-02's schema) is written by plan 04-06, which owns
+        every trace emit site.
+        """
+        home = self._config.default_agent
+        server = home if home is not None else awake
+        self._signal(
+            MeshSignalKind.BUDGET_EXHAUSTED,
+            turn_id,
+            from_agent=awake,
+            to_agent=server,
+            detail=str(budget),
+        )
+        return server
 
     def _announce_if_mesh_unavailable(self, turn_id: str, tool_calling: bool) -> None:
         """Say so, once, when a peer graph exists but the adapter cannot serve it.
@@ -444,22 +528,37 @@ class Agent:
         )
 
     async def _run_chain(
-        self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec] = (),
+        *,
+        awake: str | None = None,
+        tool_path: bool = False,
     ) -> tuple[str, str, list[Hop]]:
         """Return ``(served_by, reply, trail)`` from the first profile to commit.
 
         ``tools`` is the handoff surface for this leg, empty on the single-agent
-        path. Offering tools is not a different MODE: the deadline, the
-        classification, and the committed-no-mid-stream-fallback rule are all
-        identical either way — only the call shape differs, because the port keeps
-        its tool vocabulary in a second protocol (D-02).
+        path AND on the leg past the wall. Offering tools is not a different
+        MODE: the deadline, the classification, and the
+        committed-no-mid-stream-fallback rule are all identical either way — only
+        the call shape differs, because the port keeps its tool vocabulary in a
+        second protocol (D-02).
+
+        ``tool_path`` selects the call shape and ``tools`` carries the payload,
+        and they are two arguments rather than one on purpose. On the mesh path
+        an EMPTY tool tuple is a statement — "you have no further move" (D-08) —
+        not the absence of one, so the withdrawn leg still goes through
+        ``stream_with_tools`` and is recorded as having been offered nothing. A
+        shape derived from ``bool(tools)`` could not tell that apart from a
+        Phase-3 single-agent turn, and the wall would then be unobservable at the
+        port, which is where the budget test needs to see it.
         """
-        chain = self._chain()
+        chain = self._chain(awake)
         trail: list[Hop] = []
         # Feature detection, not configuration (Code Example 1). An adapter that
         # is not a ToolCallingChatAdapter takes the Phase-3 call; `turn` has
         # already said so on the signal channel.
-        with_tools = bool(tools) and isinstance(self._adapter, ToolCallingChatAdapter)
+        with_tools = tool_path and isinstance(self._adapter, ToolCallingChatAdapter)
 
         for index, (name, profile) in enumerate(chain):
             next_name = chain[index + 1][0] if index + 1 < len(chain) else ""

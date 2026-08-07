@@ -187,6 +187,14 @@ class FakeAdapter:
         # the scripted calls on the plain `stream` path would let an engine that
         # never offers tools still "receive" a handoff — and the test written to
         # catch exactly that would pass.
+        #
+        # `tools_offered` is the count, not the code path, and that distinction
+        # matters at the hop wall: the engine withdraws the handoff tools by
+        # calling `stream_with_tools` with an EMPTY tuple (D-08 — the withdrawal
+        # is a statement, so it is made at the port). Keying on the path alone
+        # would have this fake publish a scripted handoff for a leg that was
+        # offered nothing, which is precisely the engine bug
+        # `test_budget_stops_a_loop_and_withdraws_the_tool` exists to catch.
         self._last_tool_calls = program.tool_calls if tools_offered else ()
 
     async def stream(
@@ -215,6 +223,13 @@ class FakeAdapter:
         triggers, same publish-after-drain rule — plus the :attr:`tool_offers`
         recording and the scripted :meth:`last_tool_calls` publication.
 
+        ``tools`` may be EMPTY, and that is a meaningful call rather than a
+        pointless one: it is how the engine withdraws the handoff surface at the
+        hop wall (D-08). The offer is recorded as an empty tuple — evidence that
+        the leg ran and was given no moves — and nothing is published to
+        :meth:`last_tool_calls`, because a provider offered no tools cannot have
+        called one.
+
         Raises:
             AdapterError: the subclass the program named, on the first token.
             LookupError: when ``profile`` was never programmed. Pointedly not an
@@ -223,7 +238,7 @@ class FakeAdapter:
         key = self.program_key(profile)
         self.calls.append((key, tuple(messages)))
         self.tool_offers.append((key, tuple(tool.name for tool in tools)))
-        async for token in self._scripted(key, tools_offered=True):
+        async for token in self._scripted(key, tools_offered=bool(tools)):
             yield token
 
     def last_usage(self) -> Usage:
@@ -233,9 +248,9 @@ class FakeAdapter:
     def last_tool_calls(self) -> tuple[ToolCall, ...]:
         """Return the tool calls published by the most recently aggregated stream.
 
-        Empty unless the last stream went through :meth:`stream_with_tools` AND
-        its program scripted calls — the ordinary case being a profile that just
-        answered.
+        Empty unless the last stream went through :meth:`stream_with_tools` with
+        at least one tool AND its program scripted calls — the ordinary case
+        being a profile that just answered.
         """
         return self._last_tool_calls
 
