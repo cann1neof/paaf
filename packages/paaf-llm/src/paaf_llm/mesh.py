@@ -31,6 +31,16 @@ depend on anything swappable (SC#5).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from .ports import ToolSpec, UndeclaredPeer
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from .ports import ToolCall
+    from .profiles import ModelProfile
+
 #: The prefix every handoff tool's name carries. Three independent
 #: implementations converged on this exact spelling — the OpenAI Agents SDK
 #: (``transfer_to_<agent_name>``, its documented default) and ``langgraph-swarm``
@@ -53,3 +63,117 @@ HANDOFF_TOOL_PREFIX = "transfer_to_"
 #: Plan 04-03 makes it user-configurable (with this value as the floor) and adds
 #: the withdrawal-at-the-wall and exhaustion paths.
 DEFAULT_HOP_BUDGET = 3
+
+
+def handoff_tools(
+    awake_name: str,
+    awake: ModelProfile,
+    profiles: Mapping[str, ModelProfile],
+) -> tuple[ToolSpec, ...]:
+    """Return one handoff tool per DECLARED peer of ``awake``, in declared order.
+
+    This is the capability-removal half of MESH-02: a profile that is not one of
+    ``awake.peers`` produces no tool, so it is not a move the model can make. The
+    order is the user's — ``peers`` is written by hand and its order is part of
+    what the user controls, exactly as ``fallback_chain``'s is.
+
+    Every spec takes no parameters. The target lives in the tool's name (see
+    :data:`HANDOFF_TOOL_PREFIX`), so the set of names offered IS the set of moves
+    available, with no argument in between for a model to get wrong.
+
+    **Both strings a tool carries are steering text** — the generated name and the
+    peer's own ``capabilities`` manifest are read by the model and shape its
+    choice. PERS-05 therefore says the user must be able to read them too; plan
+    04-05 renders exactly these specs in the prompt inspector under
+    ``--provenance``. Nothing here may be text the inspector cannot be handed.
+
+    ``profiles`` is read ONLY to look up a peer's manifest. It is never consulted
+    to decide reachability — that is :func:`resolve_handoff`'s job and it uses
+    ``awake.peers``.
+
+    Args:
+        awake_name: the name of the agent being offered these tools. Present for
+            symmetry with :func:`resolve_handoff` and for error text; a profile
+            does not carry its own name (it is the key it sits under).
+        awake: the profile whose ``peers`` shape the surface.
+        profiles: the declared profiles, for reading each peer's manifest.
+    """
+    del awake_name  # named for symmetry; the surface depends only on `awake`
+    return tuple(
+        ToolSpec(
+            name=f"{HANDOFF_TOOL_PREFIX}{peer}",
+            description=_describe(peer, profiles.get(peer)),
+            parameters={},
+        )
+        for peer in awake.peers
+    )
+
+
+def _describe(peer: str, profile: ModelProfile | None) -> str:
+    """Return the tool description for ``peer`` — its manifest, verbatim.
+
+    Verbatim is the contract: this is the user's own free text (D-08), and
+    rewriting or summarizing it would put words the user never wrote in front of
+    the model while ``paaf prompt`` showed the original.
+
+    A peer that declared no manifest gets a neutral one-line fallback that names
+    the peer and says nothing else. PAAF does not invent a capability on the
+    user's behalf — a guessed description is a routing rule written by the
+    framework, which is precisely what MESH-01 forbids.
+    """
+    manifest = profile.capabilities.strip() if profile is not None else ""
+    return manifest or f"Hand the conversation to {peer}."
+
+
+def target_of(call: ToolCall) -> str:
+    """Return the peer name a tool call addresses — the name minus the prefix.
+
+    A name that does not carry :data:`HANDOFF_TOOL_PREFIX` is returned RAW rather
+    than repaired. That is deliberate: the caller needs the offending value to
+    put in the error, and stripping a prefix that was never there could turn a
+    call to some unrelated tool named ``chef`` into a successful handoff to the
+    peer ``chef``. :func:`resolve_handoff` checks the prefix itself.
+    """
+    if not call.name.startswith(HANDOFF_TOOL_PREFIX):
+        return call.name
+    return call.name[len(HANDOFF_TOOL_PREFIX) :]
+
+
+def resolve_handoff(awake_name: str, awake: ModelProfile, call: ToolCall) -> str:
+    """Return the validated handoff target, or raise :class:`UndeclaredPeer`.
+
+    Deterministic and unconditional. This is the ONE mesh guarantee that holds in
+    every configuration, observed or not (D-13) — the observer may be absent,
+    unreachable, or granted nothing, and this still refuses.
+
+    It exists IN ADDITION to capability removal, and the redundancy is the point.
+    Models routinely emit tool calls for tools that were never bound; a design
+    resting on :func:`handoff_tools` alone would make MESH-02's "rejected rather
+    than silently followed" contingent on the provider never misbehaving, which
+    is the one circumstance the requirement was written for (Pitfall 4).
+
+    Checked against ``awake.peers`` and NEVER against ``LlmConfig.profiles``: a
+    target that merely EXISTS is not a target this agent may reach. The natural
+    wrong implementation — ``profiles[target]`` — passes every other test in the
+    mesh suite and fails only this one.
+
+    Raises:
+        UndeclaredPeer: the call is not a handoff tool at all, or it names a
+            target outside ``awake``'s declared peers. Both messages name the
+            offending value and the alternatives, in ``profiles.py``'s style.
+    """
+    offered = [f"{HANDOFF_TOOL_PREFIX}{peer}" for peer in sorted(awake.peers)]
+
+    if not call.name.startswith(HANDOFF_TOOL_PREFIX):
+        raise UndeclaredPeer(
+            f"{awake_name!r} called tool {call.name!r}, which is not a handoff "
+            f"tool; the only tools it was offered are {offered}"
+        )
+
+    target = target_of(call)
+    if target not in awake.peers:
+        raise UndeclaredPeer(
+            f"{awake_name!r} attempted a handoff to {target!r}, which is not in "
+            f"its declared peers {sorted(awake.peers)}"
+        )
+    return target

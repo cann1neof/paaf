@@ -153,7 +153,7 @@ async def test_undeclared_target_raises(
     assert agent.awake_agent == "host"
 
 
-async def test_declared_target_not_blocked(
+async def test_declared_not_blocked(
     fake_adapter: FakeAdapter, make_mesh_config: Callable[..., LlmConfig]
 ) -> None:
     """Negative control for the guard: the SAME config, a declared target, no error.

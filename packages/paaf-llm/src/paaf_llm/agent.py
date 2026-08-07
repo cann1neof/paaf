@@ -13,8 +13,10 @@ which is what D-06 puts in front of the user.
 
 So the loop below is pure PAAF and stdlib:
 
-* **Ordered, user-owned.** ``[active_profile, *fallback_chain]`` in exactly the
+* **Ordered, user-owned.** ``[awake_agent, *fallback_chain]`` in exactly the
   order the user wrote it (MODEL-03). No scoring, no reordering, no cleverness.
+  Before any handoff the awake agent IS ``active_profile``; resilience follows
+  whoever is actually being asked to answer.
 * **A first-token deadline, and only that.** ``asyncio.timeout`` wraps ONLY the
   first ``__anext__``; once a token flows the profile has committed and the rest
   of the stream is never interrupted (D-04's slow-first-token trigger is about
@@ -39,6 +41,28 @@ then measures a *warm* model's time-to-first-token, which is what
 **History is ephemeral and in-memory** (D-01): a turn that nobody answered is
 never appended, so the next turn cannot ship a user message the model never
 replied to.
+
+**Phase 4 (MESH-01/02/03): two nested loops, and they mean different things.**
+:meth:`Agent.turn` is now a bounded loop over agent LEGS wrapped around the
+unchanged fallback loop in :meth:`Agent._run_chain`. Handoff is *delegation* —
+the awake model decided a peer should answer — while fallback is *resilience* —
+this provider is not working, try the next one. Collapsing them would quietly
+make every fallback target a handoff target, which is exactly why
+``LlmConfig.fallback_chain`` and ``ModelProfile.peers`` are separate fields.
+
+Three properties of the handoff loop are load-bearing and cheap to destroy:
+
+* **PAAF never picks the target.** It offers one tool per declared peer and
+  validates the answer (:mod:`paaf_llm.mesh`). There is no routing rule here and
+  no config key that could express one (MESH-01).
+* **Each leg builds a FRESH message list** — ``[system, *history, user]``. That
+  one line is simultaneously MESH-03's "the receiving agent gets the full prior
+  conversation", the reason A→B→A hand-back works (history is shared, not
+  per-agent), and the reason the dangling-tool-call trap cannot be sprung
+  (Pitfall 1): nothing is carried between legs.
+* **The handoff tool call never enters** :attr:`Agent.history`. ``Role`` has no
+  ``tool`` member, so it is structurally unrepresentable — and keeping it that
+  way is a decision (OQ-1 forbids widening ``Role``), not an accident.
 """
 
 from __future__ import annotations
@@ -46,23 +70,32 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from paaf_trace.store import RunEvent
 
+from . import mesh
 from .compose import PromptComposer
 from .ports import (
     AdapterError,
     AllProvidersFailed,
     ChatAdapter,
     FallbackReason,
+    HandoffRequest,
+    MeshSignal,
+    MeshSignalKind,
+    MeshSignalSink,
     Message,
+    ToolCallingChatAdapter,
     TurnResult,
+    UndeclaredPeer,
     Usage,
 )
 
 if TYPE_CHECKING:
+    from .ports import ToolSpec
     from .profiles import LlmConfig, ModelProfile
 
 #: One recorded fallback hop: ``(from_profile, to_profile, reason)``. ``to`` is
@@ -104,11 +137,13 @@ class Agent:
         secret_store: SecretResolver | None = None,
         trace: TraceSink | None = None,
         skill_fragments: Sequence[tuple[str, str]] = (),
+        signals: MeshSignalSink | None = None,
     ) -> None:
         self._config = config
         self._adapter = adapter
         self._secret_store = secret_store
         self._trace = trace
+        self._signals = signals
         #: D-09 stub: fragments are injected. Real skill discovery is Phase 6,
         #: and it plugs into this same ``(name, text)`` shape.
         self._skill_fragments: list[tuple[str, str]] = list(skill_fragments)
@@ -116,6 +151,21 @@ class Agent:
         #: The ephemeral conversation, user/assistant only. The system message is
         #: composed fresh each turn so a live config edit takes effect (WARM).
         self.history: list[Message] = []
+        #: Which agent is currently awake (MESH-03, Pattern 4). Starts at the
+        #: user's active profile, becomes an accepted handoff target, and is
+        #: STICKY across user turns — "the receiving agent becomes awake until it
+        #: hands off again" reads naturally as sticky, and it matches the
+        #: active-agent state variable the multi-agent literature converged on.
+        #:
+        #: Deliberately NOT persisted across a restart. Phase-3 history is already
+        #: ephemeral and in-memory (D-01), so persisting awake-state alone would
+        #: produce the incoherent state of "agent B is awake but remembers
+        #: nothing said to it".
+        self.awake_agent: str = config.active_profile
+        #: MESH_UNAVAILABLE is announced once per agent, not once per turn: it
+        #: reports a static fact about the adapter, and re-emitting it on every
+        #: turn would train a listener to ignore the channel.
+        self._mesh_unavailable_announced = False
 
     @classmethod
     def build(
@@ -126,6 +176,7 @@ class Agent:
         secret_store: SecretResolver | None = None,
         trace: TraceSink | None = None,
         skill_fragments: Sequence[tuple[str, str]] = (),
+        signals: MeshSignalSink | None = None,
     ) -> Agent:
         """Construct an agent for ``config`` served through ``adapter``."""
         return cls(
@@ -134,6 +185,7 @@ class Agent:
             secret_store=secret_store,
             trace=trace,
             skill_fragments=skill_fragments,
+            signals=signals,
         )
 
     # ---------------------------------------------------------------- chain --
@@ -145,8 +197,16 @@ class Agent:
         a profile's name is the key it sits under in ``LlmConfig.profiles`` and
         does not cross the adapter port. ``served_by`` and every hop reason are
         reported with these names, so the loop must hold them itself.
+
+        The chain starts at whoever is AWAKE rather than at
+        ``config.active_profile``, because resilience follows the agent actually
+        being asked to answer — falling back from the active profile while a peer
+        holds the conversation would answer as the wrong agent. Before any handoff
+        the two are the same value, which is why this changed nothing for Phase 3.
+        The fallback chain itself is still the global one; per-agent chains
+        (SC#4) arrive in plan 04-06.
         """
-        names = [self._config.active_profile, *self._config.fallback_chain]
+        names = [self.awake_agent, *self._config.fallback_chain]
         return [(name, self._config.profiles[name]) for name in names]
 
     def system_prompt(self) -> str:
@@ -176,27 +236,102 @@ class Agent:
     # ----------------------------------------------------------------- turn --
 
     async def turn(self, user_text: str) -> TurnResult:
-        """Serve one user turn, falling back down the chain as needed.
+        """Serve one user turn — a bounded loop over agent legs (MESH-01/02/03).
+
+        One question in, one answer out (D-10): a handoff resolves INSIDE this
+        call, so the caller sees a single reply from whichever agent ended up
+        answering. Each leg is a full model round-trip, which is why the hop count
+        is bounded from the first line of mesh code that ever shipped (Pitfall 6,
+        T-04-04) rather than left for the plan that makes it configurable.
 
         Raises:
-            AllProvidersFailed: every profile in the chain degraded.
+            AllProvidersFailed: every profile in the awake agent's chain degraded.
+            UndeclaredPeer: the model named a handoff target outside its declared
+                peers (MESH-02). Nothing is appended to :attr:`history` — a turn
+                nobody answered must not leave a user message the model never
+                replied to.
         """
-        system = self.system_prompt()
-        messages: list[Message] = [
-            Message("system", system),
-            *self.history,
-            Message("user", user_text),
-        ]
-
+        # An engine-generated correlation id, never a database row id: the trace
+        # writer is fire-and-forget and does not surface `lastrowid`, so
+        # correlating on one would force a writer redesign (Finding 5).
+        turn_id = uuid.uuid4().hex
         started_at = time.time()
-        served_by, reply, trail = await self._run_chain(messages)
+
+        tool_calling = isinstance(self._adapter, ToolCallingChatAdapter)
+        self._announce_if_mesh_unavailable(turn_id, tool_calling)
+
+        accepted: HandoffRequest | None = None
+        hops = 0
+
+        while True:
+            awake = self.awake_agent
+            profile = self._config.profiles[awake]
+
+            # Capability removal (MESH-02) and the hop wall (T-04-04) are the same
+            # mechanism: past the budget the tools are simply not offered, so the
+            # awake agent answers with no further move available. That is the
+            # absence of an option, not an instruction the model could ignore.
+            tools: tuple[ToolSpec, ...] = (
+                mesh.handoff_tools(awake, profile, self._config.profiles)
+                if tool_calling and hops < mesh.DEFAULT_HOP_BUDGET
+                else ()
+            )
+
+            # A FRESH message list per leg (Pitfall 1). The receiving agent gets
+            # the system prompt plus the whole prior transcript plus this turn —
+            # which is simultaneously MESH-03's guarantee and the reason a
+            # dangling tool call cannot survive between legs: nothing is reused.
+            system = self.system_prompt()
+            messages: list[Message] = [
+                Message("system", system),
+                *self.history,
+                Message("user", user_text),
+            ]
+
+            served_by, reply, trail = await self._run_chain(messages, tools)
+
+            # Read tool calls ONCE, after the stream aggregated, and only if this
+            # leg actually offered tools — an adapter's last-call state is stale
+            # by definition on a leg that offered none.
+            calls = self._adapter.last_tool_calls() if tools else ()  # type: ignore[attr-defined]
+            if not calls:
+                break
+
+            try:
+                target = mesh.resolve_handoff(awake, profile, calls[0])
+            except UndeclaredPeer as exc:
+                self._signal(
+                    MeshSignalKind.UNDECLARED_PEER,
+                    turn_id,
+                    from_agent=awake,
+                    to_agent=mesh.target_of(calls[0]),
+                    detail=str(exc),
+                )
+                raise
+
+            accepted = HandoffRequest(from_agent=awake, to_agent=target)
+            self.awake_agent = target
+            hops += 1
 
         # SPIKE-05: read usage ONCE, after the stream fully aggregated. Several
         # providers publish counts only on the final message, so a per-chunk
         # read reports None almost every time.
         usage: Usage = self._adapter.last_usage()
+        # One row for the turn, describing the leg that answered. MESH-05 (plan
+        # 04-04) splits this into one row per leg correlated by `turn_id`, which
+        # is what gives every leg its own fallback provenance; until then a
+        # handed-off turn records the answering agent's chain only.
         self._drain(system, served_by, trail, usage, started_at, time.time())
 
+        # Appended only now, and only on success — the existing rule (D-01), and
+        # the reason a refused handoff leaves no trace in the conversation.
+        #
+        # Pitfall 1: the handoff TOOL CALL is never appended here, in any form.
+        # Carrying it would leave an assistant message with an unanswered
+        # tool_call_id, which poisons every SUBSEQUENT request to an
+        # OpenAI-compatible provider rather than just this one. PAAF's `Role` has
+        # no `tool` member so it is unrepresentable — keeping it that way is a
+        # decision (OQ-1 forbids widening `Role`), not an accident.
         self.history.append(Message("user", user_text))
         self.history.append(Message("assistant", reply))
 
@@ -205,7 +340,66 @@ class Agent:
             served_by=served_by,
             usage=usage,
             fallback_trail=trail,
-            handoff=None,  # Phase-4 seam, inert here
+            handoff=accepted,
+        )
+
+    def _announce_if_mesh_unavailable(self, turn_id: str, tool_calling: bool) -> None:
+        """Say so, once, when a peer graph exists but the adapter cannot serve it.
+
+        An adapter that is not a :class:`~paaf_llm.ports.ToolCallingChatAdapter`
+        cannot be offered the handoff tools, so the mesh silently does not happen.
+        Silently is the problem: a user who declared peers and sees an assistant
+        that never hands off would have to infer the cause. Emitting
+        :attr:`~paaf_llm.ports.MeshSignalKind.MESH_UNAVAILABLE` states it instead,
+        and the turn then runs the ordinary Phase-3 single-agent path.
+
+        No signal is emitted when no profile declares a peer — there is no mesh to
+        be unavailable, and reporting one would be noise.
+        """
+        if tool_calling or self._mesh_unavailable_announced:
+            return
+        if not any(profile.peers for profile in self._config.profiles.values()):
+            return
+        self._mesh_unavailable_announced = True
+        self._signal(
+            MeshSignalKind.MESH_UNAVAILABLE,
+            turn_id,
+            from_agent=self.awake_agent,
+            to_agent="",
+            detail=(
+                f"{type(self._adapter).__name__} cannot be offered tools, so "
+                f"declared peers are unreachable; running the single-agent path"
+            ),
+        )
+
+    def _signal(
+        self,
+        kind: MeshSignalKind,
+        turn_id: str,
+        *,
+        from_agent: str,
+        to_agent: str,
+        detail: str = "",
+    ) -> None:
+        """Publish one mesh event to the sink, if a sink is attached (D-05).
+
+        The same ``if ... is None: return`` shape as :meth:`_drain`, and for the
+        same reason: observability is opt-in plumbing, so an agent built without
+        it must take exactly the same path as one built with it.
+
+        Fire-and-forget by contract — the turn's outcome never depends on a
+        listener, which is why this returns nothing and awaits nothing.
+        """
+        if self._signals is None:
+            return
+        self._signals.signal(
+            MeshSignal(
+                kind=kind,
+                turn_id=turn_id,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                detail=detail,
+            )
         )
 
     def _drain(
@@ -250,15 +444,30 @@ class Agent:
         )
 
     async def _run_chain(
-        self, messages: Sequence[Message]
+        self, messages: Sequence[Message], tools: Sequence[ToolSpec] = ()
     ) -> tuple[str, str, list[Hop]]:
-        """Return ``(served_by, reply, trail)`` from the first profile to commit."""
+        """Return ``(served_by, reply, trail)`` from the first profile to commit.
+
+        ``tools`` is the handoff surface for this leg, empty on the single-agent
+        path. Offering tools is not a different MODE: the deadline, the
+        classification, and the committed-no-mid-stream-fallback rule are all
+        identical either way — only the call shape differs, because the port keeps
+        its tool vocabulary in a second protocol (D-02).
+        """
         chain = self._chain()
         trail: list[Hop] = []
+        # Feature detection, not configuration (Code Example 1). An adapter that
+        # is not a ToolCallingChatAdapter takes the Phase-3 call; `turn` has
+        # already said so on the signal channel.
+        with_tools = bool(tools) and isinstance(self._adapter, ToolCallingChatAdapter)
 
         for index, (name, profile) in enumerate(chain):
             next_name = chain[index + 1][0] if index + 1 < len(chain) else ""
-            gen = self._adapter.stream(profile, messages)
+            gen = (
+                self._adapter.stream_with_tools(profile, messages, tools)
+                if with_tools
+                else self._adapter.stream(profile, messages)
+            )
 
             try:
                 # The deadline covers ONLY time-to-first-token (D-04/D-05).
