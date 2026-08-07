@@ -39,7 +39,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
-from paaf_llm import cli
+from paaf_llm import cli, mesh
 from paaf_llm.cli import (
     CONFIG_FAILURE_NOTICE,
     MESH_LIVE_NOTE,
@@ -56,6 +56,7 @@ from paaf_llm.ports import (
     ConnectionFailed,
     EngineError,
     ServerError,
+    ToolSpec,
     Usage,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
@@ -323,6 +324,267 @@ def test_provenance_is_not_the_default(tmp_path: Path) -> None:
 
     result = CliRunner().invoke(main, ["prompt", "--config", path])
     assert prefix not in result.output
+
+
+# ------------------------------- MESH-04 / PERS-05: every steering byte is here
+#
+# Phase 4's enforcement point, and it has two halves that must be read together.
+#
+# The prompt half is ordinary: the explainer generated from an agent's manifest
+# and peers is a labelled segment like any other, and it must appear VERBATIM.
+#
+# The tool half is the one RESEARCH Finding 1 exists for. A tool's name and its
+# description are sent to the model and steer it, and they are NOT part of the
+# system prompt — so an inspector that rendered only ``PromptComposer`` segments
+# would satisfy every Phase-3 test and still hide behaviour-steering text. That
+# is precisely what PERS-05 forbids, so ``--provenance`` renders the bound tool
+# surface too.
+#
+# OQ-3 draws the boundary and this section asserts it in BOTH directions: the
+# surface is reachable under ``--provenance`` / ``--agent``, and it is absent
+# from the default output, whose byte-exact pipe-safe contract is untouched.
+
+
+def mesh_config(**overrides: Any) -> LlmConfig:
+    """A three-agent config with a real peer graph and a per-agent prompt layer.
+
+    ``host`` may reach ``chef`` and ``clerk``; neither of those may reach anyone.
+    ``chef`` carries its own system prompt and persona so that ``--agent chef``
+    has something to show that ``--agent host`` does not — an inspector that
+    ignored the flag would otherwise print an identical prompt and look correct.
+    """
+    fields: dict[str, Any] = {
+        "base_prompt": BASE_PROMPT,
+        "active_profile": "host",
+        "profiles": {
+            "host": ModelProfile(
+                provider="ollama",
+                model="host",
+                capabilities="greeting, small talk, and deciding who answers",
+                peers=["chef", "clerk"],
+                persona="Warm, unhurried, never technical.",
+            ),
+            "chef": ModelProfile(
+                provider="ollama",
+                model="chef",
+                capabilities="cooking, recipes, and the kitchen timers",
+                system_prompt="You are the cook.",
+                persona="Blunt. Weights and minutes, no pleasantries.",
+            ),
+            "clerk": ModelProfile(provider="anthropic", model="clerk"),
+        },
+    }
+    fields.update(overrides)
+    return LlmConfig(**fields)
+
+
+def surface_for(config: LlmConfig, agent_name: str) -> tuple[ToolSpec, ...]:
+    """The tools ``agent_name`` is offered on the FIRST leg of a turn.
+
+    Read from :func:`paaf_llm.mesh.tools_for_leg` — the one function that decides
+    a leg's moves — rather than rebuilt here. A test that re-listed the expected
+    tools would pass against an inspector that had drifted from the engine, which
+    is the exact drift PERS-05 cannot tolerate.
+    """
+    return mesh.tools_for_leg(
+        agent_name, config.profiles[agent_name], config.profiles, 0, config.hop_budget
+    )
+
+
+def test_provenance_shows_the_generated_explainer_verbatim(tmp_path: Path) -> None:
+    """MESH-04: the explainer appears in the inspector as its own labelled segment.
+
+    Compared against :func:`mesh.explainer_for`'s own return value rather than
+    against a string this test writes out. Hand-writing the expected text would
+    make the test a copy of the template, so it would keep passing while the
+    inspector rendered a *stale* copy — and a stale explainer is worse than none,
+    since the user would be reading instructions the model was never given.
+
+    The peer manifests are asserted separately because they are the part the user
+    actually authored: MESH-04 says the explainer is generated *from the
+    capability manifest*, and an explainer that named peers without quoting them
+    would satisfy the label check and lose the content.
+    """
+    config = mesh_config()
+    path = write_config(tmp_path, config)
+
+    result = CliRunner().invoke(main, ["prompt", "--config", path, "--provenance"])
+    assert result.exit_code == 0, result.output
+
+    expected = mesh.explainer_for("host", config.profiles["host"], config.profiles)
+    assert expected  # the fixture really does declare peers
+    assert expected in result.output
+    assert PROVENANCE_LABEL.format(source=mesh.MESH_EXPLAINER_SOURCE) in result.output
+    assert PROVENANCE_LABEL.format(source=mesh.MESH_PERSONA_SOURCE) in result.output
+    for peer in config.profiles["host"].peers:
+        assert config.profiles[peer].capabilities in result.output
+
+    # An agent with no peers gets no explainer heading at all — an empty labelled
+    # span would say it was told something about handing off, and it was not.
+    clerk = CliRunner().invoke(
+        main, ["prompt", "--config", path, "--agent", "clerk", "--provenance"]
+    )
+    assert clerk.exit_code == 0, clerk.output
+    assert (
+        PROVENANCE_LABEL.format(source=mesh.MESH_EXPLAINER_SOURCE) not in clerk.output
+    )
+
+
+def test_provenance_tool_surface_visible(tmp_path: Path) -> None:
+    """PERS-05 made mechanical (Finding 1): EVERY offered tool is in the output.
+
+    The loop iterates the surface :func:`mesh.tools_for_leg` actually returns
+    rather than naming tools literally, which is what makes this test bite on a
+    change it was not written for: a tool added to the mesh in a later plan
+    without a matching inspector change turns this red instead of quietly
+    shipping steering text the user cannot read.
+
+    Both strings are asserted. The NAME is what the model calls and what a user
+    correlates with a trace row; the DESCRIPTION is the peer's own manifest,
+    which is the part that actually persuades the model to route.
+    """
+    config = mesh_config()
+    path = write_config(tmp_path, config)
+
+    result = CliRunner().invoke(main, ["prompt", "--config", path, "--provenance"])
+    assert result.exit_code == 0, result.output
+
+    surface = surface_for(config, "host")
+    assert surface  # a vacuous loop over an empty surface would prove nothing
+    for tool in surface:
+        assert tool.name in result.output, tool.name
+        assert tool.description in result.output, tool.name
+        label = PROVENANCE_LABEL.format(
+            source=f"{mesh.MESH_TOOL_SOURCE_PREFIX}{tool.name}"
+        )
+        assert label in result.output, label
+
+
+def test_default_output_is_byte_exact_and_carries_no_tool_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OQ-3's boundary, asserted in BOTH directions on the same config.
+
+    The default view keeps its Phase-3 contract exactly: the composed prompt,
+    nothing around it, no trailing newline, byte-identical to the one composer's
+    own output. The per-agent mesh LAYER is part of that prompt and so is present
+    — persona and explainer are text the model receives inside its system
+    message. The tool SURFACE is not, because it never was in the system message.
+
+    What is asserted absent is the tool NAME and the ``mesh:tool:`` label, not
+    the description: a tool's description IS the peer's manifest, and MESH-04
+    requires the explainer to quote that same manifest verbatim, so demanding the
+    description be absent would demand the explainer stop doing its job.
+    """
+    monkeypatch.setattr(cli, "load_skill_fragments", lambda _config: list(FRAGMENTS))
+    config = mesh_config()
+    path = write_config(tmp_path, config)
+
+    result = CliRunner().invoke(main, ["prompt", "--config", path])
+    assert result.exit_code == 0, result.output
+
+    host = config.profiles["host"]
+    composed = PromptComposer().compose(
+        mesh.base_prompt_for(host, config),
+        list(FRAGMENTS),
+        mesh.mesh_fragments_for("host", host, config),
+    )
+    assert result.output == composed
+    assert result.output == system_message_actually_sent(config, list(FRAGMENTS))
+    assert not result.output.endswith("\n")
+
+    # The steering text that lives in the prompt IS here...
+    assert mesh.explainer_for("host", host, config.profiles) in result.output
+    # ...and the surface that lives beside it is NOT (OQ-3).
+    assert mesh.MESH_TOOL_SOURCE_PREFIX not in result.output
+    assert mesh.HANDOFF_TOOL_PREFIX not in result.output
+    for tool in surface_for(config, "host"):
+        assert tool.name not in result.output
+
+
+def test_agent_flag_reads_a_peer_that_is_not_awake(tmp_path: Path) -> None:
+    """D-19: aim the inspector at any declared profile, awake or not.
+
+    ``chef`` is never the active profile and has not been handed anything, so
+    this flag is the ONLY way to read the prompt it would be sent. Without it,
+    SC#3 would be unreachable for every agent except whichever one happens to be
+    up — and "I cannot see what the other agents are told" is the same complaint
+    PERS-05 exists to answer.
+
+    The two prompts are asserted DIFFERENT as well as individually correct: an
+    inspector that accepted the flag and ignored it would satisfy every
+    containment check here by printing host's prompt twice.
+    """
+    config = mesh_config()
+    path = write_config(tmp_path, config)
+    runner = CliRunner()
+
+    host = runner.invoke(main, ["prompt", "--config", path])
+    chef = runner.invoke(main, ["prompt", "--config", path, "--agent", "chef"])
+    assert host.exit_code == 0 and chef.exit_code == 0, chef.output
+
+    assert chef.output.startswith("You are the cook.")
+    assert "Blunt. Weights and minutes, no pleasantries." in chef.output
+    assert chef.output != host.output
+    # chef declares no peers, so it is told about none — and host's persona,
+    # which belongs to a different agent entirely, is nowhere near it.
+    assert mesh.HANDOFF_TOOL_PREFIX not in chef.output
+    assert "Warm, unhurried, never technical." not in chef.output
+
+    # And --agent composes through the same one derivation the turn loop uses.
+    agent = build_agent(config, FakeAdapter(), skill_fragments=[])
+    assert chef.output == agent.system_prompt("chef")
+
+
+def test_agent_flag_reads_the_reserved_observer(tmp_path: Path) -> None:
+    """D-19: the observer's prompt is readable, and only this way.
+
+    The observer is never awake — that is what it is for — so no turn ever
+    composes its prompt and no default view can show it. ``--agent observer`` is
+    the whole of SC#3's coverage for the one profile whose instructions decide
+    whether a handoff is allowed to proceed at all.
+
+    Plan 04-07 makes the name reserved and keeps it out of every peer list. This
+    test does not depend on that: it declares an ordinary profile called
+    ``observer`` and asserts the flag reaches it, which is the behaviour that
+    must survive the reservation rather than be created by it.
+    """
+    config = mesh_config()
+    config.profiles["observer"] = ModelProfile(
+        provider="ollama",
+        model="observer",
+        system_prompt="You judge handoffs against each agent's constraints.",
+    )
+    path = write_config(tmp_path, config)
+
+    result = CliRunner().invoke(
+        main, ["prompt", "--config", path, "--agent", "observer", "--provenance"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "You judge handoffs against each agent's constraints." in result.output
+
+
+def test_agent_flag_rejects_an_unknown_name_readably(tmp_path: Path) -> None:
+    """T-04-23: an unvalidated CLI string must never reach a dict subscript.
+
+    The name is untrusted input that would otherwise index ``config.profiles``,
+    and a ``KeyError`` traceback is both ugly and uninformative — it names the
+    missing key and not the alternatives. The failure goes through the same
+    config-failure path every other unusable-configuration message uses, so the
+    two surfaces cannot drift into two wordings for the same problem.
+    """
+    path = write_config(tmp_path, mesh_config())
+
+    result = CliRunner().invoke(
+        main, ["prompt", "--config", path, "--agent", "nobody"]
+    )
+
+    assert result.exit_code != 0
+    assert "Traceback" not in result.output
+    assert "nobody" in result.output  # what was asked for
+    for declared in ("host", "chef", "clerk"):
+        assert declared in result.output  # what exists instead
 
 
 # ------------------------------------------------- MODEL-05 manifest + peers
