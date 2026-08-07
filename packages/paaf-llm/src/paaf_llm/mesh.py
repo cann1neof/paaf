@@ -53,16 +53,28 @@ if TYPE_CHECKING:
 #: offered IS the set of moves available.
 HANDOFF_TOOL_PREFIX = "transfer_to_"
 
-#: How many handoffs one user turn may make before the engine stops offering the
-#: tools (T-04-04). Three is the smallest value that leaves headroom above the
-#: legitimate A→B→A hand-back, which is two hops.
+#: The smallest hop budget a user may configure (D-08, Assumption A2).
 #:
-#: Enforced from this plan onward so that no unbounded hop loop ships even for a
-#: single wave — every hop is a full model round-trip on the latency path
-#: (Pitfall 6), so "we will bound it next plan" is a real cost, not a formality.
-#: Plan 04-03 makes it user-configurable (with this value as the floor) and adds
-#: the withdrawal-at-the-wall and exhaustion paths.
-DEFAULT_HOP_BUDGET = 3
+#: Three, because the legitimate A→B→A hand-back costs TWO hops and MESH-03
+#: requires it to work. A floor below that would let a user stand the wall in
+#: front of the very behavior the requirement demands — and because the wall is
+#: enforced by *withdrawing* the tool, they would see it as an agent that
+#: declined to hand back rather than as a misconfiguration. So the floor is a
+#: schema constraint, checked at load.
+#:
+#: :class:`~paaf_llm.profiles.LlmConfig` imports this rather than repeating the
+#: literal: two numbers that must agree are one number that eventually does not.
+HOP_BUDGET_FLOOR = 3
+
+#: How many handoffs one user turn may make before the engine stops offering the
+#: tools (T-04-04). The default IS the floor: three is the smallest value that
+#: leaves headroom above the legitimate A→B→A hand-back, and every hop above it
+#: costs a full time-to-first-token on the latency path (Pitfall 6), so the
+#: default errs toward the user hearing an answer.
+#:
+#: This is the fallback for callers with no :class:`LlmConfig` in hand. The
+#: engine reads ``LlmConfig.hop_budget``, which the user owns.
+DEFAULT_HOP_BUDGET = HOP_BUDGET_FLOOR
 
 
 def handoff_tools(

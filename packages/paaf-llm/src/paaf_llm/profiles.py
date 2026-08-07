@@ -11,11 +11,18 @@ Three deliberate constraints shape this module:
   ride on :class:`paaf_core.config.schema.ReloadTier`; declared endpoints are
   :class:`paaf_core.net.endpoint.Endpoint` values, so Phase-9's APP-08 offline
   check sees model endpoints through the same one interface as everything else.
-* ``capabilities`` is **free text**, never structured fields (D-08). Structured
-  capability fields would be a routing DSL by the back door; the mesh Phase 4
-  builds reads natural language, and the user can read it too.
-* ``peers`` and ``constraints`` are **inert** in this phase — validated data
-  with no behavior attached. Phase 4 (MESH-02/MESH-06) makes them live.
+* ``capabilities`` is **free text**, never structured fields (D-08/D-12).
+  Structured capability fields would be a routing DSL by the back door; the mesh
+  reads natural language, and the user can read it too.
+* ``peers`` is **live** as of Phase 4 (MESH-02): it is the reachability graph the
+  handoff tool surface is built from and validated against. ``constraints`` stays
+  free text and is enforced by the observer (MESH-06, D-13).
+
+The three mesh-shaped fields on this tree mean three different things and are
+kept apart on purpose — see :class:`LlmConfig`'s docstring. ``hop_budget`` and
+``default_agent`` are a counter and a name; **neither is, or can become, a
+routing rule** (MESH-01). ``extra="forbid"`` on both models is the mechanism
+that keeps it that way, and it is asserted directly by the tests.
 
 Secret VALUES never live here: ``api_key_ref`` holds the NAME of a
 ``paaf_core`` SecretStore key (CORE-04), so no schema, YAML file, or log line
@@ -28,6 +35,8 @@ from typing import Literal
 from paaf_core.config.schema import ReloadTier
 from paaf_core.net.endpoint import Endpoint
 from pydantic import BaseModel, Field, model_validator
+
+from .mesh import DEFAULT_HOP_BUDGET, HOP_BUDGET_FLOOR
 
 
 class ModelProfile(BaseModel):
@@ -89,18 +98,25 @@ class ModelProfile(BaseModel):
         10.0, gt=0.0, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 
-    # --- inert mesh seam (MODEL-05, D-07/D-08): validated data, no behavior ---
+    # --- the mesh seam (MODEL-05, D-07/D-08): LIVE as of Phase 4 ---
+    # `peers` now shapes the handoff tool surface the awake model is offered, and
+    # `capabilities` is the text describing each peer on that surface. Both are
+    # still FREE TEXT ONLY (D-12 is unchanged): structured capability or
+    # constraint fields would be a routing DSL by the back door, and MESH-01
+    # forbids one anywhere. The model reads this text and chooses; PAAF never
+    # matches on it.
     # WARM: natural-language capability manifest. FREE TEXT ONLY.
     capabilities: str = Field(
         "", json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
-    # WARM: names of profiles this one MAY hand off to. Inert in Phase 3;
-    # Phase 4 (MESH-02) reads it to constrain handoff targets.
+    # WARM: names of profiles this one MAY hand off to — the whole reachability
+    # graph. `paaf_llm.mesh` builds one `transfer_to_<peer>` tool per name here
+    # and validates the model's answer against the same list (MESH-02).
     peers: list[str] = Field(
         default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
-    # WARM: optional hard constraints, declarable now, enforced in Phase 4
-    # (MESH-06). Free text for the same reason `capabilities` is.
+    # WARM: optional hard constraints. FREE TEXT ONLY, by D-12 — enforced by the
+    # observer (D-13), which reads them the same way the model reads a manifest.
     constraints: list[str] = Field(
         default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
@@ -186,12 +202,15 @@ class ModelProfile(BaseModel):
 class LlmConfig(BaseModel):
     """The LLM half of the one YAML tree the user owns.
 
-    ``fallback_chain`` and each profile's ``peers`` are kept as SEPARATE fields
-    on purpose: they mean different things. ``fallback_chain`` is *resilience* —
-    the ordered list of profiles to try when the active one is unreachable, too
-    slow to first token, or erroring (MODEL-03). ``peers`` is *handoff* — the
-    profiles a given model may delegate to on the merits (MESH-02, Phase 4).
-    Collapsing them would quietly make every fallback target a handoff target.
+    ``fallback_chain``, each profile's ``peers``, and ``default_agent`` are kept
+    as SEPARATE fields on purpose: they mean three different things.
+    ``fallback_chain`` is *resilience* — the ordered list of profiles to try when
+    the active one is unreachable, too slow to first token, or erroring
+    (MODEL-03). ``peers`` is *handoff* — the profiles a given model may delegate
+    to on the merits (MESH-02). ``default_agent`` is the *terminator* — who
+    speaks when the mesh has run out of moves and the hop budget is spent (D-09).
+    Collapsing any pair would quietly make one mean the others: every fallback
+    target a handoff target, or the home agent reachable from everywhere.
     """
 
     model_config = {"extra": "forbid"}
@@ -207,20 +226,54 @@ class LlmConfig(BaseModel):
         default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 
+    # --- mesh-level knobs (D-08/D-09): a counter and a name, never a rule ---
+    # WARM: how many handoffs ONE user turn may make before the engine stops
+    # offering the handoff tools (D-08). The floor is `mesh.HOP_BUDGET_FLOOR`
+    # (3) because the legitimate A→B→A hand-back costs two hops, so anything
+    # lower would stand the wall in front of the very behavior MESH-03 requires
+    # — and since the wall works by WITHDRAWING the tool, the user would read
+    # the failure as an agent that declined to hand back, not as a bad setting.
+    # Raising it costs one full time-to-first-token per extra hop (Pitfall 6):
+    # handoff is silent (D-10), so from the user's side a hopping turn is just
+    # an assistant going quiet. Know that before turning the knob.
+    hop_budget: int = Field(
+        DEFAULT_HOP_BUDGET,
+        ge=HOP_BUDGET_FLOOR,
+        json_schema_extra={"reload_tier": ReloadTier.WARM},
+    )
+    # WARM: the home agent — who speaks when the budget is spent (D-09). A THIRD
+    # concept, deliberately not collapsed into `fallback_chain` or `peers`; see
+    # the class docstring. Optional, and `None` is not a gap PAAF fills in: with
+    # no home agent declared, the currently-awake agent answers with the handoff
+    # tools withdrawn (OQ-2). Defaulting to `active_profile` would be PAAF
+    # picking an agent on the user's behalf, which D-09 rejects outright.
+    default_agent: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+
     @model_validator(mode="after")
     def _check_refs(self) -> LlmConfig:
         """Reject any name that does not resolve to a declared profile.
 
-        The peer graph is inert in this phase, but it must already be *integral*:
-        Phase 4 traverses it, and a dangling edge discovered at handoff time is a
-        runtime failure. Catching it at load turns it into a config error the
-        user can read and fix, which is the whole point of validate-on-read.
+        The peer graph is *traversed* now, so it must be integral: a dangling
+        edge discovered at handoff time is a runtime failure mid-conversation.
+        Catching it at load turns it into a config error the user can read and
+        fix, which is the whole point of validate-on-read.
+
+        ``default_agent`` is held to the same rule, and it is the sharpest case:
+        a dangling home agent would only be discovered at budget exhaustion —
+        three hops into a turn, at the exact moment the mesh has no other move.
         """
         names = set(self.profiles)
 
         if self.active_profile not in names:
             raise ValueError(
                 f"active_profile '{self.active_profile}' is not a declared profile"
+            )
+
+        if self.default_agent is not None and self.default_agent not in names:
+            raise ValueError(
+                f"default_agent '{self.default_agent}' is not a declared profile"
             )
 
         for name in self.fallback_chain:

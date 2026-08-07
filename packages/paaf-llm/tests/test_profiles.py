@@ -8,6 +8,8 @@ malformed one raising ``pydantic.ValidationError`` mean anything.
 from __future__ import annotations
 
 import pytest
+from paaf_core.config.schema import ReloadTier
+from paaf_llm.mesh import DEFAULT_HOP_BUDGET, HOP_BUDGET_FLOOR
 from paaf_llm.profiles import LlmConfig, ModelProfile
 from pydantic import ValidationError
 
@@ -325,5 +327,165 @@ def test_unknown_config_key_is_rejected() -> None:
     # NEGATIVE CONTROL (T-03-02): extra="forbid" on the root too.
     bad = _valid_config()
     bad["routing_rules"] = {"if": "hebrew", "then": "cloud"}
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(bad)
+
+
+# --------------------------------------------------------------------------
+# Phase 4 — the third mesh concept, and MESH-01's mechanical guarantee
+# --------------------------------------------------------------------------
+
+
+def test_mesh_fields_default_to_the_floor_and_no_home_agent() -> None:
+    """D-08/D-09: the wall has a user-owned height and nobody is home by default.
+
+    The default IS the floor, and the floor is 3 because the legitimate A→B→A
+    hand-back costs two hops (Assumption A2). ``default_agent`` defaults to
+    ``None`` because PAAF does not guess who speaks when the mesh runs out of
+    moves — with none declared, OQ-2's currently-awake agent answers.
+    """
+    cfg = LlmConfig.model_validate(_valid_config())
+    assert cfg.hop_budget == 3
+    assert cfg.hop_budget == HOP_BUDGET_FLOOR == DEFAULT_HOP_BUDGET
+    assert cfg.default_agent is None
+
+
+def test_the_new_mesh_fields_carry_reload_tier_metadata() -> None:
+    """Every field on this schema declares when a change to it takes effect.
+
+    Asserted rather than assumed: a field without a tier is invisible to the
+    Phase-2 reload machinery, so it would be silently un-reloadable while
+    looking exactly like every field beside it.
+    """
+    fields = LlmConfig.model_fields
+    for name in ("hop_budget", "default_agent"):
+        extra = fields[name].json_schema_extra
+        assert isinstance(extra, dict)
+        assert extra["reload_tier"] is ReloadTier.WARM
+
+
+@pytest.mark.parametrize("budget", [2, 1, 0, -1])
+def test_hop_budget_below_the_floor_is_rejected(budget: int) -> None:
+    """The floor exists to keep the wall from standing in front of MESH-03.
+
+    A→B→A is two hops. A user who set ``hop_budget=2`` would wall off the very
+    hand-back the requirement demands, and — because the tools are simply
+    withdrawn — would see it fail *silently* as an agent that declined to hand
+    back rather than as a configuration error. So the floor is enforced at load.
+    """
+    bad = _valid_config()
+    bad["hop_budget"] = budget
+    with pytest.raises(ValidationError) as raised:
+        LlmConfig.model_validate(bad)
+    # Named, so the user reads the constraint rather than inferring it.
+    assert "3" in str(raised.value)
+
+
+@pytest.mark.parametrize("budget", [3, 10])
+def test_hop_budget_at_or_above_the_floor_is_accepted(budget: int) -> None:
+    """POSITIVE CONTROL: the floor is a floor, not a fixed value.
+
+    Without this, a validator that rejected *every* hop_budget would satisfy
+    the rejection test above completely.
+    """
+    good = _valid_config()
+    good["hop_budget"] = budget
+    assert LlmConfig.model_validate(good).hop_budget == budget
+
+
+def test_default_agent_must_resolve_to_a_declared_profile() -> None:
+    """D-09's home agent joins the same reference-integrity rule as the rest.
+
+    A home agent discovered to be dangling at budget-exhaustion time is a
+    runtime failure at the worst possible moment — the turn is already three
+    hops deep. Catching it at load makes it a config error the user can read.
+    """
+    dangling = _valid_config()
+    dangling["default_agent"] = "nobody"
+    with pytest.raises(ValidationError) as raised:
+        LlmConfig.model_validate(dangling)
+    assert "nobody" in str(raised.value)  # the offending value, named
+
+    # POSITIVE CONTROL: a declared name is accepted, and omitting it entirely is
+    # accepted — otherwise a validator that rejected every default_agent (or
+    # required one) would pass the rejection half above.
+    declared = _valid_config()
+    declared["default_agent"] = "cloud"
+    assert LlmConfig.model_validate(declared).default_agent == "cloud"
+    assert LlmConfig.model_validate(_valid_config()).default_agent is None
+
+
+def test_default_agent_grants_no_handoff_edge() -> None:
+    """T-04-12: naming a home agent is not naming a universal peer.
+
+    ``default_agent`` is a THIRD concept (D-09) — the terminator — and keeping
+    it a separate field from ``peers`` is what stops declaring it from quietly
+    making one profile reachable from every other one.
+    """
+    declared = _valid_config()
+    declared["default_agent"] = "cloud"
+    cfg = LlmConfig.model_validate(declared)
+
+    assert cfg.default_agent == "cloud"
+    assert cfg.profiles["kitchen-local"].peers == ["study-local"]
+    assert "cloud" not in cfg.profiles["kitchen-local"].peers
+    assert "cloud" not in cfg.profiles["study-local"].peers
+    # Three fields, three meanings — the anti-pattern is collapsing any pair.
+    assert "default_agent" in LlmConfig.model_fields
+    assert "default_agent" not in ModelProfile.model_fields
+
+
+def test_routing_rules_key_on_the_config_is_rejected() -> None:
+    """MESH-01's mechanical guarantee, on ``LlmConfig`` (T-03-02 carried forward).
+
+    MESH-01 says no deterministic, user-written routing rule exists anywhere.
+    The *mechanism* behind that claim is ``extra="forbid"`` — nothing else in
+    the codebase enforces it — and adding a mesh field to this schema is exactly
+    the moment the guarantee could be quietly widened. So it is re-asserted here
+    against the plausible spelling a user (or a future maintainer) would reach
+    for, rather than against a nonsense key like ``bogus``.
+    """
+    bad = _valid_config()
+    bad["routing_rules"] = [{"match": "hebrew", "route_to": "cloud"}]
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(bad)
+
+
+def test_routing_rules_key_on_a_profile_is_rejected() -> None:
+    """The same guarantee on ``ModelProfile`` — the other half of the surface.
+
+    A rule smuggled onto a single profile routes just as deterministically as a
+    global one, so both models must refuse it.
+    """
+    bad = _valid_config()
+    bad["profiles"]["kitchen-local"]["routing_rules"] = {"hebrew": "cloud"}
+    with pytest.raises(ValidationError):
+        LlmConfig.model_validate(bad)
+
+    with pytest.raises(ValidationError):
+        ModelProfile(provider="ollama", model="m", routing_rules={"hebrew": "cloud"})
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("hop_budget_rules", {"if_peers_gt": 2, "then": 5}),
+        ("peer_priority", ["cloud", "study-local"]),
+        ("default_agent_rules", {"on_exhaustion": "cloud"}),
+    ],
+)
+def test_a_near_miss_routing_key_on_the_new_mesh_surface_is_rejected(
+    key: str, value: object
+) -> None:
+    """The near miss is the real risk, not the obvious one.
+
+    ``routing_rules`` was never going to be added by accident. A key that reads
+    like a companion to the fields this plan *did* add — ``hop_budget_rules``
+    beside ``hop_budget``, ``peer_priority`` beside ``peers`` — is the shape a
+    routing DSL would actually arrive in, and each of these three encodes a
+    deterministic routing decision the model would have no say in.
+    """
+    bad = _valid_config()
+    bad[key] = value
     with pytest.raises(ValidationError):
         LlmConfig.model_validate(bad)
