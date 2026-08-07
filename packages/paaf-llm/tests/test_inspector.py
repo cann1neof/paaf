@@ -187,9 +187,14 @@ def system_message_actually_sent(config: LlmConfig, fragments: Any = None) -> st
     This is the "as sent" half of PERS-04. The agent is built through the CLI's
     own :func:`build_agent`, so the fragments it composes with are the ones the
     CLI would use — not a set the test chose.
+
+    The fake is programmed for whichever profile the config actually activates,
+    read off the config rather than hard-coded: as of MESH-04 the composed prompt
+    depends on WHICH agent is being asked, so a helper that always drove
+    ``local`` would silently be testing a different agent's prompt.
     """
     adapter = FakeAdapter()
-    adapter.program("local", tokens=["ok"])
+    adapter.program(config.profiles[config.active_profile].model, tokens=["ok"])
     agent = build_agent(config, adapter, skill_fragments=fragments)
 
     import asyncio
@@ -576,9 +581,7 @@ def test_agent_flag_rejects_an_unknown_name_readably(tmp_path: Path) -> None:
     """
     path = write_config(tmp_path, mesh_config())
 
-    result = CliRunner().invoke(
-        main, ["prompt", "--config", path, "--agent", "nobody"]
-    )
+    result = CliRunner().invoke(main, ["prompt", "--config", path, "--agent", "nobody"])
 
     assert result.exit_code != 0
     assert "Traceback" not in result.output

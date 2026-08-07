@@ -58,6 +58,7 @@ from paaf_trace.store import TraceStore
 from pydantic import ValidationError
 from rich.console import Console
 
+from . import mesh
 from .agent import Agent
 from .compose import PromptComposer
 from .ports import AdapterError, AllProvidersFailed, EngineError, UndeclaredPeer
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
 
     from .agent import SecretResolver, TraceSink
     from .ports import ChatAdapter
+    from .profiles import ModelProfile
 
 #: The per-hop fallback notice (D-06). Brief on purpose: "nothing hidden" is one
 #: line per hop naming where the turn went and why, not a stack trace.
@@ -81,6 +83,16 @@ NO_FALLBACK_TARGET = "(nowhere — end of chain)"
 #: reconstructs the raw prompt from the labeled view parses the format this
 #: module actually emits instead of a copy of it.
 PROVENANCE_LABEL = "--- {source} ---"
+
+#: Printed when ``--agent`` names a profile that was never declared (T-04-23).
+#: The value is untrusted CLI input that would otherwise index
+#: ``config.profiles``, so it is validated and REPORTED — naming what was asked
+#: for and what exists instead, because a bare "unknown agent" sends the user
+#: back to their own YAML to find out what they were allowed to type.
+UNKNOWN_AGENT = (
+    "--agent {name!r} is not a declared profile. The profiles in this config "
+    "are: {declared}."
+)
 
 #: Stated wherever the peer graph is shown. Through Phase 3 this said the graph
 #: was inert; as of Phase 4 (MESH-01/02) it is live, and the honest description
@@ -599,9 +611,22 @@ def chat(
 @click.option(
     "--provenance",
     is_flag=True,
-    help="Label each part of the prompt with its source (base / skill:<name>).",
+    help=(
+        "Label each part of the prompt with its source (base / skill:<name> / "
+        "mesh:<layer>), then show every handoff tool this agent is offered, with "
+        "the exact name and description the model is sent."
+    ),
 )
-def prompt(config_path: str, provenance: bool) -> None:
+@click.option(
+    "--agent",
+    "agent_name",
+    default=None,
+    help=(
+        "Read this profile's prompt instead of the active one. Works for a peer "
+        "that is not currently awake, and for the observer, which never is."
+    ),
+)
+def prompt(config_path: str, provenance: bool, agent_name: str | None) -> None:
     """Print the exact system prompt your model receives. No model is called.
 
     A pure dry run: no adapter is constructed and no network is touched, so this
@@ -609,24 +634,92 @@ def prompt(config_path: str, provenance: bool) -> None:
     and nothing else — the trailing newline is omitted deliberately so
     ``paaf prompt --config x.yaml > sent.txt`` captures the exact bytes (PERS-04).
 
-    ``--provenance`` shows the SAME content with source labels (D-03). It is
-    opt-in because the raw view is the authoritative one; annotation is an audit
-    aid laid around the prompt, never a rendering of it.
+    ``--provenance`` shows the SAME content with source labels (D-03), and then
+    the handoff tools this agent is offered, each with the exact name and
+    description the model is sent. It is opt-in because the raw view is the
+    authoritative one; annotation is an audit aid laid around the prompt, never a
+    rendering of it.
+
+    ``--agent <name>`` aims the plain view at a different declared profile
+    (D-19). The default — the active agent — is unchanged, because that is the
+    prompt a turn starts from and it is what a user diffing captured output
+    expects. The flag exists for the two prompts that are otherwise unreadable: a
+    peer that is not currently awake, and the observer, which is never awake at
+    all. It is the only way to read either.
     """
     config = load_llm_config(config_path)
+    # Validated BEFORE it is used as a key. `--agent` is untrusted CLI input, and
+    # `config.profiles[name]` on an unknown value is a KeyError traceback that
+    # names the missing key and nothing a user could act on (T-04-23).
+    if agent_name is not None and agent_name not in config.profiles:
+        raise _config_failure(
+            ValueError(
+                UNKNOWN_AGENT.format(name=agent_name, declared=sorted(config.profiles))
+            )
+        )
+    target = agent_name if agent_name is not None else config.active_profile
+    profile = config.profiles[target]
+
     # The same fragment source build_agent hands the agent — one call, so the
     # inspector cannot show a prompt assembled from different parts (D-02).
     fragments = load_skill_fragments(config)
+    # ...and the same two mesh helpers `Agent.system_prompt` calls, for the same
+    # reason. A per-agent base prompt or an explainer re-derived here would be a
+    # second derivation, which is the only way an inspector can quietly
+    # understate what was sent (D-17, MESH-04).
+    base_prompt = mesh.base_prompt_for(profile, config)
+    mesh_fragments = mesh.mesh_fragments_for(target, profile, config)
     composer = PromptComposer()
 
     if provenance:
-        for segment in composer.segments(config.base_prompt, fragments):
+        for segment in composer.segments(base_prompt, fragments, mesh_fragments):
             click.echo(PROVENANCE_LABEL.format(source=segment.source))
             click.echo(segment.text)
+        _render_tool_surface(config, target, profile)
         return
 
     # No prefix, no suffix, no newline: stdout IS the prompt (PERS-04/05, D-10).
-    click.echo(composer.compose(config.base_prompt, fragments), nl=False)
+    click.echo(composer.compose(base_prompt, fragments, mesh_fragments), nl=False)
+
+
+def _render_tool_surface(
+    config: LlmConfig, agent_name: str, profile: ModelProfile
+) -> None:
+    """Print every handoff tool ``agent_name`` is offered, name and description.
+
+    **This is not decoration, and it is the reason plan 04-05 exists.** A tool's
+    name and its description are sent to the model and steer it — a peer's
+    manifest riding on ``transfer_to_chef`` is exactly as persuasive as a
+    sentence in the system prompt — and they are NOT part of the system prompt.
+    An inspector that rendered only :class:`PromptComposer` segments would
+    therefore satisfy every Phase-3 test and still hide behaviour-steering text,
+    which is precisely what PERS-05 forbids (RESEARCH Finding 1).
+
+    The surface is read from :func:`paaf_llm.mesh.tools_for_leg` — the ONE
+    function that decides a leg's moves — rather than rebuilt here, so the
+    inspector cannot show a surface the engine would not offer. ``hops_used=0``
+    means "the first leg of a turn", which is the only honest answer outside a
+    turn; the hop budget WITHDRAWS this surface at the wall (D-08), so what is
+    shown is the most the model is ever offered, never less.
+
+    Rendered under ``--provenance`` only (OQ-3). The default output keeps its
+    byte-exact, pipe-safe contract: PERS-05 is satisfied because the surface is
+    REACHABLE, not because it is default.
+
+    ``click.echo`` rather than a rich console, and deliberately: a description is
+    the user's own manifest text, and echo interprets nothing whatsoever — no
+    markup, and none of rich's own substitutions either. That is strictly
+    stronger than ``_make_console()``'s ``markup=False`` for the one thing this
+    command exists to guarantee, which is that what is printed is what was sent
+    (T-04-24).
+    """
+    for tool in mesh.tools_for_leg(
+        agent_name, profile, config.profiles, 0, config.hop_budget
+    ):
+        click.echo(
+            PROVENANCE_LABEL.format(source=f"{mesh.MESH_TOOL_SOURCE_PREFIX}{tool.name}")
+        )
+        click.echo(tool.description)
 
 
 @main.command()
