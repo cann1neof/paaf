@@ -231,14 +231,40 @@ class Agent:
         names = [awake or self.awake_agent, *self._config.fallback_chain]
         return [(name, self._config.profiles[name]) for name in names]
 
-    def system_prompt(self) -> str:
-        """Return THE system prompt for the next turn (D-02 — one composer).
+    def system_prompt(self, agent_name: str | None = None) -> str:
+        """Return THE system prompt for one agent (D-02 — still one composer).
 
         The CLI's prompt inspector calls this same path; there is no second
         derivation anywhere, which is what makes the inspector incapable of
-        understating what was sent.
+        understating what was sent — and as of MESH-04 that holds for *any*
+        declared agent, not only the one currently awake.
+
+        Three ordered layers, assembled by :class:`PromptComposer` and by nothing
+        else: this agent's base prompt (its own ``system_prompt``, or the shared
+        ``LlmConfig.base_prompt`` — D-17/A4), the enabled skills' fragments, and
+        the per-agent mesh layer of persona plus generated handoff explainer
+        (D-16 layer 3, D-18). Two agents therefore come out genuinely different,
+        which is the requirement, while the composer stays a pure function that
+        has never heard of a mesh.
+
+        ``agent_name`` defaults to the awake agent, so every Phase-3 caller keeps
+        its exact meaning. Naming an agent is what ``paaf prompt --agent`` uses:
+        it is the only way to read the prompt of a peer that is not awake, and
+        later the only way to read the observer's, since the observer never is.
+
+        Raises:
+            KeyError: ``agent_name`` names no declared profile. Callers taking
+                the name from the user validate it first and report through their
+                own error path — an unvalidated CLI string must never reach a
+                dict subscript (T-04-23).
         """
-        return self._composer.compose(self._config.base_prompt, self._skill_fragments)
+        name = agent_name if agent_name is not None else self.awake_agent
+        profile = self._config.profiles[name]
+        return self._composer.compose(
+            mesh.base_prompt_for(profile, self._config),
+            self._skill_fragments,
+            mesh.mesh_fragments_for(name, profile, self._config),
+        )
 
     async def warmup(self) -> None:
         """Preload every profile in the chain so cold load is not charged later.
@@ -317,7 +343,14 @@ class Agent:
             # the system prompt plus the whole prior transcript plus this turn —
             # which is simultaneously MESH-03's guarantee and the reason a
             # dangling tool call cannot survive between legs: nothing is reused.
-            system = self.system_prompt()
+            #
+            # The prompt is composed for the agent serving THIS leg, so it
+            # follows the handoff (MESH-04/D-17): the receiving agent is greeted
+            # by its own persona and its own explainer, not by the one belonging
+            # to the agent that handed to it. Composing it once outside the loop
+            # is the natural wrong implementation and would quietly make every
+            # per-agent prompt the caller's.
+            system = self.system_prompt(awake)
             messages: list[Message] = [
                 Message("system", system),
                 *self.history,

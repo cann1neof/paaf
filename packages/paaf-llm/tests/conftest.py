@@ -109,6 +109,14 @@ def make_mesh_config(
     They are passed straight through rather than defaulted here, so a budget test
     reads the value it is testing in its own body and the schema's own default
     (and its floor) stay the single source of truth.
+
+    ``system_prompts``, ``personas`` and ``explainers`` are the per-agent prompt
+    layer (D-16 layer 3 / D-17 / D-18), keyed by profile name exactly as
+    ``capabilities`` is. A name absent from a mapping declares nothing and gets
+    ``None``, which is the case that falls back to the shared base — so a test
+    can express "this agent has its own prompt and that one does not" without
+    hand-building an :class:`LlmConfig`. ``explainer_template`` is the global
+    override that a per-agent ``explainers`` entry outranks.
     """
 
     def _make(
@@ -118,9 +126,16 @@ def make_mesh_config(
         capabilities: Mapping[str, str] | None = None,
         hop_budget: int | None = None,
         default_agent: str | None = None,
+        system_prompts: Mapping[str, str] | None = None,
+        personas: Mapping[str, str] | None = None,
+        explainers: Mapping[str, str] | None = None,
+        explainer_template: str | None = None,
     ) -> LlmConfig:
         graph = dict(peers or {})
         manifests = dict(capabilities or {})
+        prompts = dict(system_prompts or {})
+        voices = dict(personas or {})
+        overrides = dict(explainers or {})
 
         # dict.fromkeys preserves declaration order while de-duplicating, so the
         # profiles dict reads in the order the test wrote the graph.
@@ -137,6 +152,8 @@ def make_mesh_config(
             extra["hop_budget"] = hop_budget
         if default_agent is not None:
             extra["default_agent"] = default_agent
+        if explainer_template is not None:
+            extra["handoff_explainer_template"] = explainer_template
         return LlmConfig(
             base_prompt=base_prompt,
             active_profile=active,
@@ -145,6 +162,12 @@ def make_mesh_config(
                     name,
                     peers=list(graph.get(name, ())),
                     capabilities=manifests.get(name, ""),
+                    # `.get(name)` — NOT `.get(name, "")`. An absent declaration
+                    # must stay `None`, because only `None` falls back to the
+                    # shared base prompt (A4); `""` is a deliberate empty one.
+                    system_prompt=prompts.get(name),
+                    persona=voices.get(name),
+                    handoff_explainer=overrides.get(name),
                 )
                 for name in names
             },
