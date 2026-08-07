@@ -90,7 +90,7 @@ import uuid
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol
 
-from paaf_trace.store import RunEvent
+from paaf_trace.store import HandoffEvent, RunEvent, TurnLegEvent
 
 from . import mesh
 from .compose import PromptComposer
@@ -118,6 +118,16 @@ if TYPE_CHECKING:
 #: the empty string when the degraded profile was the LAST in the chain — there
 #: was nowhere to go, and saying so is more honest than inventing a target.
 Hop = tuple[str, str, str]
+
+#: The ``handoffs.outcome`` values this engine writes (MESH-05). The column is
+#: free TEXT rather than CHECK-constrained, and deliberately so: a CHECK is part
+#: of a table definition, and the store applies its schema with
+#: ``CREATE TABLE IF NOT EXISTS``, so adding a value later would be unaddable for
+#: the same reason a new column would be (Pitfall 5). The enumeration therefore
+#: lives here and in ``schema.sql``'s comment, and nowhere in SQL.
+HANDOFF_ACCEPTED = "accepted"
+HANDOFF_UNDECLARED_PEER = "undeclared_peer"
+HANDOFF_BUDGET_EXHAUSTED = "budget_exhausted"
 
 
 class SecretResolver(Protocol):
@@ -347,14 +357,23 @@ class Agent:
         # An engine-generated correlation id, never a database row id: the trace
         # writer is fire-and-forget and does not surface `lastrowid`, so
         # correlating on one would force a writer redesign (Finding 5).
+        # No turn-level start time: every timestamp recorded by this turn belongs
+        # to a LEG, because every row it writes describes a leg (OQ-5). A turn's
+        # span is `min(started_at)`..`max(ended_at)` over its `turn_legs` rows,
+        # derived by the reader rather than denormalized by the writer.
         turn_id = uuid.uuid4().hex
-        started_at = time.time()
 
         tool_calling = isinstance(self._adapter, ToolCallingChatAdapter)
         self._announce_if_mesh_unavailable(turn_id, tool_calling)
 
         accepted: HandoffRequest | None = None
         hops = 0
+        # Ordinals within THIS turn, and they count different things. `leg_seq`
+        # counts legs that RAN (one `runs` + one `turn_legs` row each);
+        # `attempt_seq` counts handoffs that were TRIED, which includes the ones
+        # that ran no leg at all — a refused target and the wall (MESH-05).
+        leg_seq = 0
+        attempt_seq = 0
         budget = self._config.hop_budget
         # LOCAL for the duration of the turn, written back to `self.awake_agent`
         # only on success (see the write-back below). A turn that raised part-way
@@ -368,7 +387,9 @@ class Agent:
             profile.peers for profile in self._config.profiles.values()
         )
 
+        usage: Usage = Usage()
         while True:
+            leg_started_at = time.time()
             profile = self._config.profiles[awake]
 
             # ONE place decides the surface (mesh.tools_for_leg): the declared
@@ -404,6 +425,28 @@ class Agent:
                 messages, tools, awake=awake, tool_path=mesh_active
             )
 
+            # SPIKE-05: read usage ONCE, after the stream fully aggregated.
+            # Several providers publish counts only on the final message, so a
+            # per-chunk read reports None almost every time. Read per LEG rather
+            # than once per turn, because each leg is its own model round-trip
+            # and its counts belong to its own row.
+            usage = self._adapter.last_usage()
+            # MESH-05 / OQ-5: one `runs` row AND one `turn_legs` row per LEG, so
+            # `served_by` and this leg's own `fallback_trail` deliver per-agent
+            # provenance from columns that already exist.
+            self._drain(
+                system,
+                served_by,
+                trail,
+                usage,
+                leg_started_at,
+                time.time(),
+                turn_id=turn_id,
+                leg_seq=leg_seq,
+                agent_name=awake,
+            )
+            leg_seq += 1
+
             # Read tool calls ONCE, after the stream aggregated, and only if this
             # leg actually offered tools — an adapter's last-call state is stale
             # by definition on a leg that offered none.
@@ -421,24 +464,40 @@ class Agent:
                     to_agent=mesh.target_of(calls[0]),
                     detail=str(exc),
                 )
+                # Recorded BEFORE the re-raise — the only ordering that survives
+                # the exception, and the whole reason this table exists.
+                self._emit_handoff(
+                    turn_id,
+                    attempt_seq,
+                    from_agent=awake,
+                    to_agent=mesh.target_of(calls[0]),
+                    outcome=HANDOFF_UNDECLARED_PEER,
+                    detail=str(exc),
+                )
                 raise
+
+            self._emit_handoff(
+                turn_id,
+                attempt_seq,
+                from_agent=awake,
+                to_agent=target,
+                outcome=HANDOFF_ACCEPTED,
+                # D-11: whatever this agent said before handing off, verbatim.
+                # It is recorded HERE because neither `runs` nor `turn_legs` has
+                # ever carried reply text — the trace records prompts, not
+                # completions — and the attempt row is the one place the prose
+                # belongs anyway: it is the handoff that discarded it.
+                detail=reply,
+            )
+            attempt_seq += 1
 
             accepted = HandoffRequest(from_agent=awake, to_agent=target)
             awake = target
             hops += 1
 
             if hops >= budget:
-                awake = self._exhausted(turn_id, awake, budget)
-
-        # SPIKE-05: read usage ONCE, after the stream fully aggregated. Several
-        # providers publish counts only on the final message, so a per-chunk
-        # read reports None almost every time.
-        usage: Usage = self._adapter.last_usage()
-        # One row for the turn, describing the leg that answered. MESH-05 (plan
-        # 04-04) splits this into one row per leg correlated by `turn_id`, which
-        # is what gives every leg its own fallback provenance; until then a
-        # handed-off turn records the answering agent's chain only.
-        self._drain(system, served_by, trail, usage, started_at, time.time())
+                awake = self._exhausted(turn_id, attempt_seq, awake, budget)
+                attempt_seq += 1
 
         # Appended only now, and only on success — the existing rule (D-01), and
         # the reason a refused handoff leaves no trace in the conversation.
@@ -465,7 +524,7 @@ class Agent:
             handoff=accepted,
         )
 
-    def _exhausted(self, turn_id: str, awake: str, budget: int) -> str:
+    def _exhausted(self, turn_id: str, seq: int, awake: str, budget: int) -> str:
         """Say the wall was hit, and return who serves the final leg (D-09/OQ-2).
 
         Two branches, and the second is the one worth reading twice.
@@ -488,9 +547,10 @@ class Agent:
         the loop reaches ``hops >= budget`` only on the hop that spends the last
         of the budget. Exhaustion must never be silent: a turn that quietly
         stopped hopping is indistinguishable from one that never wanted to
-        (T-04-13). The matching ``handoffs`` row (``outcome="budget_exhausted"``,
-        declared in plan 04-02's schema) is written by plan 04-06, which owns
-        every trace emit site.
+        (T-04-13). The signal is the live channel and the ``handoffs`` row
+        (``outcome="budget_exhausted"``) is the durable one; both say the same
+        thing because a listener that was not attached at the time is exactly the
+        reader MESH-05 is written for.
         """
         home = self._config.default_agent
         server = home if home is not None else awake
@@ -499,6 +559,14 @@ class Agent:
             turn_id,
             from_agent=awake,
             to_agent=server,
+            detail=str(budget),
+        )
+        self._emit_handoff(
+            turn_id,
+            seq,
+            from_agent=awake,
+            to_agent=server,
+            outcome=HANDOFF_BUDGET_EXHAUSTED,
             detail=str(budget),
         )
         return server
@@ -562,6 +630,56 @@ class Agent:
             )
         )
 
+    def _emit_handoff(
+        self,
+        turn_id: str,
+        seq: int,
+        *,
+        from_agent: str,
+        to_agent: str,
+        outcome: str,
+        detail: str | None = None,
+    ) -> None:
+        """Record ONE handoff ATTEMPT — accepted, refused, or walled (MESH-05).
+
+        **Refused attempts are the reason this method exists.** A rejected
+        handoff runs no leg, so it produces no ``runs`` row and no ``turn_legs``
+        row: without an attempt record, a turn on which the model tried to reach
+        an agent it was never allowed to reach is *indistinguishable in the
+        trace* from a turn on which it never tried at all. That is precisely the
+        case MESH-05 was written for — "a wrong reroute is observable after the
+        fact" — so it would fail silently while every other row looked healthy
+        (T-04-26).
+
+        ``to_agent`` is the target the MODEL named, which on the refusal path is
+        deliberately a name the graph does not permit. It and ``detail`` are
+        model-influenced text crossing into SQL; :class:`HandoffEvent` builds a
+        parameterized INSERT with an explicit column list and never interpolates
+        (T-04-29), and the engine never builds SQL at all.
+
+        ``observer_verdict``, ``observer_profile`` and ``rerouted_to`` are left
+        NULL rather than blank. Plan 04-07 fills them, and until it does the
+        difference matters: NULL says nobody looked, whereas an empty string
+        would read as an observer that looked and said nothing (D-07).
+
+        Same fire-and-forget contract and the same ``is None`` guard as
+        :meth:`_drain` — observability is opt-in plumbing, so an agent built
+        without a store must take exactly the same path as one built with it.
+        """
+        if self._trace is None:
+            return
+        self._trace.emit(
+            HandoffEvent(
+                turn_id=turn_id,
+                seq=seq,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                outcome=outcome,
+                detail=detail,
+                at=time.time(),
+            )
+        )
+
     def _drain(
         self,
         system: str,
@@ -570,21 +688,46 @@ class Agent:
         usage: Usage,
         started_at: float,
         ended_at: float,
+        *,
+        turn_id: str,
+        leg_seq: int,
+        agent_name: str,
     ) -> None:
-        """Record ONE run: the prompt sent, who served it, and every hop (D-06).
+        """Record ONE LEG: the prompt sent, who served it, and every hop (D-06).
 
         ``emit`` is synchronous and fire-and-forget by contract — the trace
         store owns the writer task, and awaiting it here would put disk I/O on
         the turn's path, which is the exact thing ``paaf-trace`` is shaped to
         avoid.
 
-        The trail is serialized as JSON because the ``runs`` column is TEXT: the
-        store is a denormalized event log, not an object graph. An empty trail
-        writes ``"[]"`` rather than ``NULL`` — "the active profile served it" is
-        a fact worth recording, not an absence.
+        The trail is serialized as JSON because the column is TEXT: the store is
+        a denormalized event log, not an object graph. An empty trail writes
+        ``"[]"`` rather than ``NULL`` — "its own profile served it" is a fact
+        worth recording, not an absence.
+
+        **Two events, and the second is not a duplicate of the first.**
+        :class:`RunEvent` keeps its exact Phase-3 shape, which is what keeps the
+        Phase-3 trace contract and the TTFA path intact — a single-agent turn is
+        one leg, so it is still one ``runs`` row and every Phase-3 assertion
+        still holds. :class:`TurnLegEvent` adds the correlation a multi-agent
+        turn needs: ``turn_id``, ``leg_seq`` and which agent was awake (OQ-5).
+
+        **Why the correlation lives in ``turn_legs`` rather than in a new
+        ``runs.turn_id`` column.** The store applies its whole schema with one
+        ``executescript`` of ``CREATE TABLE IF NOT EXISTS`` statements — there is
+        no version table and no migration runner anywhere in the repo. A column
+        added to ``runs`` is therefore a silent no-op on any database that
+        already has that table: it would work perfectly on a fresh DB in CI, and
+        every single emit naming it would fail with ``no column named turn_id``
+        on the machine of anyone who has run ``paaf chat`` since Phase 3
+        (RESEARCH Pitfall 5, reproduced out-of-band by plan 04-02). A new table
+        is the one additive change this schema step can actually make.
         """
         if self._trace is None:
             return
+        serialized_trail = json.dumps(
+            [{"from": frm, "to": to, "reason": reason} for frm, to, reason in trail]
+        )
         self._trace.emit(
             RunEvent(
                 prompts=system,
@@ -594,12 +737,20 @@ class Agent:
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
                 served_by=served_by,
-                fallback_trail=json.dumps(
-                    [
-                        {"from": frm, "to": to, "reason": reason}
-                        for frm, to, reason in trail
-                    ]
-                ),
+                fallback_trail=serialized_trail,
+            )
+        )
+        self._trace.emit(
+            TurnLegEvent(
+                turn_id=turn_id,
+                leg_seq=leg_seq,
+                agent=agent_name,
+                served_by=served_by,
+                fallback_trail=serialized_trail,
+                started_at=started_at,
+                ended_at=ended_at,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
             )
         )
 
