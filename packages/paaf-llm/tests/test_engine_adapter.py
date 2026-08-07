@@ -26,6 +26,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -40,6 +41,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
+from langchain_core.messages.tool import tool_call_chunk
 from paaf_llm import cli
 from paaf_llm._engine import (
     PROVIDER_STRINGS,
@@ -57,6 +59,9 @@ from paaf_llm.ports import (
     RateLimited,
     RequestTimedOut,
     ServerError,
+    ToolCall,
+    ToolCallingChatAdapter,
+    ToolSpec,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
 
@@ -72,11 +77,27 @@ class _StubModel:
     """
 
     def __init__(
-        self, *, chunks: tuple[Any, ...] = (), error: BaseException | None = None
+        self,
+        *,
+        chunks: tuple[Any, ...] = (),
+        error: BaseException | None = None,
+        bind_tools_error: BaseException | None = None,
     ) -> None:
         self.chunks = chunks
         self.error = error
+        self.bind_tools_error = bind_tools_error
         self.seen: list[Any] = []
+        #: Every ``bind_tools`` call, in order. An EMPTY list is the assertion
+        #: that matters for the no-tools path: the port says offering nothing
+        #: must behave exactly like ``stream``, and the only way to prove the
+        #: branch was not taken is to record that it never ran.
+        self.bound_tools: list[list[Any]] = []
+
+    def bind_tools(self, tools: list[Any]) -> Any:
+        if self.bind_tools_error is not None:
+            raise self.bind_tools_error
+        self.bound_tools.append(list(tools))
+        return self
 
     async def astream(self, messages: list[Any]) -> Any:
         self.seen = list(messages)
@@ -147,6 +168,17 @@ def _bound_base_url(model: Any) -> str | None:
 
 async def _drain(adapter: LangChainAdapter, profile: ModelProfile) -> list[str]:
     return [token async for token in adapter.stream(profile, [Message("user", "hi")])]
+
+
+async def _drain_with_tools(
+    adapter: LangChainAdapter, profile: ModelProfile, tools: Sequence[ToolSpec]
+) -> list[str]:
+    return [
+        token
+        async for token in adapter.stream_with_tools(
+            profile, [Message("user", "hi")], tools
+        )
+    ]
 
 
 # ------------------------------------------------------- the optional extra --
@@ -662,6 +694,333 @@ async def test_usage_stays_none_when_the_provider_reported_none() -> None:
     await _drain(adapter, _ollama("qwen3", "192.168.1.10"))
     usage = adapter.last_usage()
     assert (usage.prompt_tokens, usage.completion_tokens) == (None, None)
+
+
+# -------------------------------------------- MESH-01: the tool-calling half --
+#
+# The framework's tool vocabulary appears in exactly one file, and this is the
+# section that holds it to that. Everything below is decidable offline: the
+# translation is a pure dict, the aggregation is a real ``AIMessageChunk`` sum,
+# and only the streaming call is stubbed — the same bargain the rest of this
+# module strikes.
+#
+# ``_to_framework_tools`` is reached through ``engine_module`` rather than
+# imported by name because it is private to the adapter: the test may read it,
+# but nothing should be able to mistake it for part of the package's surface.
+
+#: A tool that takes no arguments — the shape EVERY handoff tool has, because
+#: ``mesh.handoff_tools`` puts the target in the name and gives the model no
+#: argument to get wrong. So the "empty parameters" case below is not an edge:
+#: it is the only case Phase 4 actually ships.
+_PING = ToolSpec(name="ping", description="Say pong.", parameters={})
+
+#: A tool WITH parameters, so the translation is proven to pass a real schema
+#: through untouched rather than to always emit the empty-object placeholder.
+_ASK = ToolSpec(
+    name="transfer_to_ada",
+    description="Hand the conversation to Ada, who does maths.",
+    parameters={"type": "object", "properties": {"reason": {"type": "string"}}},
+)
+
+
+def _handoff_chunks() -> tuple[Any, Any]:
+    """Two chunks whose tool-call arguments are split MID-JSON, as a provider's are.
+
+    This is the whole reason ``_tool_calls_of`` reads the aggregate: the split is
+    inside the JSON literal, so neither chunk alone carries parseable arguments.
+    """
+    return (
+        AIMessageChunk(
+            content="",
+            tool_call_chunks=[
+                tool_call_chunk(
+                    name="transfer_to_ada", args='{"rea', id="call_1", index=0
+                )
+            ],
+        ),
+        AIMessageChunk(
+            content="",
+            tool_call_chunks=[
+                tool_call_chunk(name=None, args='son": "maths"}', id=None, index=0)
+            ],
+        ),
+    )
+
+
+def test_the_real_adapter_is_a_tool_calling_chat_adapter() -> None:
+    """The moment the mesh stops being a test fixture (MESH-01, D-01).
+
+    Until now only ``FakeAdapter`` satisfied the second protocol, so every mesh
+    test in the suite proved something about the fake. The engine feature-detects
+    with exactly this ``isinstance``, so this assertion is the difference between
+    a handoff being reachable against a real provider and not being reachable at
+    all.
+
+    ``ChatAdapter`` is asserted alongside it because the second protocol EXTENDS
+    the first (D-02): an adapter that gained tools and lost ``stream`` would
+    satisfy neither the port nor Phase 3.
+    """
+    adapter = LangChainAdapter()
+    assert isinstance(adapter, ToolCallingChatAdapter)
+    assert isinstance(adapter, ChatAdapter)
+
+
+def test_a_tool_spec_translates_to_one_openai_style_function_dict() -> None:
+    """The ONE translation, asserted whole — no framework tool object is built.
+
+    Compared with ``==`` against the entire structure rather than by probing
+    keys, because an extra key is as much a leak of adapter opinion into the
+    model's steering text as a missing one would be.
+    """
+    assert engine_module._to_framework_tools([_ASK]) == [
+        {
+            "type": "function",
+            "function": {
+                "name": "transfer_to_ada",
+                "description": "Hand the conversation to Ada, who does maths.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"reason": {"type": "string"}},
+                },
+            },
+        }
+    ]
+
+
+def test_a_tool_with_no_parameters_still_declares_an_empty_schema_object() -> None:
+    """Empty parameters become ``{"type": "object", "properties": {}}``, not a gap.
+
+    Every handoff tool has no arguments, so this is the shape the mesh actually
+    ships. Emitting ``{}`` — or omitting the key — is the natural implementation
+    and is rejected by real providers, which would make the entire mesh fail
+    against a live model while every fake-driven test stayed green.
+    """
+    [translated] = engine_module._to_framework_tools([_PING])
+    assert translated["function"]["parameters"] == {"type": "object", "properties": {}}
+
+
+def test_the_translation_preserves_the_offered_order() -> None:
+    """``peers`` order is the user's, and it survives the crossing (MESH-01)."""
+    names = [
+        entry["function"]["name"]
+        for entry in engine_module._to_framework_tools([_ASK, _PING])
+    ]
+    assert names == ["transfer_to_ada", "ping"]
+
+
+async def test_offering_no_tools_never_calls_bind_tools() -> None:
+    """An empty ``tools`` is byte-identical to Phase 3 (the port says so).
+
+    Not merely "the same output" — the same CALL. A ``bind_tools([])`` on the
+    no-peer path would put every single-agent user behind the exact provider
+    behaviour Pitfall 3 warns about, and an output-only assertion could not tell
+    the difference.
+    """
+    adapter = LangChainAdapter()
+    model = _StubModel(chunks=(AIMessageChunk(content="hi"),))
+    _stub(adapter, model)
+
+    assert await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), ()) == [
+        "hi"
+    ]
+    assert model.bound_tools == []
+    assert adapter.last_tool_calls() == ()
+
+
+async def test_offered_tools_reach_bind_tools_translated_once() -> None:
+    """The offered specs arrive at the provider as the translated dicts, once."""
+    adapter = LangChainAdapter()
+    model = _StubModel(chunks=(AIMessageChunk(content="hi"),))
+    _stub(adapter, model)
+
+    await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_ASK, _PING])
+    assert model.bound_tools == [engine_module._to_framework_tools([_ASK, _PING])]
+
+
+def test_tool_calls_are_read_off_the_aggregate_never_off_a_chunk() -> None:
+    """T-04-16: a mid-stream read yields a call whose arguments are simply GONE.
+
+    Both halves are asserted deliberately. The aggregate carries
+    ``{"reason": "maths"}``; the first chunk on its own carries ``{}`` — the
+    framework cannot parse ``'{"rea'`` and does not pretend to. A per-chunk
+    implementation would therefore not fail loudly, it would hand the mesh a
+    plausible-looking ``ToolCall`` with its arguments silently dropped.
+    """
+    first, second = _handoff_chunks()
+
+    assert LangChainAdapter._tool_calls_of(first) == (
+        ToolCall(name="transfer_to_ada", arguments={}, call_id="call_1"),
+    )
+    assert LangChainAdapter._tool_calls_of(first + second) == (
+        ToolCall(
+            name="transfer_to_ada", arguments={"reason": "maths"}, call_id="call_1"
+        ),
+    )
+
+
+def test_an_aggregate_with_no_tool_calls_reports_an_empty_tuple() -> None:
+    """``()``, never ``None`` — an ordinary answered turn is the common case.
+
+    ``None`` is also covered: it is what ``aggregate`` still is when a provider
+    yielded nothing at all, and an ``AttributeError`` on that path would turn a
+    silent provider into a crash.
+    """
+    assert LangChainAdapter._tool_calls_of(AIMessageChunk(content="hi")) == ()
+    assert LangChainAdapter._tool_calls_of(None) == ()
+
+
+def test_a_fresh_adapter_reports_no_tool_calls() -> None:
+    """Nothing streamed yet is an empty tuple, not an attribute error."""
+    assert LangChainAdapter().last_tool_calls() == ()
+
+
+async def test_stream_with_tools_publishes_the_call_after_the_stream_drains() -> None:
+    """The end-to-end seam: prose streams, and the call lands once aggregated.
+
+    Deliberately interleaves text with the split tool-call fragments, because
+    that is D-11's pre-handoff-prose case and the ordering is what would break if
+    the publish moved inside the loop.
+    """
+    adapter = LangChainAdapter()
+    first, second = _handoff_chunks()
+    _stub(
+        adapter,
+        _StubModel(
+            chunks=(
+                AIMessageChunk(content="Let me "),
+                first,
+                AIMessageChunk(content="ask Ada."),
+                second,
+            )
+        ),
+    )
+
+    tokens = await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_ASK])
+
+    assert tokens == ["Let me ", "ask Ada."]
+    # T-04-18: the framework's TextAccessor is a str SUBCLASS, so an `isinstance`
+    # check here would pass while a framework type crossed the port.
+    assert [type(token) for token in tokens] == [str, str]
+    assert adapter.last_tool_calls() == (
+        ToolCall(
+            name="transfer_to_ada", arguments={"reason": "maths"}, call_id="call_1"
+        ),
+    )
+
+
+async def test_stream_with_tools_still_publishes_usage() -> None:
+    """The tool path must not lose the usage seam it was copied from."""
+    adapter = LangChainAdapter()
+    _stub(
+        adapter,
+        _StubModel(
+            chunks=(
+                AIMessageChunk(content="he"),
+                AIMessageChunk(
+                    content="llo",
+                    usage_metadata=UsageMetadata(
+                        input_tokens=11, output_tokens=5, total_tokens=16
+                    ),
+                ),
+            )
+        ),
+    )
+
+    await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_PING])
+    usage = adapter.last_usage()
+    assert (usage.prompt_tokens, usage.completion_tokens) == (11, 5)
+
+
+async def test_stream_with_tools_drops_empty_chunks_like_stream_does() -> None:
+    """The first-token deadline must measure real content on this path too."""
+    adapter = LangChainAdapter()
+    _stub(
+        adapter,
+        _StubModel(chunks=(AIMessageChunk(content=""), AIMessageChunk(content="hi"))),
+    )
+    assert await _drain_with_tools(
+        adapter, _ollama("qwen3", "192.168.1.10"), [_PING]
+    ) == ["hi"]
+
+
+async def test_a_degraded_provider_on_the_tool_path_still_translates() -> None:
+    """The ``_translate`` boundary carries over verbatim — the fallback loop needs it.
+
+    Without this the mesh path would raise a framework exception straight through
+    the port, and the fallback chain — which classifies by reading ``.reason`` —
+    would not recognise a hop it handles perfectly well on the Phase-3 path.
+    """
+    adapter = LangChainAdapter()
+    _stub(adapter, _StubModel(error=ConnectError("all connection attempts failed")))
+
+    with pytest.raises(ConnectionFailed) as raised:
+        await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_PING])
+    assert raised.value.reason is ConnectionFailed.reason
+
+
+async def test_a_bind_tools_failure_is_a_config_error_not_a_degraded_provider() -> None:
+    """A tool surface the provider refuses is a configuration problem.
+
+    ``not isinstance(..., AdapterError)`` is the load-bearing half. A model that
+    cannot accept tools will not accept them from the next profile either, so
+    degrading here would walk the whole fallback chain, print ``↳ fell back``
+    three times, and end on a generic failure that names nothing the user can
+    fix.
+    """
+    adapter = LangChainAdapter()
+    _stub(
+        adapter,
+        _StubModel(bind_tools_error=TypeError("this model does not support tools")),
+    )
+
+    with pytest.raises(EngineError) as raised:
+        await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_PING])
+
+    assert not isinstance(raised.value, AdapterError)
+    assert "does not support tools" in str(raised.value)
+
+
+async def test_a_bind_tools_failure_is_never_reclassified_as_a_transport_error() -> (
+    None
+):
+    """NEGATIVE CONTROL on the clause above — and on the obvious implementation.
+
+    Routing the bind through ``_translate`` (which is what the surrounding code
+    does for the STREAM) reads as the consistent choice and is wrong here: the
+    classifier reads exception TYPE NAMES, so a provider binding that happens to
+    raise something named like a transport failure would be reported as a
+    degraded provider and swallowed by the fallback loop. Binding contacts
+    nobody, exactly as ``bind()`` does not — so it is raised the way ``bind()``
+    raises, unconditionally as an ``EngineError``.
+    """
+    adapter = LangChainAdapter()
+    _stub(adapter, _StubModel(bind_tools_error=ConnectError("refused")))
+
+    with pytest.raises(EngineError) as raised:
+        await _drain_with_tools(adapter, _ollama("qwen3", "192.168.1.10"), [_PING])
+
+    assert not isinstance(raised.value, AdapterError)
+    assert classify(ConnectError("refused")) is ConnectionFailed  # it WOULD classify
+
+
+async def test_a_resolved_key_never_appears_in_a_bind_tools_failure() -> None:
+    """T-04-15: the new raise site keeps T-03-04's scrubber on it.
+
+    A provider echoing the credential it rejected is the one realistic leak, and
+    a new raise site that skipped ``_scrub`` would reopen it in a place the
+    Phase-3 test cannot see.
+    """
+    secret = "sk-super-secret-value"
+    adapter = LangChainAdapter(secret_store=_Secrets(cloud=secret))
+    profile = ModelProfile(provider="anthropic", model="c", api_key_ref="cloud")
+    adapter.api_key(profile)  # resolve it, so the scrubber knows the value
+
+    _stub(adapter, _StubModel(bind_tools_error=RuntimeError(f"bad key: {secret}")))
+    with pytest.raises(EngineError) as raised:
+        await _drain_with_tools(adapter, profile, [_PING])
+
+    assert secret not in str(raised.value)
+    assert "***" in str(raised.value)
 
 
 # ------------------------------------------------------- warmup and factory --
