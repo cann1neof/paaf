@@ -35,3 +35,27 @@ plan's real diff. Files this phase actually touches are kept format-clean indivi
 **Suggested fix (separate change):** pin `ruff` to an exact version in the dev group, run
 `uv run ruff format` once across the workspace, and add a `ruff format --check` step to CI so the
 drift cannot silently return.
+
+## 2. A SQL error inside `TraceStore._writer` kills the writer and deadlocks `stop()`
+
+**Found during:** plan 04-02, Task 2 — while proving the Pitfall-5 reopen test is non-vacuous.
+
+`_writer`'s drain loop has no `except` around `await db.execute(sql, params)`. If any event yields
+SQL the database rejects (the exact Pitfall-5 failure mode: `sqlite3.OperationalError: table runs
+has no column named turn_id`, reproduced in a scratch script), the exception escapes the loop and
+the writer task dies. `finally: task_done()` marks only that one item done, so every event emitted
+afterwards is never consumed and `stop()`'s `await self._q.join()` waits forever. The failure
+surfaces as a **hung test / hung shutdown**, not as an error.
+
+Two consequences worth naming: the drop counter stays at `0` (nothing was dropped — the writer just
+stopped existing), and the exception itself is never logged anywhere.
+
+**Not fixed here** because the plan explicitly holds `TraceStore` unmodified — the writer is
+event-agnostic by design and this plan's whole point is that a new record type needs no writer
+change. Changing error handling on the single writer is a `paaf-trace` design change that deserves
+its own plan.
+
+**Suggested fix (separate change):** catch `sqlite3.Error` per event inside the loop, count it on a
+`failed` counter beside `dropped`, and keep draining — so a bad event loses one row instead of
+silencing the trace and hanging shutdown. Assert `store.failed == 0` alongside `store.dropped == 0`
+in the round-trip tests.
