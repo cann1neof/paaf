@@ -105,6 +105,10 @@ def make_mesh_config(
 
     ``capabilities`` maps a profile name to its free-text manifest (D-08), which
     is what the generated handoff tool descriptions are built from.
+    ``constraints`` maps a profile name to its free-text hard constraints (D-12)
+    — the sentences MESH-06 has the observer enforce. Both are free text and
+    neither is ever parsed by PAAF; a structured version of either would be a
+    routing DSL by the back door.
 
     ``hop_budget`` and ``default_agent`` are the two mesh-level knobs (D-08/D-09).
     They are passed straight through rather than defaulted here, so a budget test
@@ -143,6 +147,7 @@ def make_mesh_config(
         peers: Mapping[str, Sequence[str]] | None = None,
         base_prompt: str = "",
         capabilities: Mapping[str, str] | None = None,
+        constraints: Mapping[str, Sequence[str]] | None = None,
         hop_budget: int | None = None,
         default_agent: str | None = None,
         keep_pre_handoff_prose: bool | None = None,
@@ -157,6 +162,7 @@ def make_mesh_config(
     ) -> LlmConfig:
         graph = dict(peers or {})
         manifests = dict(capabilities or {})
+        rules = dict(constraints or {})
         prompts = dict(system_prompts or {})
         voices = dict(personas or {})
         overrides = dict(explainers or {})
@@ -195,6 +201,7 @@ def make_mesh_config(
                     name,
                     peers=list(graph.get(name, ())),
                     capabilities=manifests.get(name, ""),
+                    constraints=list(rules.get(name, ())),
                     # `.get(name)` — NOT `.get(name, "")`. An absent declaration
                     # must stay `None`, because only `None` falls back to the
                     # shared base prompt (A4); `""` is a deliberate empty one.

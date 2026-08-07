@@ -116,6 +116,7 @@ from paaf_trace.store import HandoffEvent, RunEvent, TurnLegEvent
 
 from . import mesh
 from .compose import PromptComposer
+from .observer import HandoffAttempt, Observer, ObserverDecision, ObserverVerdict
 from .ports import (
     AdapterError,
     AllProvidersFailed,
@@ -126,6 +127,7 @@ from .ports import (
     MeshSignalKind,
     MeshSignalSink,
     Message,
+    ToolCall,
     ToolCallingChatAdapter,
     TurnResult,
     UndeclaredPeer,
@@ -150,6 +152,8 @@ Hop = tuple[str, str, str]
 HANDOFF_ACCEPTED = "accepted"
 HANDOFF_UNDECLARED_PEER = "undeclared_peer"
 HANDOFF_BUDGET_EXHAUSTED = "budget_exhausted"
+HANDOFF_OBSERVER_RETRY = "observer_retry"
+HANDOFF_OBSERVER_REROUTE = "observer_reroute"
 
 #: What separates a kept pre-handoff line from the answer that followed it
 #: (D-11). A blank line rather than a label: PAAF does not narrate the routing
@@ -221,6 +225,22 @@ class Agent:
         #: reports a static fact about the adapter, and re-emitting it on every
         #: turn would train a listener to ignore the channel.
         self._mesh_unavailable_announced = False
+        #: The supervising model, or ``None`` (MESH-06, D-03/D-07). Constructed
+        #: only when the user declared a profile under the reserved name: "on by
+        #: default" means the slot is reserved and wired, never that PAAF invents
+        #: a model to fill it. With ``None`` here, every handoff takes exactly
+        #: the path it took before the observer existed — which is what the
+        #: whole pre-observer mesh suite is still measuring.
+        #:
+        #: The agent is its own :class:`~paaf_llm.observer.LegRunner`, so the
+        #: observer streams through this same adapter, composes through the same
+        #: composer, and falls back down its own chain like any other agent
+        #: (OQ-4). There is no second calling path.
+        self._observer: Observer | None = (
+            Observer(config, self)
+            if mesh.OBSERVER_PROFILE_NAME in config.profiles
+            else None
+        )
 
     @classmethod
     def build(
@@ -278,7 +298,12 @@ class Agent:
         tail = self._config.profiles[head].fallback_chain or self._config.fallback_chain
         return [(name, self._config.profiles[name]) for name in [head, *tail]]
 
-    def system_prompt(self, agent_name: str | None = None) -> str:
+    def system_prompt(
+        self,
+        agent_name: str | None = None,
+        *,
+        extra_fragments: Sequence[tuple[str, str]] = (),
+    ) -> str:
         """Return THE system prompt for one agent (D-02 — still one composer).
 
         The CLI's prompt inspector calls this same path; there is no second
@@ -297,7 +322,17 @@ class Agent:
         ``agent_name`` defaults to the awake agent, so every Phase-3 caller keeps
         its exact meaning. Naming an agent is what ``paaf prompt --agent`` uses:
         it is the only way to read the prompt of a peer that is not awake, and
-        later the only way to read the observer's, since the observer never is.
+        the only way to read the observer's, since the observer never is.
+
+        ``extra_fragments`` appends TRANSIENT labelled segments for ONE leg — in
+        this phase, exactly one: the refusal an observer's veto puts in front of
+        the calling agent (OQ-1). They are appended rather than merged, they
+        carry their own ``Segment.source`` so ``--provenance`` can tell a one-off
+        refusal from the standing explainer, and they are held to the composer's
+        byte-exact invariant like any other segment — a fragment that reached the
+        model without being a segment would be the hidden prompt PERS-05 exists
+        to forbid. Nothing about them is written back anywhere: the next leg
+        composes without them, and none of it enters :attr:`history`.
 
         Raises:
             KeyError: ``agent_name`` names no declared profile. Callers taking
@@ -310,8 +345,50 @@ class Agent:
         return self._composer.compose(
             mesh.base_prompt_for(profile, self._config),
             self._skill_fragments,
-            mesh.mesh_fragments_for(name, profile, self._config),
+            [
+                *mesh.mesh_fragments_for(name, profile, self._config),
+                *extra_fragments,
+            ],
         )
+
+    async def run_leg(
+        self,
+        agent_name: str,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> tuple[str, str, list[Hop], tuple[ToolCall, ...]]:
+        """Run ONE leg as ``agent_name`` — the observer's only way in (MESH-06).
+
+        This is the engine's implementation of
+        :class:`~paaf_llm.observer.LegRunner`, and it is deliberately the same
+        three lines a conversation leg runs: compose that agent's own prompt
+        through the one composer, stream through the one port, read the tool
+        calls AFTER the stream aggregated. The observer therefore inherits
+        per-agent ``fallback_chain``, the first-token deadline, the reason
+        classification and the framework-free path without any of them being
+        re-implemented for it (OQ-4).
+
+        It does NOT touch :attr:`awake_agent`. The observer is never awake, and a
+        supervisor that could make itself the answering agent by being consulted
+        would be exactly the participant D-03 reserves its name to prevent.
+
+        Deliberately NOT drained to the trace: an observer leg is not a
+        conversation leg, and a ``turn_legs`` row for it would answer "who was
+        awake on this leg" with an agent that was not awake. Its identity and its
+        verdict reach the trace on the ``handoffs`` row instead, as
+        ``observer_profile`` and ``observer_verdict``.
+        """
+        full: list[Message] = [
+            Message("system", self.system_prompt(agent_name)),
+            *messages,
+        ]
+        served_by, reply, trail = await self._run_chain(
+            full, tools, agent_name=agent_name, tool_path=True
+        )
+        calls: tuple[ToolCall, ...] = (
+            self._adapter.last_tool_calls() if tools else ()  # type: ignore[attr-defined]
+        )
+        return served_by, reply, trail, calls
 
     def _reachable_agents(self) -> list[str]:
         """Return every agent a turn starting now could end up asking, in order.
@@ -407,6 +484,16 @@ class Agent:
         # from the returned text by the user's own setting; recorded on the
         # accepted `handoffs` row either way, so neither choice loses it.
         pre_handoff: list[str] = []
+        # Every attempt this turn has already made, as `(from, to, outcome)`.
+        # It exists for the observer's `observer_window_handoffs` window (D-15):
+        # an observer that can see it is inside a loop can break the loop
+        # gracefully, before the deterministic wall ends the turn by exhaustion.
+        attempts: list[tuple[str, str, str]] = []
+        # OQ-1: the TRANSIENT refusal segment a veto puts in front of the calling
+        # agent, carried for exactly one leg. A list rather than a string so it
+        # is a `(source, text)` pair all the way down — the label is what lets
+        # `--provenance` tell a one-off refusal from the standing explainer.
+        retry_fragments: list[tuple[str, str]] = []
         budget = self._config.hop_budget
         # LOCAL for the duration of the turn, written back to `self.awake_agent`
         # only on success (see the write-back below). A turn that raised part-way
@@ -447,7 +534,11 @@ class Agent:
             # to the agent that handed to it. Composing it once outside the loop
             # is the natural wrong implementation and would quietly make every
             # per-agent prompt the caller's.
-            system = self.system_prompt(awake)
+            #
+            # `retry_fragments` is consumed HERE and cleared immediately: the
+            # refusal belongs to this one leg and to nothing after it (OQ-1).
+            system = self.system_prompt(awake, extra_fragments=retry_fragments)
+            retry_fragments = []
             messages: list[Message] = [
                 Message("system", system),
                 *self.history,
@@ -455,7 +546,7 @@ class Agent:
             ]
 
             served_by, reply, trail = await self._run_chain(
-                messages, tools, awake=awake, tool_path=mesh_active
+                messages, tools, agent_name=awake, tool_path=mesh_active
             )
 
             # SPIKE-05: read usage ONCE, after the stream fully aggregated.
@@ -509,19 +600,101 @@ class Agent:
                 )
                 raise
 
+            # MESH-06 / D-14: ONE observer call per handoff ATTEMPT — never per
+            # turn, never per token. It runs AFTER `resolve_handoff`, and the
+            # order is a decision: the peer-graph guard is the one mesh
+            # guarantee that holds in every configuration, observed or not
+            # (D-13), so a target outside the graph is refused whether or not
+            # anybody is supervising, and the observer is never asked to bless
+            # something the graph already refused.
+            decision = ObserverDecision(ObserverVerdict.APPROVE)
+            if self._observer is not None:
+                decision = await self._observer.judge(
+                    self._attempt(
+                        turn_id, attempt_seq, awake, target, reply, user_text, attempts
+                    )
+                )
+            # NULL, not "approve", when nobody looked: "the observer looked and
+            # said nothing" and "there is no observer" are different facts and
+            # D-07 turns on the difference.
+            verdict = decision.verdict.value if self._observer is not None else None
+
+            if decision.verdict is ObserverVerdict.GENERIC_RETRY:
+                # OQ-1, and the shape of this is the whole decision. The refusal
+                # reaches the calling agent as a TRANSIENT labelled prompt
+                # segment on the retry leg's message list, and nothing else: no
+                # `Role` widened with a `tool` member (option 1 is forbidden —
+                # it re-opens Pitfall 1's dangling tool-call bug and edits the
+                # Phase-3 port against D-02), and nothing about the vetoed
+                # attempt appended to `Agent.history`. The attempt is recorded
+                # in the trace; the conversation is left as if it never happened,
+                # because from the user's side it did not.
+                self._signal(
+                    MeshSignalKind.OBSERVER_RETRY,
+                    turn_id,
+                    from_agent=awake,
+                    to_agent=target,
+                    detail=decision.detail,
+                )
+                self._emit_handoff(
+                    turn_id,
+                    attempt_seq,
+                    from_agent=awake,
+                    to_agent=target,
+                    outcome=HANDOFF_OBSERVER_RETRY,
+                    detail=reply,
+                    observer_verdict=verdict,
+                    observer_profile=decision.served_by,
+                )
+                attempts.append((awake, target, HANDOFF_OBSERVER_RETRY))
+                attempt_seq += 1
+                retry_fragments = [
+                    (mesh.MESH_RETRY_SOURCE, mesh.retry_text(target, decision.detail))
+                ]
+                # D-11 applies unchanged: whatever the vetoed leg said is the
+                # model's own words, and PAAF does not silently delete them.
+                pre_handoff.append(reply)
+                # A veto SPENDS a hop. Without that, an observer that refuses
+                # every attempt and a model that keeps asking would loop with
+                # nothing counting — the deterministic wall is the only thing
+                # that guarantees termination (D-08), and it can only guarantee
+                # it if killed attempts are counted too.
+                hops += 1
+                if hops >= budget:
+                    walled = self._exhausted(turn_id, attempt_seq, awake, budget)
+                    attempt_seq += 1
+                    if walled != awake:
+                        # A different agent answers the final leg, and the
+                        # refusal was not addressed to it.
+                        retry_fragments = []
+                    awake = walled
+                continue
+
+            outcome = HANDOFF_ACCEPTED
+            rerouted_to: str | None = None
+            if decision.verdict is ObserverVerdict.REROUTE:
+                target, rerouted_to = self._rerouted(
+                    turn_id, attempt_seq, awake, profile, decision
+                )
+                outcome = HANDOFF_OBSERVER_REROUTE
+
             self._emit_handoff(
                 turn_id,
                 attempt_seq,
                 from_agent=awake,
                 to_agent=target,
-                outcome=HANDOFF_ACCEPTED,
+                outcome=outcome,
                 # D-11: whatever this agent said before handing off, verbatim.
                 # It is recorded HERE because neither `runs` nor `turn_legs` has
                 # ever carried reply text — the trace records prompts, not
                 # completions — and the attempt row is the one place the prose
                 # belongs anyway: it is the handoff that discarded it.
                 detail=reply,
+                observer_verdict=verdict,
+                observer_profile=decision.served_by,
+                rerouted_to=rerouted_to,
             )
+            attempts.append((awake, target, outcome))
             attempt_seq += 1
 
             accepted = HandoffRequest(from_agent=awake, to_agent=target)
@@ -574,6 +747,113 @@ class Agent:
             fallback_trail=trail,
             handoff=accepted,
         )
+
+    def _attempt(
+        self,
+        turn_id: str,
+        seq: int,
+        awake: str,
+        target: str,
+        reply: str,
+        user_text: str,
+        attempts: Sequence[tuple[str, str, str]],
+    ) -> HandoffAttempt:
+        """Build the observer's view of ONE attempt, windowed by config (D-15).
+
+        The default window is the three narrow things D-15 names — the last user
+        message, the handoff decision, and the calling agent's stated reasoning —
+        and the two knobs widen it from there. They default to 0 for a reason
+        that outlives tidiness: a cloud observer profile with a wide window ships
+        a slice of the user's conversation off-box on every single attempt,
+        including the ones that are then rejected (Pitfall 7, T-04-35).
+
+        Both constraint lists are passed verbatim (D-12). The target's are the
+        ones MESH-06 was written for — "never send private files" is declared on
+        the agent it binds — and the caller's are included because a constraint
+        can equally forbid *delegating* something.
+        """
+        window = self._config.observer_window_messages
+        recent = self._config.observer_window_handoffs
+        return HandoffAttempt(
+            turn_id=turn_id,
+            seq=seq,
+            from_agent=awake,
+            to_agent=target,
+            from_constraints=tuple(self._config.profiles[awake].constraints),
+            to_constraints=tuple(self._config.profiles[target].constraints),
+            user_text=user_text,
+            reasoning=reply,
+            messages=tuple(self.history[-window:]) if window else (),
+            recent_handoffs=tuple(attempts[-recent:]) if recent else (),
+        )
+
+    def _rerouted(
+        self,
+        turn_id: str,
+        seq: int,
+        awake: str,
+        profile: ModelProfile,
+        decision: ObserverDecision,
+    ) -> tuple[str, str]:
+        """Validate the observer's corrected target — through the SAME guard (D-06).
+
+        **One graph, one guard, no second privilege tier.** The observer's target
+        goes through :func:`paaf_llm.mesh.resolve_handoff` with the CALLER's
+        profile — not the observer's, not a widened set, and not a parallel
+        check written for this path. A target outside the calling agent's
+        declared peers therefore raises exactly the
+        :class:`~paaf_llm.ports.UndeclaredPeer` an agent's would, with the same
+        message naming the same peers. Enabling the observer must never silently
+        make every agent reachable from every agent (T-04-33).
+
+        The surface has already refused it once — ``observer_tools`` emits a
+        ``reroute_to_<peer>`` spec per CALLER peer and nothing else — and this is
+        the second layer, for the identical reason ``resolve_handoff`` exists at
+        all beside ``handoff_tools``: models routinely emit tool names that were
+        never bound, so a rule resting on the surface alone is contingent on the
+        provider behaving (Pitfall 4).
+
+        The attempt row is written BEFORE the exception propagates, which is the
+        only ordering that survives it.
+        """
+        corrected = decision.target or ""
+        try:
+            target = mesh.resolve_handoff(
+                awake,
+                profile,
+                ToolCall(f"{mesh.HANDOFF_TOOL_PREFIX}{corrected}", {}),
+            )
+        except UndeclaredPeer as exc:
+            self._signal(
+                MeshSignalKind.UNDECLARED_PEER,
+                turn_id,
+                from_agent=awake,
+                to_agent=corrected,
+                detail=str(exc),
+            )
+            self._emit_handoff(
+                turn_id,
+                seq,
+                from_agent=awake,
+                to_agent=corrected,
+                outcome=HANDOFF_UNDECLARED_PEER,
+                detail=str(exc),
+                observer_verdict=decision.verdict.value,
+                observer_profile=decision.served_by,
+                rerouted_to=corrected,
+            )
+            raise
+
+        # D-05: a correction is externally observable, headless, at the moment it
+        # happens — not only in a trace row somebody may read later.
+        self._signal(
+            MeshSignalKind.OBSERVER_REROUTE,
+            turn_id,
+            from_agent=awake,
+            to_agent=target,
+            detail=decision.detail,
+        )
+        return target, target
 
     def _exhausted(self, turn_id: str, seq: int, awake: str, budget: int) -> str:
         """Say the wall was hit, and return who serves the final leg (D-09/OQ-2).
@@ -690,6 +970,9 @@ class Agent:
         to_agent: str,
         outcome: str,
         detail: str | None = None,
+        observer_verdict: str | None = None,
+        observer_profile: str | None = None,
+        rerouted_to: str | None = None,
     ) -> None:
         """Record ONE handoff ATTEMPT — accepted, refused, or walled (MESH-05).
 
@@ -708,10 +991,16 @@ class Agent:
         parameterized INSERT with an explicit column list and never interpolates
         (T-04-29), and the engine never builds SQL at all.
 
-        ``observer_verdict``, ``observer_profile`` and ``rerouted_to`` are left
-        NULL rather than blank. Plan 04-07 fills them, and until it does the
-        difference matters: NULL says nobody looked, whereas an empty string
-        would read as an observer that looked and said nothing (D-07).
+        ``observer_verdict``, ``observer_profile`` and ``rerouted_to`` stay NULL
+        rather than blank when there is no observer, and the difference is the
+        one D-07 turns on: NULL says **nobody looked**, whereas an empty string
+        would read as an observer that looked and said nothing. With an observer
+        declared, ``observer_verdict`` is always written — ``"approve"`` included
+        — because "the supervisor saw this and let it through" is exactly the
+        fact MESH-05 asks the trace to carry. ``observer_profile`` names the
+        profile that ACTUALLY served the observer's leg, which may be a fallback
+        down its own chain. ``rerouted_to`` is set only when a correction
+        happened (D-05).
 
         Same fire-and-forget contract and the same ``is None`` guard as
         :meth:`_drain` — observability is opt-in plumbing, so an agent built
@@ -726,6 +1015,9 @@ class Agent:
                 from_agent=from_agent,
                 to_agent=to_agent,
                 outcome=outcome,
+                observer_verdict=observer_verdict,
+                observer_profile=observer_profile,
+                rerouted_to=rerouted_to,
                 detail=detail,
                 at=time.time(),
             )
@@ -810,7 +1102,7 @@ class Agent:
         messages: Sequence[Message],
         tools: Sequence[ToolSpec] = (),
         *,
-        awake: str | None = None,
+        agent_name: str | None = None,
         tool_path: bool = False,
     ) -> tuple[str, str, list[Hop]]:
         """Return ``(served_by, reply, trail)`` from the first profile to commit.
@@ -830,8 +1122,15 @@ class Agent:
         shape derived from ``bool(tools)`` could not tell that apart from a
         Phase-3 single-agent turn, and the wall would then be unobservable at the
         port, which is where the budget test needs to see it.
+
+        ``agent_name`` names whose chain to resolve. :meth:`turn` passes the
+        agent serving the current leg — a LOCAL during a turn, written back to
+        :attr:`awake_agent` only on success — and :meth:`run_leg` passes the
+        observer, which is never awake at all. That is the whole reason this is a
+        parameter rather than a read of the attribute: a named agent's chain must
+        be runnable without anything claiming that agent is awake.
         """
-        chain = self._chain(awake)
+        chain = self._chain(agent_name)
         trail: list[Hop] = []
         # Feature detection, not configuration (Code Example 1). An adapter that
         # is not a ToolCallingChatAdapter takes the Phase-3 call; `turn` has
