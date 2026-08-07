@@ -34,6 +34,18 @@ the extra" message. Without this probe that handler could never fire, and a user
 without the extra would get a bare ``ModuleNotFoundError`` mid-conversation
 instead.
 
+**The framework's TOOL vocabulary is confined here too, and to one function.**
+:class:`LangChainAdapter` satisfies
+:class:`~paaf_llm.ports.ToolCallingChatAdapter` as well as ``ChatAdapter``
+(MESH-01), which is what makes a handoff reachable against a live provider
+rather than only against the fake. It does so without constructing a single
+framework tool object: :func:`_to_framework_tools` emits the OpenAI-style
+function dicts ``bind_tools`` accepts, and :meth:`LangChainAdapter._tool_calls_of`
+maps the framework's parsed calls back onto PAAF's :class:`~paaf_llm.ports.ToolCall`.
+Nothing framework-shaped crosses the port in either direction, so the mesh —
+which is otherwise pure PAAF and stdlib — stays runnable with the framework
+uninstalled (SC#5).
+
 **No HTTP client.** This adapter never imports ``httpx`` (or ``requests``, or
 ``aiohttp``). The provider bindings own the network client, so the framework's
 ``no-network-client-in-framework`` contract stays literally true of PAAF source
@@ -83,6 +95,7 @@ from ..ports import (
     RateLimited,
     RequestTimedOut,
     ServerError,
+    ToolCall,
     Usage,
 )
 
@@ -90,7 +103,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
 
     from ..agent import SecretResolver
-    from ..ports import AdapterError, ChatAdapter
+    from ..ports import AdapterError, ChatAdapter, ToolSpec
     from ..profiles import LlmConfig, ModelProfile
 
 # Checked with find_spec rather than an import: this must not load langchain (the
@@ -297,20 +310,74 @@ def classify(exc: BaseException) -> type[AdapterError] | None:
     return None
 
 
+def _to_framework_tools(tools: Sequence[ToolSpec]) -> list[dict[str, Any]]:
+    """Translate PAAF :class:`~paaf_llm.ports.ToolSpec` values for ``bind_tools``.
+
+    **This dict is the ONLY translation.** No framework tool object is
+    constructed anywhere — not a ``StructuredTool``, not a ``@tool``-decorated
+    callable, not a Pydantic args schema. ``bind_tools`` accepts the OpenAI-style
+    function dict directly, so the tool vocabulary the framework understands
+    never becomes a type PAAF has to hold, and swapping the framework means
+    rewriting one dict literal rather than a tool registry.
+
+    It is also deliberately the single place a tool's user-visible ``name`` and
+    ``description`` are shaped. Both are STEERING TEXT: the model reads them and
+    they change which peer it picks. PERS-05 therefore requires the user to be
+    able to read the same bytes, and plan 04-05 renders exactly these specs in
+    the prompt inspector. A second place that shaped them — a prefix added here,
+    a description reworded there — would make the inspector show something the
+    model was never offered, which is the specific kind of hidden behavior this
+    project refuses.
+
+    ``parameters`` falls back to an EMPTY JSON Schema OBJECT rather than to an
+    empty dict or a missing key. Every handoff tool has no arguments (the target
+    lives in the tool's name), so this is not an edge case, it is the shape Phase
+    4 actually ships — and providers reject a function declaration whose
+    ``parameters`` is not a schema object.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                # Built fresh per tool rather than shared from a module constant:
+                # a mutable dict handed out twice is one caller's edit away from
+                # rewriting another tool's declaration.
+                "parameters": tool.parameters or {"type": "object", "properties": {}},
+            },
+        }
+        for tool in tools
+    ]
+
+
 class LangChainAdapter:
-    """A :class:`~paaf_llm.ports.ChatAdapter` backed by the real agent framework.
+    """A :class:`~paaf_llm.ports.ToolCallingChatAdapter` backed by the real framework.
 
     One instance serves every profile: models are built per profile and cached,
     so a fallback chain does not re-construct a client on every turn. The cache
     key includes the endpoint and model, which is what makes MODEL-06 work — two
     Ollama profiles at ``192.168.1.10`` and ``192.168.1.11`` are two distinct
     bindings with two distinct ``base_url``s, not one shared client.
+
+    It satisfies BOTH port protocols. :meth:`stream` and :meth:`last_usage` are
+    the Phase-3 :class:`~paaf_llm.ports.ChatAdapter`; :meth:`stream_with_tools`
+    and :meth:`last_tool_calls` are the Phase-4 tool-calling extension the engine
+    feature-detects with ``isinstance``. The tool binding is NOT cached with the
+    model: the offered surface changes per leg — the hop budget withdraws it
+    entirely at the wall — so a cached binding would serve one leg's moves to the
+    next. ``bind_tools`` returns a wrapper around the cached model rather than a
+    new client, so re-binding per call costs no connection.
     """
 
     def __init__(self, secret_store: SecretResolver | None = None) -> None:
         self._secret_store = secret_store
         self._models: dict[tuple[str, ...], Any] = {}
         self._last_usage = Usage()
+        #: Initialized here so a caller that never streamed reads an empty tuple
+        #: rather than raising AttributeError. The engine asks for this after
+        #: every mesh leg, including legs that were offered no tools at all.
+        self._last_tool_calls: tuple[ToolCall, ...] = ()
         #: Resolved key values, kept ONLY so they can be scrubbed out of error
         #: text (T-03-04). They are already in memory inside the provider client;
         #: holding the same string here adds no exposure and buys a redaction.
@@ -545,6 +612,127 @@ class LangChainAdapter:
     def last_usage(self) -> Usage:
         """Return the usage published by the most recently completed stream."""
         return self._last_usage
+
+    # ----------------------------------------------------- MESH-01: tooling --
+
+    def _bind_with_tools(self, profile: ModelProfile, tools: Sequence[ToolSpec]) -> Any:
+        """Return ``profile``'s model with ``tools`` offered, or plain if none are.
+
+        An empty ``tools`` returns :meth:`bind` untouched, and that is a contract
+        rather than an optimization: the port says offering nothing must behave
+        exactly like :meth:`stream`. ``bind_tools([])`` is a different call, and
+        on the local provider it has historically been a different *mode* — the
+        whole reply arriving as one chunk (RESEARCH Pitfall 3) — so a no-peer
+        user would silently lose streaming to a tool surface that is empty.
+
+        Raises:
+            EngineError: the provider will not accept this tool surface. Never an
+                :class:`~paaf_llm.ports.AdapterError`, and deliberately NOT via
+                :meth:`_translate`. Binding contacts nobody — exactly as
+                :meth:`bind` does not — so a failure here is a configuration
+                problem, and more models will not help. ``_translate`` classifies
+                by reading exception TYPE NAMES, so routing this through it would
+                let a binding error that happens to be named like a transport
+                failure be reported as a degraded provider and swallowed by the
+                fallback loop. :meth:`_scrub` stays on the path regardless, so a
+                resolved credential a provider echoed back cannot reach the error
+                text (T-04-15).
+        """
+        model = self.bind(profile)
+        if not tools:
+            return model
+        try:
+            return model.bind_tools(_to_framework_tools(tools))
+        except Exception as exc:  # re-raised as a PAAF type, never as a fallback
+            offered = ", ".join(tool.name for tool in tools)
+            raise EngineError(
+                f"could not offer tools [{offered}] to "
+                f"{self.provider_string(profile)!r}: {self._scrub(str(exc))}"
+            ) from exc
+
+    @staticmethod
+    def _tool_calls_of(aggregate: Any) -> tuple[ToolCall, ...]:
+        """Read tool calls off the AGGREGATED stream, never off a chunk.
+
+        The twin of :meth:`_usage_of`, with sharper teeth. Mid-stream a provider
+        publishes tool-call ARGUMENTS as partial JSON fragments on
+        ``tool_call_chunks`` (``'{"'``, ``'rea'``, …); only the summed message
+        exposes ``.tool_calls`` with the arguments parsed into a dict. A
+        per-chunk read does not fail loudly — the framework declines to parse a
+        fragment and reports ``args`` as ``{}`` — so it would hand the mesh a
+        plausible-looking call whose arguments had silently vanished, and a
+        truncated NAME would then be rejected by the peer guard for entirely the
+        wrong reason (T-04-16).
+
+        Returns ``()`` rather than ``None`` when the model called nothing, which
+        is the ordinary case: a turn the awake agent simply answered. ``()`` is
+        also what an ``aggregate`` of ``None`` yields — the state left by a
+        provider that streamed nothing at all.
+        """
+        return tuple(
+            ToolCall(
+                name=call["name"],
+                arguments=call.get("args") or {},
+                call_id=call.get("id"),
+            )
+            for call in (getattr(aggregate, "tool_calls", None) or ())
+        )
+
+    async def stream_with_tools(
+        self,
+        profile: ModelProfile,
+        messages: Sequence[Message],
+        tools: Sequence[ToolSpec],
+    ) -> AsyncIterator[str]:
+        """Stream ``profile``'s reply with ``tools`` offered (MESH-01, D-01).
+
+        :meth:`stream` plus a tool binding plus one more post-drain publish.
+        Every non-negotiable of :meth:`stream` is carried over rather than
+        referenced, because the two bodies must not drift: the ``str()``
+        port-leak guard, the empty-chunk drop, the bare ``except Exception``
+        boundary, and the publish-after-drain rule.
+
+        Raises:
+            AdapterError: one of the four subclasses when the provider degrades,
+                on exactly the same terms as :meth:`stream`.
+            EngineError: a configuration problem — including a tool surface the
+                provider refuses — or a failure that is not one of the four
+                degraded triggers.
+        """
+        model = self._bind_with_tools(profile, tools)
+        framework_messages = self._to_framework_messages(messages)
+        aggregate: Any = None
+
+        try:
+            async for chunk in model.astream(framework_messages):
+                # Adding chunks is not bookkeeping on this path: it is what
+                # reassembles the partial tool-call JSON into parsed .tool_calls.
+                aggregate = chunk if aggregate is None else aggregate + chunk
+                # str() is not decoration: `.text` is a framework TextAccessor
+                # (a str subclass), and letting it cross the port would leak a
+                # framework type through a PAAF-typed stream (MODEL-08).
+                text = str(getattr(chunk, "text", "") or "")
+                if text:
+                    # Empty chunks are dropped so the engine's first-token
+                    # deadline measures real content: yielding "" would satisfy
+                    # the budget with nothing and mask a genuinely slow provider.
+                    yield text
+        except Exception as exc:  # translated to a PAAF type just below
+            # GeneratorExit and CancelledError are BaseException and pass
+            # through untouched, which is what lets the engine's timeout
+            # aclose() this generator cleanly.
+            raise self._translate(exc) from exc
+
+        self._last_usage = self._usage_of(aggregate)
+        self._last_tool_calls = self._tool_calls_of(aggregate)
+
+    def last_tool_calls(self) -> tuple[ToolCall, ...]:
+        """Return the tool calls published by the most recently completed stream.
+
+        Empty until a :meth:`stream_with_tools` has drained — and empty after one
+        in which the model simply answered, which is the ordinary case.
+        """
+        return self._last_tool_calls
 
     # -------------------------------------------------------------- warmup --
 

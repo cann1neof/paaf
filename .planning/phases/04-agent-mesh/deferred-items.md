@@ -59,3 +59,31 @@ its own plan.
 `failed` counter beside `dropped`, and keep draining — so a bad event loses one row instead of
 silencing the trace and hanging shutdown. Assert `store.failed == 0` alongside `store.dropped == 0`
 in the round-trip tests.
+
+## 3. `mypy` cannot narrow `self._adapter` at `agent.py`'s tool-path call site
+
+**Found during:** plan 04-04, Task 1 — while checking the "public API leaks no framework type" gate.
+
+`uv run mypy packages/paaf-llm/src` reports:
+
+```
+packages/paaf-llm/src/paaf_llm/agent.py:566: error: "ChatAdapter" has no attribute
+"stream_with_tools"  [attr-defined]
+```
+
+The `isinstance(self._adapter, ToolCallingChatAdapter)` check is stored in the local `with_tools`
+alongside `tool_path`, so by the time the call is made mypy has lost the narrowing — the runtime
+behavior is correct and covered, the type checker simply cannot see it. Pre-existing: introduced by
+plan 04-01 (`_run_chain`'s feature detection) and widened by 04-03's `tool_path` argument, both
+before this plan. Verified untouched by 04-04, whose only source change is in `_engine/__init__.py`.
+
+The other three mypy diagnostics in that run are missing third-party stubs (`yaml`,
+`paaf_trace.store`) and are likewise pre-existing. **No CI workflow runs `mypy`**, so nothing is red.
+
+**Not fixed here** because `agent.py` is outside this plan's file list, and `_run_chain` is edited
+again by 04-06 and 04-07 — a narrowing fix landed now would collide with both.
+
+**Suggested fix (separate change):** narrow into a local of the protocol type, e.g.
+`tool_adapter = self._adapter if isinstance(self._adapter, ToolCallingChatAdapter) else None`, and
+branch on `tool_path and tool_adapter is not None`. Then add `mypy` (and `ruff format --check`, per
+item 1) to CI so neither gate can drift unobserved again.
