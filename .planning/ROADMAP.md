@@ -193,7 +193,7 @@ Plans:
   4. Each agent applies its own fallback chain, and the trace records the full handoff chain — who was awake each turn, every handoff, and whether a turn was served by a fallback — so a wrong reroute is observable after the fact.
   5. Optional hard constraints declared on an agent are enforced by the system regardless of what the model attempts, and the entire mesh runs headless in CI against the fake adapter with the agent framework uninstalled and no audio present.
 
-**Plans**: 4/9 plans executed
+**Plans**: 5/9 plans executed
 
 Plans:
 
@@ -209,7 +209,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 04-05-PLAN.md — Nothing steers the model the user cannot see: per-agent prompts, the generated-and-overridable explainer, `paaf prompt --agent`, and the bound tool surface under `--provenance` (MESH-04/PERS-05, OQ-3)
+- [x] 04-05-PLAN.md — Nothing steers the model the user cannot see: per-agent prompts, the generated-and-overridable explainer, `paaf prompt --agent`, and the bound tool surface under `--provenance` (MESH-04/PERS-05, OQ-3)
 
 **Wave 4** *(blocked on Wave 3)*
 
@@ -391,7 +391,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
 | 3. paaf-llm Core (single agent) | 13/13 | Complete   | 2026-08-06 |
-| 4. Agent Mesh | 4/9 | In Progress|  |
+| 4. Agent Mesh | 5/9 | In Progress|  |
 | 5. Tools, MCP & Permissions | 0/TBD | Not started | - |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
 | 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
