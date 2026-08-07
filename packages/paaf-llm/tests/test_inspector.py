@@ -42,7 +42,7 @@ from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
 from paaf_llm import cli
 from paaf_llm.cli import (
     CONFIG_FAILURE_NOTICE,
-    NO_HANDOFF_NOTE,
+    MESH_LIVE_NOTE,
     PROVENANCE_LABEL,
     build_agent,
     load_llm_config,
@@ -329,11 +329,15 @@ def test_provenance_is_not_the_default(tmp_path: Path) -> None:
 
 
 def test_manifest_surfaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``paaf chat`` shows each profile's capabilities and peers, and no handoff.
+    """``paaf chat`` shows each profile's capabilities and peers (PERS-05, SC#4).
 
     The manifest is free text by D-08 — there is no routing DSL to render — so
-    the assertion is simply that every declared string reaches the user, plus the
-    explicit statement that the graph is inert (SC#4).
+    the assertion is simply that every declared string reaches the user. That
+    half is a PERS-05 check and is unchanged by Phase 4.
+
+    The trailing line changed with the mesh: through Phase 3 it stated the peer
+    graph was inert, and as of MESH-01/02 it states that the graph is live and
+    that the model — never PAAF — picks the target.
     """
     config = make_config(
         profiles={
@@ -364,18 +368,23 @@ def test_manifest_surfaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         assert profile.capabilities in result.output
     assert "cloud" in result.output  # local's declared peer
     assert "never send private files" in result.output
-    assert NO_HANDOFF_NOTE in result.output
+    assert MESH_LIVE_NOTE in result.output
 
 
 def test_manifest_performs_no_handoff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """NEGATIVE CONTROL: declaring a peer does not route anything to it.
+    """NEGATIVE CONTROL: a DECLARED peer the model did not choose is not contacted.
 
-    ``local`` names ``cloud`` as a peer and is healthy. ``cloud`` is deliberately
-    left UNPROGRAMMED, so the fake raises ``LookupError`` — not an
-    ``AdapterError`` the loop could swallow — the moment anything contacts it.
-    A green run is proof the peer graph stayed inert (MODEL-05, D-07).
+    Through Phase 3 this proved the peer graph was inert. It now proves something
+    the mesh needs just as much: the mesh is model-driven, not automatic. Being
+    declared as a peer makes an agent *reachable*, never *reached* — PAAF offers
+    the tool and nothing more (MESH-01).
+
+    ``local`` names ``cloud`` as a peer and answers the turn itself. ``cloud`` is
+    deliberately left UNPROGRAMMED, so the fake raises ``LookupError`` — not an
+    ``AdapterError`` the fallback loop could swallow — the moment anything
+    contacts it. A green run is the proof.
     """
     config = make_config(
         fallback_chain=[],
@@ -413,7 +422,7 @@ def test_profiles_command_surfaces_the_same_manifest(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "local chat" in result.output
     assert "big context" in result.output
-    assert NO_HANDOFF_NOTE in result.output
+    assert MESH_LIVE_NOTE in result.output
 
 
 # ----------------------------------------------------------- D-06 chat surface

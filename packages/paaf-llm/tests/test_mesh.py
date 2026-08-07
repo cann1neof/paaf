@@ -49,8 +49,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from paaf_llm import mesh
+import yaml
+from click.testing import CliRunner
+from paaf_llm import cli, mesh
 from paaf_llm.agent import Agent
+from paaf_llm.cli import (
+    FALLBACK_NOTICE,
+    MESH_LIMITS,
+    MESH_LIVE_NOTE,
+    NO_HOME_AGENT,
+    main,
+)
 from paaf_llm.fake import FakeAdapter
 from paaf_llm.ports import (
     HandoffRequest,
@@ -613,6 +622,118 @@ async def test_awake_agent_is_sticky_across_turns(
     assert result.served_by == "b"
     assert result.handoff is None  # nobody handed off; b was simply already up
     assert agent.awake_agent == "b"
+
+
+# ------------------------------------------------------------------- the CLI --
+#
+# The mesh's terminal surface lives here rather than in ``test_inspector.py`` so
+# that plan 04-05 can own the inspector module without a merge conflict. These
+# two are about MESH-02 and D-08/D-09 reaching the user, not about the prompt.
+
+
+def _write_mesh_config(tmp_path: Path, config: LlmConfig) -> str:
+    """Serialize a validated config to YAML and return its path.
+
+    Round-tripping the model rather than hand-writing YAML means the file the
+    CLI reads and the object the test built cannot drift apart.
+    """
+    path = tmp_path / "paaf.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
+    return str(path)
+
+
+def test_cli_surfaces_a_routing_violation_and_stays_silent_about_handoffs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    make_mesh_config: Callable[..., LlmConfig],
+) -> None:
+    """MESH-02 at the terminal, paired with D-10's silence — both in one run.
+
+    The refusal half: a model naming a target its agent was never given exits
+    non-zero with a message naming the attempted target AND the declared peers,
+    not a traceback. MESH-02 says the violation is "a catchable error rather
+    than silently followed"; the library already refuses, and this is what makes
+    the refusal *visible*, which is the half a user can act on.
+
+    The silence half is the negative control, and it is the one that would rot
+    first. D-10 makes handoff silent in the reply stream: no per-hop notice, and
+    specifically not ``_print_fallback_trail``'s ``↳`` shape, which was
+    considered for handoffs and declined. A successful A→B turn must therefore
+    print one reply and say nothing about the routing that produced it.
+    """
+    config = make_mesh_config(
+        active="host", peers={"host": ["chef"], "chef": [], "admin": []}
+    )
+    path = _write_mesh_config(tmp_path, config)
+    arrow = FALLBACK_NOTICE.format(to="", reason="")[0]
+
+    # 1. A handoff that IS allowed: one reply, and not a word about the hop.
+    healthy = FakeAdapter()
+    healthy.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    healthy.program("chef", tokens=["risotto, obviously"])
+    monkeypatch.setattr(
+        cli, "_default_adapter", lambda _config, secret_store=None: healthy
+    )
+
+    served = CliRunner().invoke(main, ["chat", "--config", path], input="dinner?\n")
+
+    assert served.exit_code == 0, served.output
+    assert "chef> risotto, obviously" in served.output
+    assert arrow not in served.output  # no fell-back-to trail, and none faked
+    assert mesh.HANDOFF_TOOL_PREFIX not in served.output
+    assert "handed off" not in served.output.lower()
+
+    # 2. The same config, a target outside host's peers: named and refused.
+    violating = FakeAdapter()
+    violating.program("host", tokens=[], tool_calls=[_TRANSFER_TO_ADMIN])
+    violating.program("admin", tokens=["root shell, coming right up"])
+    monkeypatch.setattr(
+        cli, "_default_adapter", lambda _config, secret_store=None: violating
+    )
+
+    refused = CliRunner().invoke(main, ["chat", "--config", path], input="admin?\n")
+
+    assert refused.exit_code != 0
+    assert "admin" in refused.output  # what was attempted
+    assert "chef" in refused.output  # what was actually reachable
+    assert "Traceback" not in refused.output
+    # Never followed: admin was not streamed even though it is a real profile.
+    assert "admin" not in [key for key, _ in violating.calls]
+
+
+def test_cli_profiles_reports_the_hop_budget_and_the_home_agent(
+    tmp_path: Path, make_mesh_config: Callable[..., LlmConfig]
+) -> None:
+    """D-08/D-09 reach the user: a peer graph alone does not predict a turn.
+
+    Run twice against the same graph — once with a home agent declared and once
+    without — because the second is where the surface could quietly lie. An
+    undeclared ``default_agent`` is not a missing value; it is OQ-2's "whoever
+    is awake answers", and printing a blank there would read as the former.
+    """
+    declared = make_mesh_config(
+        active="host",
+        peers={"host": ["chef"], "chef": []},
+        hop_budget=5,
+        default_agent="host",
+    )
+    result = CliRunner().invoke(
+        main, ["profiles", "--config", _write_mesh_config(tmp_path, declared)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert MESH_LIMITS.format(budget=5, home="host") in result.output
+    assert MESH_LIVE_NOTE in result.output
+    # The graph itself is still shown, unchanged.
+    assert "peers: chef" in result.output
+
+    bare = make_mesh_config(active="host", peers={"host": ["chef"], "chef": []})
+    result = CliRunner().invoke(
+        main, ["profiles", "--config", _write_mesh_config(tmp_path, bare)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert MESH_LIMITS.format(budget=3, home=NO_HOME_AGENT) in result.output
 
 
 # ------------------------------------------------------------------- framework --

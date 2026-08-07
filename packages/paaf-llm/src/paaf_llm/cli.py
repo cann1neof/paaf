@@ -60,7 +60,7 @@ from rich.console import Console
 
 from .agent import Agent
 from .compose import PromptComposer
-from .ports import AdapterError, AllProvidersFailed, EngineError
+from .ports import AdapterError, AllProvidersFailed, EngineError, UndeclaredPeer
 from .profiles import LlmConfig
 
 if TYPE_CHECKING:
@@ -82,13 +82,36 @@ NO_FALLBACK_TARGET = "(nowhere — end of chain)"
 #: module actually emits instead of a copy of it.
 PROVENANCE_LABEL = "--- {source} ---"
 
-#: Stated wherever the peer graph is shown. MODEL-05 is inert data in this phase
-#: (D-07): the graph is declared, validated, and displayed, and nothing routes on
-#: it. Saying so in the output keeps the surface from implying a behavior that
-#: Phase 4 has not built yet.
-NO_HANDOFF_NOTE = (
-    "The peer graph is inert in this phase: it is declared and validated data, "
-    "and no handoff is performed."
+#: Stated wherever the peer graph is shown. Through Phase 3 this said the graph
+#: was inert; as of Phase 4 (MESH-01/02) it is live, and the honest description
+#: of what "live" means here is the interesting part: PAAF offers the choice and
+#: refuses an undeclared answer, and it never picks a target. The user reading
+#: their own peer graph should know both halves.
+MESH_LIVE_NOTE = (
+    "The peer graph is live: the awake model is offered one handoff tool per "
+    "declared peer and chooses for itself. PAAF never picks the target, and a "
+    "target outside the declared peers is refused rather than followed."
+)
+
+#: The two mesh-level facts a user needs to reason about a whole turn (D-08/D-09)
+#: — how many handoffs one turn may make, and who speaks when they run out. Shown
+#: with the peer graph because a graph without them does not predict a turn.
+MESH_LIMITS = "mesh — hop budget: {budget} handoff(s) per turn, home agent: {home}"
+
+#: Printed for `default_agent` when the user declared none. Spelled out rather
+#: than left blank: with no home agent the currently-awake agent answers with the
+#: handoff tools withdrawn (OQ-2), and a blank would read as a missing value
+#: rather than as a deliberate absence.
+NO_HOME_AGENT = "(none declared — whoever is awake answers)"
+
+#: Printed when a model names a handoff target its agent was never given. The
+#: detail is ``UndeclaredPeer``'s own message, which already names the attempted
+#: target AND the declared peers — the two things a user needs to decide whether
+#: to fix the config or the prompt.
+UNDECLARED_PEER_NOTICE = (
+    "the model attempted a handoff PAAF refused: {detail}. Nothing was "
+    "re-routed and no fallback was tried — this is a routing violation, not a "
+    "provider having a bad minute."
 )
 
 #: Printed when a profile cannot be USED as configured — a credential that will
@@ -325,13 +348,23 @@ def build_agent(
 
 
 def render_profiles(config: LlmConfig, console: Console) -> None:
-    """Print every profile's capability manifest and peer graph (MODEL-05, SC#4).
+    """Print the mesh as configured: manifests, peers, and the turn's two limits.
 
-    Inert data, rendered as data: what each model says it handles (free text, by
-    D-08 — there is no routing DSL to display) and which peers it *may* one day
-    hand off to. Nothing here reads the graph to make a decision, and
-    :data:`NO_HANDOFF_NOTE` says so out loud so the surface cannot be mistaken
-    for a mesh that already works.
+    What each model says it handles (free text, by D-08/D-12 — there is no
+    routing DSL to display), which peers it may hand off to, and the two
+    mesh-level facts that decide how a whole turn can unfold: the hop budget
+    (D-08) and the home agent (D-09). A peer graph shown without those two does
+    not let a user predict a turn — it says where the conversation *could* go and
+    nothing about when it must stop or who ends it.
+
+    :data:`MESH_LIVE_NOTE` states plainly that the graph now routes, and states
+    the limit on that too: the model chooses, PAAF does not. Through Phase 3 this
+    line said the opposite, and leaving it saying so would have been the more
+    misleading of the two errors.
+
+    Everything goes through the caller's :func:`_make_console`
+    (``markup=False, highlight=False``), so a manifest containing rich markup
+    cannot restyle or swallow the lines around it (T-04-14).
     """
     console.print("profiles — capability manifest and peer graph", style="bold")
     for name, profile in config.profiles.items():
@@ -346,7 +379,13 @@ def render_profiles(config: LlmConfig, console: Console) -> None:
         console.print(f"    peers: {', '.join(profile.peers) or '(none)'}")
         if profile.constraints:
             console.print(f"    constraints: {'; '.join(profile.constraints)}")
-    console.print(NO_HANDOFF_NOTE, style="dim")
+    console.print(
+        MESH_LIMITS.format(
+            budget=config.hop_budget,
+            home=config.default_agent or NO_HOME_AGENT,
+        )
+    )
+    console.print(MESH_LIVE_NOTE, style="dim")
 
 
 def _make_console() -> Console:
@@ -399,6 +438,23 @@ async def _chat_loop(agent: Agent, *, show_prompt: bool, console: Console) -> No
 
         try:
             result = await agent.turn(user_text)
+        except UndeclaredPeer as exc:
+            # A ROUTING violation, and the taxonomy is what makes this its own
+            # clause. `UndeclaredPeer` is a sibling of `AllProvidersFailed` and
+            # `EngineError` and subclasses neither `AdapterError` nor
+            # `EngineError`, so nothing below can shadow it: filing it under
+            # `AdapterError` would let the fallback loop absorb it and print
+            # `↳ fell back to cloud (connection)` at a mis-route, and filing it
+            # under `EngineError` would blame the user's YAML when `_check_refs`
+            # already proved the peer graph integral.
+            #
+            # Surfacing it here as a plain ClickException — one line, no
+            # traceback — is what makes MESH-02's "a catchable error rather than
+            # silently followed" true for the USER and not only for the library.
+            # The library refusing where nobody can see it is half a guarantee.
+            raise click.ClickException(
+                UNDECLARED_PEER_NOTICE.format(detail=exc)
+            ) from exc
         except AllProvidersFailed as exc:
             # Chain exhaustion already reads well and names every hop, so it
             # keeps its own wording — prefixing it with the config notice would
@@ -576,5 +632,5 @@ def prompt(config_path: str, provenance: bool) -> None:
 @main.command()
 @_config_option
 def profiles(config_path: str) -> None:
-    """Show each profile's capability manifest and peer graph (inert data)."""
+    """Show the mesh: each profile's manifest and peers, the budget, the home agent."""
     render_profiles(load_llm_config(config_path), _make_console())
