@@ -73,6 +73,13 @@ MESH_EXPLAINER = (
     "You may hand this conversation to chef, who handles the kitchen.",
 )
 
+#: A mesh fragment with deliberate leading and trailing SPACES (never ``SEP``, so
+#: the split still recovers it as one part). It exists because a composer that
+#: "tidied" the mesh layer with ``.strip()`` on its way past is invisible to
+#: every other case here — and tidying is a rewrite, which ``Segment.text``'s
+#: as-sent rule forbids. A persona the user indented is the user's persona.
+MESH_UNTIDY = ("mesh:persona", "  Speak quietly.\tNever shout. ")
+
 
 def test_no_hidden_prompt() -> None:
     """PERS-05: the prompt is base + fragments + mesh, and NOTHING else.
@@ -126,6 +133,8 @@ def test_compose_is_byte_exact_the_joined_segments() -> None:
         [],
         [MESH_PERSONA],
         [MESH_PERSONA, MESH_EXPLAINER],
+        # The case that catches a composer normalizing the layer as it passes.
+        [MESH_UNTIDY, MESH_EXPLAINER],
     ]
 
     for base in bases:
