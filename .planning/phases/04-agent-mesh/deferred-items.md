@@ -87,3 +87,34 @@ again by 04-06 and 04-07 — a narrowing fix landed now would collide with both.
 `tool_adapter = self._adapter if isinstance(self._adapter, ToolCallingChatAdapter) else None`, and
 branch on `tool_path and tool_adapter is not None`. Then add `mypy` (and `ruff format --check`, per
 item 1) to CI so neither gate can drift unobserved again.
+
+## 4. A reasoning model's thinking tokens reach `stream()` as empty chunks, and are dropped
+
+**Found during:** plan 04-04, Task 2 — while running the live A1 check (`scripts/check_tool_streaming.py`).
+
+Measured against local Ollama 0.32.1 with `qwen3.5:2b`. For the prompt *"Say the single word:
+blue."*, the raw Ollama stream carries **154 chunks, of which 152 have a `thinking` field and
+exactly 1 has `content`** (measured directly against `POST /api/chat`). Through
+`langchain-ollama==1.1.0` the same stream arrives as 235 `AIMessageChunk`s whose `.content` is `''`
+— the thinking text is not surfaced as text at all — so `LangChainAdapter.stream`'s empty-chunk drop
+correctly yields nothing for the whole thinking period. End to end this measured **53.7 s and 78.1 s
+to first token** on `qwen3.5:2b` and `qwen3.5:9b`, and one run where the plain path produced **zero**
+text chunks in 88 s.
+
+Two consequences:
+
+- The empty-chunk drop is behaving exactly as designed (D-04/D-05: an empty chunk must not satisfy
+  the first-token budget). But on a reasoning model the user-visible result is a long silence, and
+  `first_token_budget_s` will trip and walk the fallback chain for a model that is working fine.
+- It is **not** an A1 problem and does not touch this plan's change: with a tool bound the same
+  prompt reached first token in **1.9–6.2 s** on the same two models. If anything the tools-bound
+  path is the fast one here.
+
+**Not fixed here** because it is a Phase-3 `stream()` / latency-policy question on the *plain* path,
+outside this plan's objective and its file list, and the honest fix is a product decision (surface
+thinking as its own channel? extend the budget for models that think? both?) rather than a bug fix.
+
+**Suggested fix (separate change):** decide whether reasoning content is a first-class stream channel
+(`langchain-ollama` can surface it via reasoning content blocks) or whether `first_token_budget_s`
+needs a "model is thinking" exemption. Whichever, take the measurement above into Phase 9's TTFA gate
+so the gate is not calibrated on non-reasoning models alone.
