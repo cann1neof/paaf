@@ -32,6 +32,7 @@ Secret VALUES never live here: ``api_key_ref`` holds the NAME of a
 ``paaf_core`` SecretStore key (CORE-04), so no schema, YAML file, or log line
 can carry the key itself.
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -110,9 +111,7 @@ class ModelProfile(BaseModel):
     # forbids one anywhere. The model reads this text and chooses; PAAF never
     # matches on it.
     # WARM: natural-language capability manifest. FREE TEXT ONLY.
-    capabilities: str = Field(
-        "", json_schema_extra={"reload_tier": ReloadTier.WARM}
-    )
+    capabilities: str = Field("", json_schema_extra={"reload_tier": ReloadTier.WARM})
     # WARM: names of profiles this one MAY hand off to — the whole reachability
     # graph. `paaf_llm.mesh` builds one `transfer_to_<peer>` tool per name here
     # and validates the model's answer against the same list (MESH-02).
@@ -122,6 +121,21 @@ class ModelProfile(BaseModel):
     # WARM: optional hard constraints. FREE TEXT ONLY, by D-12 — enforced by the
     # observer (D-13), which reads them the same way the model reads a manifest.
     constraints: list[str] = Field(
+        default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    # WARM: THIS agent's own ordered resilience chain (SC#4) — the profiles to
+    # try, in the user's order, when this agent's own provider is unreachable,
+    # too slow to first token, or erroring on the leg it was asked to answer.
+    # Resilience is per-agent because it is nested INSIDE the handoff loop: after
+    # a handoff, the agent being asked to answer is the one whose chain applies.
+    #
+    # It grants NO handoff edge. That is `peers`, and the two are one keystroke
+    # apart in a YAML file while meaning opposite things — "this provider broke,
+    # try that one" versus "you may delegate this conversation on the merits"
+    # (T-04-30). An empty list is not a gap: it means "use the global
+    # `LlmConfig.fallback_chain`", which keeps every Phase-3 config behaving
+    # exactly as it did.
+    fallback_chain: list[str] = Field(
         default_factory=list, json_schema_extra={"reload_tier": ReloadTier.WARM}
     )
 
@@ -211,9 +225,7 @@ class ModelProfile(BaseModel):
                         f"it is a path, not a query string or a fragment"
                     )
             if any(character.isspace() for character in path):
-                raise ValueError(
-                    f"endpoint_path {path!r} must not contain whitespace"
-                )
+                raise ValueError(f"endpoint_path {path!r} must not contain whitespace")
 
         if self.endpoint_unauthenticated:
             if self.api_key_ref is not None:
@@ -246,6 +258,16 @@ class LlmConfig(BaseModel):
     speaks when the mesh has run out of moves and the hop budget is spent (D-09).
     Collapsing any pair would quietly make one mean the others: every fallback
     target a handoff target, or the home agent reachable from everywhere.
+
+    **The GLOBAL ``fallback_chain`` and the PER-AGENT one are one concept at two
+    scopes, not a fourth concept** (SC#4). This field is the default resilience
+    order for any agent that named none of its own;
+    :attr:`ModelProfile.fallback_chain` is that agent's override. It is an
+    override rather than a replacement of the concept — exactly the shape
+    ``ModelProfile.system_prompt`` follows over ``base_prompt`` (Assumption A4) —
+    so every Phase-3 config, none of which declares a per-agent chain, behaves
+    identically. What the two scopes never become is a *fourth* meaning: a chain
+    entry at either scope still grants no handoff edge (T-04-30).
     """
 
     model_config = {"extra": "forbid"}
@@ -337,6 +359,28 @@ class LlmConfig(BaseModel):
                     raise ValueError(
                         f"profile '{profile_name}'.peers references "
                         f"undeclared profile '{peer}'"
+                    )
+
+            # Rule 4 (SC#4): a per-agent chain is held to the identical
+            # reference-integrity rule the peer graph is, and for a sharper
+            # version of the same reason — a dangling chain entry is discovered
+            # only when the agent's own provider has ALREADY failed, so the user
+            # would meet the config error at the exact moment resilience was
+            # supposed to save the conversation. The check lives here rather than
+            # on ModelProfile because a profile carries no name of its own (its
+            # name is the key it sits under), which is why the self-PEER check
+            # has always lived here too.
+            for entry in profile.fallback_chain:
+                if entry == profile_name:
+                    raise ValueError(
+                        f"profile '{profile_name}' lists itself in its own "
+                        f"fallback_chain — falling back to the provider that "
+                        f"just failed is not resilience"
+                    )
+                if entry not in names:
+                    raise ValueError(
+                        f"profile '{profile_name}'.fallback_chain references "
+                        f"undeclared profile '{entry}'"
                     )
 
         return self

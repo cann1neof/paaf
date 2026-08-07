@@ -17,6 +17,14 @@ proves the loop does not fall back when it must not, and
 than a stopwatch on the whole reply. Without them, an engine that always fell
 back — or one that aborted long healthy answers — would pass every positive test
 in this file.
+
+**Phase 4 (SC#4): resilience is PER AGENT, nested inside the handoff loop.** Each
+agent brings its own ordered chain and it applies on that agent's leg only —
+``test_per_agent_chain_serves_the_receiving_agents_own_fallback`` is the row that
+says so, and its negative control is structural rather than asserted: the host's
+chain and the global chain are left UNPROGRAMMED, so an engine that reached for
+either raises ``LookupError``, which is pointedly not an ``AdapterError`` the
+loop could swallow as one more plausible hop.
 """
 
 from __future__ import annotations
@@ -39,6 +47,7 @@ from paaf_llm.ports import (
     RateLimited,
     RequestTimedOut,
     ServerError,
+    ToolCall,
     Usage,
 )
 from paaf_llm.profiles import LlmConfig, ModelProfile
@@ -288,6 +297,151 @@ async def test_healthy_no_fallback(
     assert result.served_by == "local"
     assert result.fallback_trail == []
     assert [key for key, _msgs in fake_adapter.calls] == ["local"]
+
+
+def per_agent_chain_config(
+    make_profile: Callable[..., ModelProfile],
+) -> LlmConfig:
+    """A mesh where every agent brings its OWN chain, plus a global one nobody wants.
+
+    Five profiles and three chains, arranged so a wrong implementation cannot
+    look right by coincidence:
+
+    * ``host`` may hand off to ``chef`` and falls back to ``host_backup``.
+    * ``chef`` may hand off to nobody and falls back to ``chef_backup``.
+    * ``global_backup`` is the config-level chain — the Phase-3 one, still the
+      default for any agent that declared none, and *wrong* for both of these.
+
+    The three candidates are three DISTINCT profiles on purpose. An engine that
+    kept using the global chain, or one that kept using the handing-off agent's
+    chain, reaches a profile that was never programmed and dies on
+    ``LookupError`` rather than quietly serving a plausible answer.
+    """
+    return LlmConfig(
+        active_profile="host",
+        profiles={
+            "host": make_profile(
+                "host", peers=["chef"], fallback_chain=["host_backup"]
+            ),
+            "chef": make_profile("chef", fallback_chain=["chef_backup"]),
+            "host_backup": make_profile("host_backup"),
+            "chef_backup": make_profile("chef_backup"),
+            "global_backup": make_profile("global_backup"),
+        },
+        fallback_chain=["global_backup"],
+    )
+
+
+async def test_per_agent_chain_serves_the_receiving_agents_own_fallback(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """SC#4: after a handoff, a degraded agent falls back down ITS OWN chain.
+
+    This is the whole shape of "fallback nested inside handoff". ``chef`` is
+    degraded on the leg it was handed, and the profile that rescues the turn must
+    be the one *chef* named — not the host's backup (the agent that handed off is
+    no longer the one being asked to answer) and not the global chain (which is
+    only a default for an agent that declared nothing).
+
+    The negative control is structural rather than asserted: ``host_backup`` and
+    ``global_backup`` are never programmed, so an engine that reached for either
+    raises ``LookupError``. That is deliberately NOT an ``AdapterError``, so the
+    fallback loop cannot swallow the mistake as one more hop and report a
+    cheerful trail.
+    """
+    config = per_agent_chain_config(make_profile)
+    # The two chains that must NOT be consulted are genuinely non-empty, or the
+    # negative control below would be satisfied by an engine with no chains.
+    assert config.fallback_chain == ["global_backup"]
+    assert config.profiles["host"].fallback_chain == ["host_backup"]
+
+    fake_adapter.program(
+        "host", tokens=[], tool_calls=[ToolCall("transfer_to_chef", {})]
+    )
+    fake_adapter.program("chef", fail=ServerError)
+    fake_adapter.program("chef_backup", tokens=["chef ", "backup"])
+
+    result = await Agent.build(config, fake_adapter).turn("what's for dinner?")
+
+    assert result.text == "chef backup"
+    assert result.served_by == "chef_backup"
+    # The trail describes CHEF's hop — from chef, to the profile chef named.
+    assert result.fallback_trail == [
+        ("chef", "chef_backup", FallbackReason.HTTP_5XX.value)
+    ]
+
+    contacted = [key for key, _messages in fake_adapter.calls]
+    assert contacted == ["host", "chef", "chef_backup"]
+    assert "host_backup" not in contacted
+    assert "global_backup" not in contacted
+
+
+async def test_a_profile_with_no_chain_of_its_own_uses_the_global_one(
+    fake_adapter: FakeAdapter, make_profile: Callable[..., ModelProfile]
+) -> None:
+    """POSITIVE CONTROL for the default: the global chain is not dead, it is the
+    fallback-of-last-resort for an agent that declared none (Assumption A4).
+
+    Without this, an engine that ignored ``LlmConfig.fallback_chain`` entirely
+    would pass the per-agent test above — and would silently break every Phase-3
+    config, none of which declares a per-agent chain.
+    """
+    config = chain_config(make_profile)
+    assert config.profiles["local"].fallback_chain == []
+    fake_adapter.program("local", fail=ConnectionFailed)
+    fake_adapter.program("cloud", tokens=["from-", "cloud"])
+
+    result = await Agent.build(config, fake_adapter).turn("hi")
+
+    assert result.served_by == "cloud"
+    assert result.fallback_trail == [
+        ("local", "cloud", FallbackReason.CONNECTION.value)
+    ]
+
+
+async def test_warmup_preloads_each_reachable_agents_own_chain(
+    make_profile: Callable[..., ModelProfile],
+) -> None:
+    """Pitfall 2 with a mesh: a cold PEER would blow its own first-token budget.
+
+    The two-clock design only holds if the clock that is paid at startup covers
+    every model a turn can reach. A peer that is cold when it is handed a leg
+    spends 3-10s loading *inside* that leg's deadline and false-triggers the
+    fallback the user configured for a broken provider — and only on handoffs,
+    which is the hardest version of that bug to reproduce.
+
+    ``global_backup`` is the negative control: nobody declared it, because both
+    agents brought chains of their own, so preloading it would mean warmup is
+    still reading the global chain that SC#4 replaced.
+    """
+    preloaded: list[str] = []
+
+    class _PreloadingAdapter(FakeAdapter):
+        async def preload(self, profile: object) -> None:
+            preloaded.append(self.program_key(profile))  # type: ignore[arg-type]
+
+    await Agent.build(
+        per_agent_chain_config(make_profile), _PreloadingAdapter()
+    ).warmup()
+
+    assert preloaded == ["host", "host_backup", "chef", "chef_backup"]
+    assert "global_backup" not in preloaded
+
+    # D-09: the home agent is nobody's peer by design (T-04-12) and still speaks
+    # the final leg when the budget is spent, so a peer-only walk misses exactly
+    # the agent that answers at the worst possible moment.
+    preloaded.clear()
+    home_config = LlmConfig(
+        active_profile="host",
+        profiles={
+            "host": make_profile("host"),
+            "home": make_profile("home"),
+        },
+        default_agent="home",
+    )
+    await Agent.build(home_config, _PreloadingAdapter()).warmup()
+
+    assert preloaded == ["host", "home"]
 
 
 class _SlowLaterTokensAdapter:

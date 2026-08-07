@@ -206,30 +206,38 @@ class Agent:
 
     # ---------------------------------------------------------------- chain --
 
-    def _chain(self, awake: str | None = None) -> list[tuple[str, ModelProfile]]:
+    def _chain(self, agent_name: str | None = None) -> list[tuple[str, ModelProfile]]:
         """Return ``[(name, profile), ...]`` in the user's declared order.
 
         The NAME is carried alongside the profile because it is not *on* it:
         a profile's name is the key it sits under in ``LlmConfig.profiles`` and
         does not cross the adapter port. ``served_by`` and every hop reason are
-        reported with these names, so the loop must hold them itself.
+        reported with these names, so the loop must hold them itself — and it is
+        also why a handoff target is a name rather than a profile object.
 
         The chain starts at whoever is AWAKE rather than at
         ``config.active_profile``, because resilience follows the agent actually
         being asked to answer — falling back from the active profile while a peer
         holds the conversation would answer as the wrong agent. Before any handoff
         the two are the same value, which is why this changed nothing for Phase 3.
-        The fallback chain itself is still the global one; per-agent chains
-        (SC#4) arrive in plan 04-06.
 
-        ``awake`` names the agent explicitly. :meth:`turn` passes it because the
-        agent serving the current leg is a LOCAL value during a turn — it is
+        **The chain is resolved PER AWAKE AGENT (SC#4).** Fallback is nested
+        inside handoff, so the order that applies on a leg is the order belonging
+        to the agent serving that leg: its own ``ModelProfile.fallback_chain``
+        when it declared one, and the global ``LlmConfig.fallback_chain`` when it
+        did not. Empty-means-global is what keeps every Phase-3 config identical
+        — none of them declares a per-agent chain — and it is a default rather
+        than a merge, because a user who wrote an order wrote the whole order.
+
+        ``agent_name`` names the agent explicitly. :meth:`turn` passes it because
+        the agent serving the current leg is a LOCAL value during a turn — it is
         written back to :attr:`awake_agent` only once the turn has succeeded, so
         a turn that raised part-way cannot leave a phantom agent awake. Omitting
         it falls back to the attribute, which is what :meth:`warmup` wants.
         """
-        names = [awake or self.awake_agent, *self._config.fallback_chain]
-        return [(name, self._config.profiles[name]) for name in names]
+        head = agent_name or self.awake_agent
+        tail = self._config.profiles[head].fallback_chain or self._config.fallback_chain
+        return [(name, self._config.profiles[name]) for name in [head, *tail]]
 
     def system_prompt(self, agent_name: str | None = None) -> str:
         """Return THE system prompt for one agent (D-02 — still one composer).
@@ -266,20 +274,55 @@ class Agent:
             mesh.mesh_fragments_for(name, profile, self._config),
         )
 
+    def _reachable_agents(self) -> list[str]:
+        """Return every agent a turn starting now could end up asking, in order.
+
+        The awake agent, everything reachable from it through the declared peer
+        graph (a handoff is a hop, and a hop can be followed by another one), and
+        the ``default_agent`` — which is never anybody's peer by design (T-04-12)
+        and yet speaks the final leg when the budget is spent (D-09), so it is
+        precisely the agent a peer-only walk would miss.
+
+        Order is the user's: the walk is breadth-first over declared peer lists,
+        which is also what makes the result deterministic rather than set-shaped.
+        """
+        order: dict[str, None] = dict.fromkeys([self.awake_agent])
+        queue = [self.awake_agent]
+        while queue:
+            for peer in self._config.profiles[queue.pop(0)].peers:
+                if peer not in order:
+                    order[peer] = None
+                    queue.append(peer)
+        if self._config.default_agent is not None:
+            order.setdefault(self._config.default_agent, None)
+        return list(order)
+
     async def warmup(self) -> None:
-        """Preload every profile in the chain so cold load is not charged later.
+        """Preload every profile a turn could reach, so cold load is paid once.
 
         The two-clock design (Pitfall 2): model cold-load time is paid HERE, at
         build/startup, and the per-turn deadline then measures only a warm
         model's time-to-first-token. An adapter that exposes no ``preload`` —
         the shipped fake, for instance — makes this a no-op; the real adapter
         wires an empty-prompt load in a later plan.
+
+        With a mesh, "the chain" is no longer one chain. A peer that is cold when
+        it is handed a leg pays its 3-10s load *inside* that leg's first-token
+        deadline, so it would false-trigger the very fallback the user configured
+        for a broken provider — and it would do so only on handoffs, which is the
+        hardest version of that bug to reproduce. So every agent reachable in a
+        turn is preloaded, each with its OWN chain (SC#4), de-duplicated by
+        profile name because one profile can appear in several agents' chains.
         """
         preload = getattr(self._adapter, "preload", None)
         if preload is None:
             return
-        for _name, profile in self._chain():
-            await preload(profile)
+        loaded: set[str] = set()
+        for agent_name in self._reachable_agents():
+            for name, profile in self._chain(agent_name):
+                if name not in loaded:
+                    loaded.add(name)
+                    await preload(profile)
 
     # ----------------------------------------------------------------- turn --
 

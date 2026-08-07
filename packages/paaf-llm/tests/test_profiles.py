@@ -5,6 +5,7 @@ Every test here is paired with a positive control so the rejections are never
 vacuously green: a healthy profile / config MUST validate, and only then does a
 malformed one raising ``pydantic.ValidationError`` mean anything.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -263,13 +264,111 @@ def test_valid_config_loads() -> None:
 
 
 def test_fallback_chain_and_peers_are_separate_fields() -> None:
-    # RESEARCH Open Question 1: resilience (fallback_chain, on LlmConfig) and
-    # handoff (peers, on each ModelProfile) have different semantics. Phase 4
-    # reads only `peers`. Collapsing them would silently conflate the two.
+    # RESEARCH Open Question 1: resilience (fallback_chain) and handoff (peers)
+    # have different semantics. Collapsing them would silently conflate the two.
+    #
+    # As of SC#4 `fallback_chain` lives on BOTH models, and that is not a
+    # collapse — it is the same ONE concept (resilience order) at two scopes:
+    # `LlmConfig.fallback_chain` is the default order for any agent that named
+    # none, and `ModelProfile.fallback_chain` is that agent's own override.
+    # `peers` remains ModelProfile-only, because handoff is a per-agent graph
+    # and there is no global one.
     assert "fallback_chain" in LlmConfig.model_fields
-    assert "fallback_chain" not in ModelProfile.model_fields
+    assert "fallback_chain" in ModelProfile.model_fields
     assert "peers" in ModelProfile.model_fields
     assert "peers" not in LlmConfig.model_fields
+
+
+def test_a_per_agent_fallback_entry_grants_no_handoff_edge() -> None:
+    """T-04-30: naming a profile in an agent's own chain is not naming a peer.
+
+    The two fields are one keystroke apart in a YAML file and mean opposite
+    things — one is "this provider broke, try that one", the other is "you may
+    delegate this conversation on the merits". A `fallback_chain` entry that
+    quietly became reachable would be an elevation of privilege authored by
+    nobody, so the separation is asserted directly rather than assumed from the
+    fact that they are two fields.
+    """
+    scoped = _valid_config()
+    scoped["profiles"]["kitchen-local"]["fallback_chain"] = ["cloud"]
+    cfg = LlmConfig.model_validate(scoped)
+
+    assert cfg.profiles["kitchen-local"].fallback_chain == ["cloud"]
+    # The chain entry did NOT join the peer graph.
+    assert cfg.profiles["kitchen-local"].peers == ["study-local"]
+    assert "cloud" not in cfg.profiles["kitchen-local"].peers
+
+
+def test_profile_fallback_chain_rejects_a_self_reference() -> None:
+    """A profile that lists itself would retry the provider that just failed.
+
+    The same rule — and the same name-the-offending-value reporting — the
+    self-peer check has enforced since Phase 3. Held at LOAD because the
+    alternative is discovering it mid-conversation, at the exact moment the
+    user's model is already unreachable.
+    """
+    looping = _valid_config()
+    looping["profiles"]["kitchen-local"]["fallback_chain"] = ["kitchen-local"]
+    with pytest.raises(ValidationError) as raised:
+        LlmConfig.model_validate(looping)
+
+    message = str(raised.value)
+    assert "kitchen-local" in message
+    assert "fallback_chain" in message
+
+    # The check can only live on `LlmConfig`, and that is a fact about the
+    # schema rather than a shortcut: a profile carries no `name` field — its name
+    # is the key it sits under in `LlmConfig.profiles` — so a bare
+    # `ModelProfile` genuinely cannot know whether it is referencing itself.
+    # `model` is the PROVIDER's model identifier (`qwen3.5:9b`), not the name, so
+    # comparing against it would invent a rule the user never wrote. Exactly the
+    # reason the self-PEER check has lived on `LlmConfig` since Phase 3.
+    assert "name" not in ModelProfile.model_fields
+    assert ModelProfile(
+        provider="ollama", model="m", fallback_chain=["m"]
+    ).fallback_chain == ["m"]
+
+
+def test_profile_fallback_chain_rejects_an_undeclared_entry() -> None:
+    """A dangling per-agent chain entry is named, with its owning profile.
+
+    Both names are in the message on purpose: a config with five profiles and
+    five chains has five places the typo could live, and reporting only the
+    missing name would leave the user to find which agent referenced it.
+    """
+    dangling = _valid_config()
+    dangling["profiles"]["study-local"]["fallback_chain"] = ["ghost"]
+    with pytest.raises(ValidationError) as raised:
+        LlmConfig.model_validate(dangling)
+
+    message = str(raised.value)
+    assert "ghost" in message  # the offending value
+    assert "study-local" in message  # the profile that referenced it
+
+    # POSITIVE CONTROL: a declared name is accepted, and so is an empty chain —
+    # otherwise a validator that rejected every per-agent chain would pass the
+    # rejection half above.
+    declared = _valid_config()
+    declared["profiles"]["study-local"]["fallback_chain"] = ["cloud"]
+    assert LlmConfig.model_validate(declared).profiles[
+        "study-local"
+    ].fallback_chain == ["cloud"]
+    assert (
+        LlmConfig.model_validate(_valid_config()).profiles["study-local"].fallback_chain
+        == []
+    )
+
+
+def test_the_per_agent_fallback_chain_carries_reload_tier_metadata() -> None:
+    """WARM: a re-ordered chain applies on the next turn, with no restart.
+
+    Asserted rather than assumed, for the reason the LlmConfig version of this
+    test gives: a field without a tier is invisible to the Phase-2 reload
+    machinery while looking exactly like every field beside it.
+    """
+    extra = ModelProfile.model_fields["fallback_chain"].json_schema_extra
+    assert isinstance(extra, dict)
+    assert extra["reload_tier"] is ReloadTier.WARM
 
 
 def test_peer_validation() -> None:
