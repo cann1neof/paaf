@@ -4,8 +4,16 @@
 Submodule-level exports only; the top-level ``paaf_core`` package is left
 untouched. Downstream code imports from ``paaf_core.config``.
 """
+
 from .reload_tiers import DEFAULT_TIER, reload_tiers
-from .schema import AppConfig, ModelConfig, ReloadTier, VoiceConfig
+from .schema import (
+    AppConfig,
+    McpServerConfig,
+    McpServerTransport,
+    ModelConfig,
+    ReloadTier,
+    VoiceConfig,
+)
 from .store import (
     ConflictError,
     atomic_write_bytes,
@@ -18,6 +26,8 @@ __all__ = [
     "DEFAULT_TIER",
     "AppConfig",
     "ConflictError",
+    "McpServerConfig",
+    "McpServerTransport",
     "ModelConfig",
     "ReloadTier",
     "VoiceConfig",
@@ -27,3 +37,4 @@ __all__ = [
     "reload_tiers",
     "write_config",
 ]
+

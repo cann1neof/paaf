@@ -6,6 +6,7 @@ is a single source of truth: the schema is both the validation contract and the
 authority on how each key may be reloaded. Secret VALUES never live here — only
 key references (coordinated with Plan 05's SecretStore).
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -68,3 +69,52 @@ class AppConfig(BaseModel):
     persona: str = "assistant"
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
+    mcp_servers: dict[str, McpServerConfig] = Field(
+        default_factory=dict,
+        json_schema_extra={"reload_tier": ReloadTier.COLD},
+    )
+
+
+class McpServerTransport(str, Enum):
+    """Transport protocol used by an MCP server."""
+
+    STDIO = "stdio"
+    SSE = "sse"
+
+
+class McpServerConfig(BaseModel):
+    """Configuration for an individual Model Context Protocol (MCP) server."""
+
+    model_config = {"extra": "forbid"}
+
+    transport: McpServerTransport = Field(
+        McpServerTransport.STDIO,
+        json_schema_extra={"reload_tier": ReloadTier.COLD},
+    )
+    command: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.COLD}
+    )
+    args: list[str] = Field(
+        default_factory=list,
+        json_schema_extra={"reload_tier": ReloadTier.COLD},
+    )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        json_schema_extra={"reload_tier": ReloadTier.COLD},
+    )
+    url: str | None = Field(
+        None, json_schema_extra={"reload_tier": ReloadTier.COLD}
+    )
+
+    from pydantic import model_validator
+
+    @model_validator(mode="after")
+    def validate_transport_fields(self) -> McpServerConfig:
+        if self.transport == McpServerTransport.STDIO:
+            if not self.command:
+                raise ValueError("stdio transport requires a non-empty 'command'")
+        elif self.transport == McpServerTransport.SSE:
+            if not self.url:
+                raise ValueError("sse transport requires a non-empty 'url'")
+        return self
+
