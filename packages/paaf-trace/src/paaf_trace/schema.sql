@@ -87,3 +87,15 @@ CREATE TABLE IF NOT EXISTS handoffs (
     detail           TEXT,   -- free text: the rejection message, or the constraint cited
     at               REAL    -- attempt timestamp
 );
+
+CREATE TABLE IF NOT EXISTS custom_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type  TEXT NOT NULL,
+    summary     TEXT,
+    payload     TEXT,
+    created_at  REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_events_event_type ON custom_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_custom_events_created_at ON custom_events(created_at);
+

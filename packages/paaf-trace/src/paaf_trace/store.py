@@ -194,6 +194,27 @@ class HandoffEvent:
 
 
 @dataclass(slots=True)
+class CustomEvent:
+    """A custom or background log event (event_type, summary, payload, created_at)."""
+
+    event_type: str
+    summary: str | None = None
+    payload: str | None = None
+    created_at: float | None = None
+
+    def as_sql(self) -> tuple[str, tuple[object, ...]]:
+        import time
+        created = self.created_at if self.created_at is not None else time.time()
+        return (
+            (
+                "INSERT INTO custom_events (event_type, summary, payload, created_at) "
+                "VALUES (?, ?, ?, ?)"
+            ),
+            (self.event_type, self.summary, self.payload, created),
+        )
+
+
+@dataclass(slots=True)
 class TtfaUpdate:
     """Record time_to_first_audio for an existing run row (see metrics.py)."""
 
@@ -278,3 +299,32 @@ class TraceStore:
             await self._writer_task
         self._writer_task = None
         self._ready.clear()
+
+    async def query_custom_events(
+        self,
+        event_type: str | None = None,
+        since_seconds_ago: float | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        """Query custom_events table off the hot path."""
+        import time
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            query = "SELECT id, event_type, summary, payload, created_at FROM custom_events"
+            conditions: list[str] = []
+            params: list[object] = []
+            if event_type:
+                conditions.append("event_type = ?")
+                params.append(event_type)
+            if since_seconds_ago is not None:
+                min_time = time.time() - since_seconds_ago
+                conditions.append("created_at >= ?")
+                params.append(min_time)
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            async with db.execute(query, tuple(params)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+

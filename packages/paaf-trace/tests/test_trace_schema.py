@@ -180,3 +180,21 @@ async def test_reopen_pre_phase4_database_gains_mesh_tables_and_loses_nothing(
     assert runs[1] == (2, "a run from after", None)
     assert legs == [("t0", 0, "host", "host-cloud")]
     assert attempts == [("t0", 0, "chef", "accepted")]
+
+
+async def test_custom_events_table(tmp_path) -> None:
+    """custom_events table exists and TraceStore can emit and query CustomEvent rows."""
+    from paaf_trace.store import CustomEvent
+
+    db_path = str(tmp_path / "custom_events.db")
+    store = TraceStore(db_path)
+    await store.start()
+    store.emit(CustomEvent(event_type="test_event", summary="bg event", payload='{"key":"val"}'))
+    await store.stop()
+
+    events = await store.query_custom_events(event_type="test_event")
+    assert len(events) == 1
+    assert events[0]["event_type"] == "test_event"
+    assert events[0]["summary"] == "bg event"
+    assert events[0]["payload"] == '{"key":"val"}'
+
