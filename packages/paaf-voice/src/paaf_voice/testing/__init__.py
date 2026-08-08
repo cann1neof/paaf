@@ -9,6 +9,7 @@ from paaf_voice.testing.fakes import (
     FakeAudioSource,
     FakeWakeWord,
 )
+from paaf_voice.testing.generators import create_wav_bytes, generate_pcm_sine_bytes
 
 __all__ = [
     "FakeAudioSink",
@@ -17,4 +18,6 @@ __all__ = [
     "FakeTTS",
     "FakeWakeWord",
     "FakeVAD",
+    "generate_pcm_sine_bytes",
+    "create_wav_bytes",
 ]
