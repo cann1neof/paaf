@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: paaf-llm Core (single agent)** - Ports and fake adapter first, then models, fallbacks, the manifest + peer-graph seam, and the verbatim prompt (completed 2026-08-06)
 - [ ] **Phase 4: Agent Mesh** - Automatic LLM-driven handoff between models the awake one chooses, headless, with the full handoff chain in the trace
 - [ ] **Phase 5: Tools, MCP & Permissions** - Unified tool registry across three sources with tiers the user sets
-- [ ] **Phase 6: Skills & PyPI Release** - Installable skills, and `paaf-llm` — mesh included — shipped publicly before voice exists
+- [x] **Phase 6: Skills & PyPI Release** - Installable skills, and `paaf-llm` — mesh included — shipped publicly before voice exists (completed 2026-08-08)
 - [ ] **Phase 7: paaf-voice Ports & Fakes** - Test doubles and the language-agnostic sentence aggregator, before any engine
 - [ ] **Phase 8: Real Engines & Live Audio** - Whisper, Chatterbox, wake word and VAD behind the ports; the machine hears and speaks
 - [ ] **Phase 9: paaf-session** - The turn loop and truthful barge-in, hardened in CI with no audio hardware
@@ -400,7 +400,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. paaf-llm Core (single agent) | 13/13 | Complete   | 2026-08-06 |
 | 4. Agent Mesh | 9/9 | Complete   | 2026-08-08 |
 | 5. Tools, MCP & Permissions | 5/5 | Complete   | 2026-08-08 |
-| 6. Skills & PyPI Release | 0/TBD | Not started | - |
+| 6. Skills & PyPI Release | 3/3 | Complete   | 2026-08-08 |
 | 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
 | 8. Real Engines & Live Audio | 0/TBD | Not started | - |
 | 9. paaf-session | 0/TBD | Not started | - |
