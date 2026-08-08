@@ -15,6 +15,7 @@ Two invariants this module exists to hold:
    the guard non-vacuous — without it two processes could both read rev N and
    both write rev N+1 (the documented anti-pattern).
 """
+
 from __future__ import annotations
 
 import io

@@ -7,6 +7,7 @@ models with dotted key paths) and returns every leaf key mapped to its
 with `DEFAULT_TIER` rather than omitted, so the map is exhaustive: the desktop
 app can classify *every* key it might edit without special-casing gaps.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -26,7 +27,9 @@ def _extract_tier(json_schema_extra: object) -> ReloadTier:
     return DEFAULT_TIER
 
 
-def reload_tiers(model_cls: type[BaseModel], _prefix: str = "") -> dict[str, ReloadTier]:
+def reload_tiers(
+    model_cls: type[BaseModel], _prefix: str = ""
+) -> dict[str, ReloadTier]:
     """Return {dotted_key_path: ReloadTier} for every leaf field of ``model_cls``.
 
     Nested `BaseModel` fields are recursed into; scalar fields read their

@@ -11,7 +11,9 @@ from .schema import (
     McpServerConfig,
     McpServerTransport,
     ModelConfig,
+    PermissionTier,
     ReloadTier,
+    ToolsConfig,
     VoiceConfig,
 )
 from .store import (
@@ -29,7 +31,9 @@ __all__ = [
     "McpServerConfig",
     "McpServerTransport",
     "ModelConfig",
+    "PermissionTier",
     "ReloadTier",
+    "ToolsConfig",
     "VoiceConfig",
     "atomic_write_bytes",
     "dump_config",

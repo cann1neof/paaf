@@ -57,6 +57,7 @@ from paaf_core.config import (
     AppConfig,
     McpServerConfig,
     McpServerTransport,
+    PermissionTier,
     atomic_write_bytes,
     dump_config,
     load_config,
@@ -866,5 +867,86 @@ def mcp_remove(name: str, config_path: str) -> None:
     del app_cfg.mcp_servers[name]
     write_config(config_path, lock_file, app_cfg, expected_rev)
     click.echo(f"Removed MCP server '{name}' from {config_path}")
+
+
+@main.group()
+def tools() -> None:
+    """Manage registered system, custom, and MCP tools and permission tiers."""
+    pass
+
+
+@tools.command(name="list")
+@click.option(
+    "--config",
+    "config_path",
+    default="paaf.yaml",
+    help="Path to YAML config file",
+)
+def tools_list(config_path: str) -> None:
+    """List all registered tools, their sources, and effective permission tiers."""
+    from paaf_llm.permissions import PermissionEngine
+    from paaf_llm.ports import ToolSpec
+    from paaf_llm.registry import ToolRegistry
+    from paaf_llm.tools import BUILTIN_TOOL_SPECS
+
+    if os.path.exists(config_path):
+        app_cfg = load_config(config_path)
+    else:
+        app_cfg = AppConfig()
+
+    engine = PermissionEngine(app_cfg)
+    registry = ToolRegistry()
+
+    for spec in BUILTIN_TOOL_SPECS:
+        default_tier = (
+            PermissionTier.OBSERVE
+            if spec.name in ("date_time_lookup", "history_lookup")
+            else PermissionTier.ACT
+        )
+        registry.register(spec, source="builtin", default_tier=default_tier)
+
+    for s_name, s_cfg in app_cfg.mcp_servers.items():
+        registry.register(
+            ToolSpec(
+                name=f"mcp_{s_name}_tool",
+                description=f"MCP tool from {s_name}",
+                parameters={},
+            ),
+            source=f"mcp:{s_name}",
+            mcp_server=s_name,
+        )
+
+    click.echo(f"Registered Tools ({len(registry.list_tools())}):")
+    for item in registry.list_tools():
+        tier = item.get_tier(engine)
+        click.echo(f"  - {item.spec.name} [{item.source}] (tier: {tier.value})")
+
+
+@tools.command(name="permission")
+@click.argument("tool_name")
+@click.argument("tier", type=click.Choice(["observe", "act", "confirm"]))
+@click.option(
+    "--config",
+    "config_path",
+    default="paaf.yaml",
+    help="Path to YAML config file",
+)
+def tools_permission(tool_name: str, tier: str, config_path: str) -> None:
+    """Set or update permission tier for a tool in paaf.yaml."""
+    lock_file = config_path + ".lock"
+    perm_tier = PermissionTier(tier)
+
+    if os.path.exists(config_path):
+        app_cfg = load_config(config_path)
+        expected_rev = app_cfg.revision
+        app_cfg.tools.permissions[tool_name] = perm_tier
+        write_config(config_path, lock_file, app_cfg, expected_rev)
+    else:
+        app_cfg = AppConfig()
+        app_cfg.tools.permissions[tool_name] = perm_tier
+        atomic_write_bytes(config_path, dump_config(app_cfg))
+
+    click.echo(f"Updated permission for '{tool_name}' to '{tier}' in {config_path}")
+
 
 

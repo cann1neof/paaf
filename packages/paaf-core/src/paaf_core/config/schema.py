@@ -55,6 +55,25 @@ class ModelConfig(BaseModel):
     )
 
 
+class PermissionTier(str, Enum):
+    """Permission tiers for tool execution (observe, act, confirm)."""
+
+    OBSERVE = "observe"
+    ACT = "act"
+    CONFIRM = "confirm"
+
+
+class ToolsConfig(BaseModel):
+    """Tool-subsystem settings and permission overrides."""
+
+    model_config = {"extra": "forbid"}
+
+    permissions: dict[str, PermissionTier] = Field(
+        default_factory=dict,
+        json_schema_extra={"reload_tier": ReloadTier.HOT},
+    )
+
+
 class AppConfig(BaseModel):
     """Root of the one YAML tree the user owns.
 
@@ -73,6 +92,11 @@ class AppConfig(BaseModel):
         default_factory=dict,
         json_schema_extra={"reload_tier": ReloadTier.COLD},
     )
+    tools: ToolsConfig = Field(
+        default_factory=ToolsConfig,
+        json_schema_extra={"reload_tier": ReloadTier.HOT},
+    )
+
 
 
 class McpServerTransport(str, Enum):
