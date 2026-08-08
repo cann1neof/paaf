@@ -101,17 +101,17 @@ The framework is organized around skills and agents, where an agent is another m
 
 ### Voice (VOICE)
 
-- [ ] **VOICE-01**: STT, TTS, wake word, and VAD each sit behind a swappable interface
-- [ ] **VOICE-02**: Test fakes for every interface ship as a supported part of the package, written before the real engines
+- [x] **VOICE-01**: STT, TTS, wake word, and VAD each sit behind a swappable interface
+- [x] **VOICE-02**: Test fakes for every interface ship as a supported part of the package, written before the real engines
 - [ ] **VOICE-03**: Streaming STT with partial results, never told which language to expect
 - [ ] **VOICE-04**: Multilingual TTS speaking mixed-language replies in one voice identity
 - [ ] **VOICE-05**: A per-language engine override exists as an escape hatch — an engine override, never per-language voice switching
-- [ ] **VOICE-06**: Sentence aggregation splits a token stream into speakable sentences using Unicode rules that work across Latin, Cyrillic, and Hebrew script, with no per-language configuration
+- [x] **VOICE-06**: Sentence aggregation splits a token stream into speakable sentences using Unicode rules that work across Latin, Cyrillic, and Hebrew script, with no per-language configuration
 - [ ] **VOICE-07**: Wake word detection with a swappable engine
 - [ ] **VOICE-08**: VAD and end-of-speech detection, tunable, running continuously including during playback
 - [ ] **VOICE-09**: Live microphone and speaker I/O with a ring buffer, exposing a playhead position and a reference tap for echo cancellation
 - [ ] **VOICE-10**: Every engine exposes a warmup call, run at startup before the device advertises itself as ready
-- [ ] **VOICE-11**: ~80% of the module is testable from WAV fixtures with no microphone
+- [x] **VOICE-11**: ~80% of the module is testable from WAV fixtures with no microphone
 - [ ] **VOICE-12**: Chatterbox watermarking behavior is documented explicitly as a known property of the default engine
 
 ### Session — Turn Orchestration (SESS)
@@ -284,17 +284,17 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | SKILL-03 | Phase 6 — Skills & PyPI Release | Pending |
 | SKILL-04 | Phase 6 — Skills & PyPI Release | Pending |
 | SKILL-05 | Phase 6 — Skills & PyPI Release | Pending |
-| VOICE-01 | Phase 7 — paaf-voice Ports & Fakes | Pending |
-| VOICE-02 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-01 | Phase 7 — paaf-voice Ports & Fakes | Complete |
+| VOICE-02 | Phase 7 — paaf-voice Ports & Fakes | Complete |
 | VOICE-03 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-04 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-05 | Phase 8 — Real Engines & Live Audio | Pending |
-| VOICE-06 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-06 | Phase 7 — paaf-voice Ports & Fakes | Complete |
 | VOICE-07 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-08 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-09 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-10 | Phase 8 — Real Engines & Live Audio | Pending |
-| VOICE-11 | Phase 7 — paaf-voice Ports & Fakes | Pending |
+| VOICE-11 | Phase 7 — paaf-voice Ports & Fakes | Complete |
 | VOICE-12 | Phase 8 — Real Engines & Live Audio | Pending |
 | SESS-01 | Phase 9 — paaf-session | Pending |
 | SESS-02 | Phase 9 — paaf-session | Pending |

@@ -283,7 +283,13 @@ Plans:
   3. The first chunk of a turn is emitted on a deliberately short threshold and later chunks on a longer one, and a test demonstrates that the first-chunk threshold is what moves time-to-first-audio.
   4. Markdown, emoji and code blocks never reach a TTS engine as literal symbols, and roughly 80% of the module's tests run from WAV fixtures with no microphone present.
 
-**Plans**: TBD
+**Plans**: 4/4 plans executed
+
+- [x] 07-01-PLAN.md
+- [x] 07-02-PLAN.md
+- [x] 07-03-PLAN.md
+- [x] 07-04-PLAN.md
+
 **UI hint**: no
 
 ### Phase 8: Real Engines & Live Audio
@@ -401,7 +407,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Agent Mesh | 9/9 | Complete   | 2026-08-08 |
 | 5. Tools, MCP & Permissions | 5/5 | Complete   | 2026-08-08 |
 | 6. Skills & PyPI Release | 3/3 | Complete   | 2026-08-08 |
-| 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
+| 7. paaf-voice Ports & Fakes | 4/4 | In Progress|  |
 | 8. Real Engines & Live Audio | 0/TBD | Not started | - |
 | 9. paaf-session | 0/TBD | Not started | - |
 | 10. The Appliance | 0/TBD | Not started | - |
