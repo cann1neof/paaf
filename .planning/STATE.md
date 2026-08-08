@@ -5,12 +5,12 @@ milestone_name: milestone
 current_phase: 05
 current_phase_name: tools-mcp-permissions
 status: complete
-stopped_at: Phase 5 completed (built-in system tools, @tool decorator, McpServerManager, Unified ToolRegistry, PermissionEngine, spoken confirmation loop, and non-defensive governance CI test)
-last_updated: "2026-08-08T17:19:00.000Z"
+stopped_at: Phase 6 context gathered
+last_updated: "2026-08-08T14:29:29.316Z"
 last_activity: 2026-08-08
 last_activity_desc: Phase 05 execution completed
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
   total_plans: 46
   completed_plans: 46
@@ -117,6 +117,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-08T13:55:33.781Z
-Stopped at: Phase 5 context & project docs updated with always-on built-ins (handoff, observer tools, date_time, history)
-Resume file: .planning/phases/05-tools-mcp-permissions/05-CONTEXT.md
+Last session: 2026-08-08T14:29:29.301Z
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-skills-pypi-release/06-CONTEXT.md
