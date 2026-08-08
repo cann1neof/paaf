@@ -465,6 +465,22 @@ def test_provenance_tool_surface_visible(tmp_path: Path) -> None:
         assert label in result.output, label
 
 
+def test_provenance_retry_template_visible(tmp_path: Path) -> None:
+    """The retry template renders under --provenance with its own source label and is absent from default output."""
+    config = mesh_config()
+    path = write_config(tmp_path, config)
+
+    result = CliRunner().invoke(main, ["prompt", "--config", path, "--provenance"])
+    assert result.exit_code == 0, result.output
+    assert PROVENANCE_LABEL.format(source=mesh.MESH_RETRY_SOURCE) in result.output
+    assert mesh.DEFAULT_RETRY_TEMPLATE in result.output
+
+    default_result = CliRunner().invoke(main, ["prompt", "--config", path])
+    assert default_result.exit_code == 0
+    assert mesh.MESH_RETRY_SOURCE not in default_result.output
+    assert mesh.DEFAULT_RETRY_TEMPLATE not in default_result.output
+
+
 def test_default_output_is_byte_exact_and_carries_no_tool_surface(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1071,9 +1087,7 @@ def config_with_a_key_ref(ref: str = "anthropic_key") -> LlmConfig:
     return make_config(
         profiles={
             "local": ModelProfile(provider="ollama", model="local"),
-            "cloud": ModelProfile(
-                provider="anthropic", model="cloud", api_key_ref=ref
-            ),
+            "cloud": ModelProfile(provider="anthropic", model="cloud", api_key_ref=ref),
         }
     )
 

@@ -252,6 +252,24 @@ class Agent:
             if mesh.OBSERVER_PROFILE_NAME in config.profiles
             else None
         )
+        if self._observer is None:
+            self._signal(
+                MeshSignalKind.UNOBSERVED,
+                "",
+                from_agent=self.awake_agent,
+                to_agent="",
+                detail="mesh is unobserved by configuration",
+            )
+
+    @property
+    def has_observer(self) -> bool:
+        """Return True if an observer profile is configured and active."""
+        return self._observer is not None
+
+    @property
+    def is_observed(self) -> bool:
+        """Return True if an observer profile is configured and active."""
+        return self._observer is not None
 
     @classmethod
     def build(
@@ -625,10 +643,27 @@ class Agent:
                         turn_id, attempt_seq, awake, target, reply, user_text, attempts
                     )
                 )
-            # NULL, not "approve", when nobody looked: "the observer looked and
-            # said nothing" and "there is no observer" are different facts and
-            # D-07 turns on the difference.
-            verdict = decision.verdict.value if self._observer is not None else None
+                if decision.served_by is None:
+                    self._signal(
+                        MeshSignalKind.UNOBSERVED,
+                        turn_id,
+                        from_agent=awake,
+                        to_agent=target,
+                        detail=decision.detail,
+                    )
+            # NULL, not "approve", when nobody looked or when observer was unreachable:
+            verdict = (
+                decision.verdict.value
+                if (self._observer is not None and decision.served_by is not None)
+                else None
+            )
+            observer_prof = (
+                decision.served_by
+                if (self._observer is not None and decision.served_by is not None)
+                else (
+                    mesh.OBSERVER_PROFILE_NAME if self._observer is not None else None
+                )
+            )
 
             if decision.verdict is ObserverVerdict.GENERIC_RETRY:
                 # OQ-1, and the shape of this is the whole decision. The refusal
@@ -655,7 +690,7 @@ class Agent:
                     outcome=HANDOFF_OBSERVER_RETRY,
                     detail=reply,
                     observer_verdict=verdict,
-                    observer_profile=decision.served_by,
+                    observer_profile=observer_prof,
                 )
                 attempts.append((awake, target, HANDOFF_OBSERVER_RETRY))
                 attempt_seq += 1
@@ -689,27 +724,22 @@ class Agent:
                 )
                 outcome = HANDOFF_OBSERVER_REROUTE
 
+            if self._observer is None:
+                detail_note = "unobserved by configuration"
+            elif decision.served_by is None:
+                detail_note = decision.detail
+            else:
+                detail_note = decision.ungranted
+
             self._emit_handoff(
                 turn_id,
                 attempt_seq,
                 from_agent=awake,
                 to_agent=target,
                 outcome=outcome,
-                # D-11: whatever this agent said before handing off, verbatim.
-                # It is recorded HERE because neither `runs` nor `turn_legs` has
-                # ever carried reply text — the trace records prompts, not
-                # completions — and the attempt row is the one place the prose
-                # belongs anyway: it is the handoff that discarded it.
-                #
-                # T-04-37: an observer that reached for a power it was not
-                # granted would otherwise vanish — the handoff proceeds
-                # unchanged, so nothing else about this row would differ. The
-                # offending tool name rides here instead, in front of the prose,
-                # so "the supervisor tried something it could not do" is a
-                # readable fact rather than an inference from a missing effect.
-                detail=_with_note(decision.ungranted, reply),
+                detail=_with_note(detail_note, reply),
                 observer_verdict=verdict,
-                observer_profile=decision.served_by,
+                observer_profile=observer_prof,
                 rerouted_to=rerouted_to,
             )
             attempts.append((awake, target, outcome))

@@ -55,7 +55,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 from . import mesh
-from .ports import Message
+from .ports import AllProvidersFailed, Message
+
+UNOBSERVED_NOTICE = (
+    "No observer profile is declared in this configuration; handoff attempts "
+    "are running unobserved. Free-text constraints are not being judged. "
+    "The deterministic peer-graph guard still applies in every configuration."
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -282,11 +288,22 @@ class Observer:
             self._config.observer_grants, caller_peers, self._config.profiles
         )
 
-        served_by, reply, _trail, calls = await self._runner.run_leg(
-            mesh.OBSERVER_PROFILE_NAME,
-            (Message("user", self.brief(attempt)),),
-            tools,
-        )
+        try:
+            served_by, reply, _trail, calls = await self._runner.run_leg(
+                mesh.OBSERVER_PROFILE_NAME,
+                (Message("user", self.brief(attempt)),),
+                tools,
+            )
+        except AllProvidersFailed as exc:
+            # Fail open, loudly (OQ-4). Fail-CLOSED is rejected because an
+            # unreachable supervisor would break all routing, and silent fail-open
+            # is rejected because a supervisor that quietly stopped supervising is
+            # worse than one that was never configured.
+            return ObserverDecision(
+                ObserverVerdict.APPROVE,
+                detail=f"observer unreachable: {exc}",
+                served_by=None,
+            )
         return self._decide(calls, reply, served_by, tools)
 
     def brief(self, attempt: HandoffAttempt) -> str:

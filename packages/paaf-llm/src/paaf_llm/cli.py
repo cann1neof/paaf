@@ -61,6 +61,7 @@ from rich.console import Console
 from . import mesh
 from .agent import Agent
 from .compose import PromptComposer
+from .observer import UNOBSERVED_NOTICE
 from .ports import AdapterError, AllProvidersFailed, EngineError, UndeclaredPeer
 from .profiles import LlmConfig
 
@@ -398,6 +399,8 @@ def render_profiles(config: LlmConfig, console: Console) -> None:
         )
     )
     console.print(MESH_LIVE_NOTE, style="dim")
+    if mesh.OBSERVER_PROFILE_NAME not in config.profiles:
+        console.print(UNOBSERVED_NOTICE, style="yellow")
 
 
 def _make_console() -> Console:
@@ -597,13 +600,15 @@ def chat(
     )
     # Everything past here runs inside the loop, because the trace sink and the
     # agent that writes to it both belong to it. See _chat_session's docstring.
-    asyncio.run(_chat_session(
-        config,
-        show_prompt=show_prompt,
-        console=console,
-        secret_store=store,
-        trace_db_path=trace_db_path,
-    ))
+    asyncio.run(
+        _chat_session(
+            config,
+            show_prompt=show_prompt,
+            console=console,
+            secret_store=store,
+            trace_db_path=trace_db_path,
+        )
+    )
 
 
 @main.command()
@@ -713,13 +718,19 @@ def _render_tool_surface(
     command exists to guarantee, which is that what is printed is what was sent
     (T-04-24).
     """
-    for tool in mesh.tools_for_leg(
+    tools = mesh.tools_for_leg(
         agent_name, profile, config.profiles, 0, config.hop_budget
-    ):
-        click.echo(
-            PROVENANCE_LABEL.format(source=f"{mesh.MESH_TOOL_SOURCE_PREFIX}{tool.name}")
-        )
-        click.echo(tool.description)
+    )
+    if tools:
+        for tool in tools:
+            click.echo(
+                PROVENANCE_LABEL.format(
+                    source=f"{mesh.MESH_TOOL_SOURCE_PREFIX}{tool.name}"
+                )
+            )
+            click.echo(tool.description)
+        click.echo(PROVENANCE_LABEL.format(source=mesh.MESH_RETRY_SOURCE))
+        click.echo(mesh.DEFAULT_RETRY_TEMPLATE)
 
 
 @main.command()

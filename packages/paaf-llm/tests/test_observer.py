@@ -1030,3 +1030,224 @@ def test_grants_are_a_grant_and_never_a_routing_rule(
                 profiles={"host": make_profile("host")},
                 **{key: ["anything"]},
             )
+
+
+# ------------------------------------------------------------- Plan 04-08 tests --
+
+
+def _write_yaml_config(tmp_path: Path, config: LlmConfig) -> str:
+    import yaml
+
+    path = tmp_path / "paaf.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
+    return str(path)
+
+
+async def test_unobserved_notice(
+    observer_adapter: _ObserverTestAdapter,
+    make_mesh_config: Callable[..., LlmConfig],
+    trace_store: TraceStore,
+    tmp_path: Path,
+) -> None:
+    """Task 1: An unobserved mesh says it is unobserved."""
+    # 1. Config with no observer profile
+    unobserved_cfg = make_mesh_config(
+        active="host",
+        peers={"host": ["chef"], "chef": []},
+    )
+    assert mesh.OBSERVER_PROFILE_NAME not in unobserved_cfg.profiles
+
+    # Check CLI output contains UNOBSERVED_NOTICE for unobserved config
+    from click.testing import CliRunner
+    from paaf_llm.cli import main
+
+    path = _write_yaml_config(tmp_path, unobserved_cfg)
+    result = CliRunner().invoke(main, ["profiles", "--config", path])
+    assert result.exit_code == 0
+    assert observer.UNOBSERVED_NOTICE in result.output
+
+    # Negative control: config WITH an observer profile does NOT print notice
+    observed_cfg = observed_kitchen(make_mesh_config)
+    obs_path = _write_yaml_config(tmp_path, observed_cfg)
+    obs_result = CliRunner().invoke(main, ["profiles", "--config", obs_path])
+    assert obs_result.exit_code == 0
+    assert observer.UNOBSERVED_NOTICE not in obs_result.output
+
+    # Signal count is exactly 1 across two turns
+    observer_adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    observer_adapter.program("chef", tokens=["risotto, obviously"])
+    observer_adapter.next_programs["chef"] = [{"tokens": ["pasta, also"]}]
+
+    signals = SignalRecorder()
+    agent = Agent.build(
+        unobserved_cfg, observer_adapter, trace=trace_store, signals=signals
+    )
+    assert agent.has_observer is False
+    assert agent.is_observed is False
+
+    await agent.turn("turn 1")
+    # Change active/awake agent or history and turn 2
+    await agent.turn("turn 2")
+
+    unobserved_signals = signals.of_kind(MeshSignalKind.UNOBSERVED)
+    assert len(unobserved_signals) == 1
+
+    rows = await handoff_rows(trace_store, tmp_path)
+    assert len(rows) >= 1
+    assert rows[0]["observer_verdict"] is None
+    assert rows[0]["observer_profile"] is None
+    assert "unobserved by configuration" in rows[0]["detail"]
+
+
+async def test_fail_open_loud(
+    make_mesh_config: Callable[..., LlmConfig],
+    trace_store: TraceStore,
+    tmp_path: Path,
+) -> None:
+    """Task 2: An unreachable observer fails open — and never quietly."""
+    from paaf_llm.ports import ConnectionFailed
+
+    # 1. Observer's own fallback chain serves (negative control)
+    cfg = observed_kitchen(make_mesh_config)
+    # Give observer profile its own fallback chain
+    cfg.profiles[mesh.OBSERVER_PROFILE_NAME] = ModelProfile(
+        provider="ollama",
+        model="observer-primary",
+        fallback_chain=["observer-backup"],
+    )
+    cfg.profiles["observer-backup"] = ModelProfile(
+        provider="anthropic",
+        model="observer-backup",
+    )
+
+    adapter = _ObserverTestAdapter()
+    adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    # Observer primary fails
+    adapter.program("observer-primary", fail=ConnectionFailed)
+    # Observer backup approves
+    adapter.program("observer-backup", tokens=["approved by backup"])
+    adapter.program("chef", tokens=["served by chef"])
+
+    signals = SignalRecorder()
+    agent = Agent.build(cfg, adapter, trace=trace_store, signals=signals)
+    res = await agent.turn("order food")
+    assert res.served_by == "chef"
+    assert res.text == "served by chef"
+
+    rows1 = await handoff_rows(trace_store, tmp_path)
+    assert len(rows1) == 1
+    assert rows1[0]["observer_verdict"] == ObserverVerdict.APPROVE.value
+    assert rows1[0]["observer_profile"] == "observer-backup"
+
+    # 2. Whole observer chain degrades (unreachable)
+    trace_store2 = TraceStore(str(tmp_path / "trace2.db"))
+    await trace_store2.start()
+
+    adapter2 = _ObserverTestAdapter()
+    adapter2.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    adapter2.program("observer-primary", fail=ConnectionFailed)
+    adapter2.program("observer-backup", fail=ConnectionFailed)
+    adapter2.program("chef", tokens=["served open"])
+
+    signals2 = SignalRecorder()
+    agent2 = Agent.build(cfg, adapter2, trace=trace_store2, signals=signals2)
+
+    # Turn completes normally — AllProvidersFailed from observer does not escape
+    res2 = await agent2.turn("order food 2")
+    assert res2.served_by == "chef"
+
+    unobs_signals = signals2.of_kind(MeshSignalKind.UNOBSERVED)
+    assert len(unobs_signals) == 1
+    assert "observer unreachable" in unobs_signals[0].detail
+
+    await trace_store2.stop()
+    connection = sqlite3.connect(str(tmp_path / "trace2.db"))
+    connection.row_factory = sqlite3.Row
+    rows2 = [dict(r) for r in connection.execute("SELECT * FROM handoffs")]
+    connection.close()
+
+    assert len(rows2) == 1
+    assert rows2[0]["observer_verdict"] is None
+    assert rows2[0]["observer_profile"] == mesh.OBSERVER_PROFILE_NAME
+    assert "observer unreachable" in rows2[0]["detail"]
+
+    # Assert unobserved-by-configuration detail and observer-unreachable detail are different strings
+    assert "unobserved by configuration" != rows2[0]["detail"]
+
+
+async def test_correction_signal(
+    observer_adapter: _ObserverTestAdapter,
+    make_mesh_config: Callable[..., LlmConfig],
+) -> None:
+    """Task 3: Correction signal fires and transient retry is absent from Agent.history."""
+    config = observed_kitchen(
+        make_mesh_config,
+        observer_grants=[mesh.OBSERVER_GRANT_RETRY, mesh.OBSERVER_GRANT_REROUTE],
+    )
+    observer_adapter.program("host", tokens=[], tool_calls=[_TRANSFER_TO_CHEF])
+    observer_adapter.next_programs["host"] = [{"tokens": ["I will handle it"]}]
+    observer_adapter.program(
+        mesh.OBSERVER_PROFILE_NAME,
+        tokens=["do not send to chef"],
+        tool_calls=[_REQUEST_RETRY],
+    )
+    signals = SignalRecorder()
+    agent = Agent.build(config, observer_adapter, signals=signals)
+
+    res = await agent.turn("hello")
+    assert res.text == "I will handle it"
+
+    retries = signals.of_kind(MeshSignalKind.OBSERVER_RETRY)
+    assert len(retries) == 1
+    assert retries[0].from_agent == "host"
+    assert retries[0].to_agent == "chef"
+
+    # Retry segment absent from Agent.history
+    assert not any(mesh.MESH_RETRY_SOURCE in m.content for m in agent.history)
+    assert not any("do not send to chef" in m.content for m in agent.history)
+
+
+async def test_mesh_unavailable(
+    make_mesh_config: Callable[..., LlmConfig],
+) -> None:
+    """Task 3: Non-tool-calling adapter emits MESH_UNAVAILABLE and runs single-agent path."""
+    from paaf_llm.ports import ChatAdapter, Usage
+
+    config = make_mesh_config(
+        active="host",
+        peers={"host": ["chef"], "chef": []},
+    )
+
+    class PlainAdapter(ChatAdapter):
+        """Adapter that is NOT a ToolCallingChatAdapter."""
+
+        async def stream(
+            self, profile: ModelProfile, messages: Sequence[Message]
+        ) -> AsyncIterator[str]:
+            yield "single agent answer"
+
+        def last_usage(self) -> Usage:
+            return Usage()
+
+    adapter = PlainAdapter()
+    signals = SignalRecorder()
+    agent = Agent.build(config, adapter, signals=signals)
+
+    res = await agent.turn("hello")
+    assert res.text == "single agent answer"
+
+    unavail = signals.of_kind(MeshSignalKind.MESH_UNAVAILABLE)
+    assert len(unavail) == 1
+    assert unavail[0].from_agent == "host"
+
+
+def test_every_mesh_signal_kind_has_a_trigger() -> None:
+    """Exhaustiveness meta-test: walk MeshSignalKind and assert each member name is in source text."""
+    test_observer_src = Path(__file__).read_text(encoding="utf-8")
+    test_mesh_src = (Path(__file__).parent / "test_mesh.py").read_text(encoding="utf-8")
+    combined = test_observer_src + "\n" + test_mesh_src
+
+    for kind in MeshSignalKind:
+        assert kind.name in combined, (
+            f"MeshSignalKind.{kind.name} has no trigger test in test_observer.py or test_mesh.py"
+        )

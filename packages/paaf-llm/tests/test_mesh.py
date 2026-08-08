@@ -708,7 +708,7 @@ async def test_pre_handoff_prose_dropped_is_still_recoverable_from_the_trace(
     finally:
         connection.close()
 
-    assert details == ["let me get the cook"]
+    assert "let me get the cook" in details[0]
 
 
 async def test_a_silent_handoff_adds_no_separator_to_the_reply(
