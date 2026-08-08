@@ -949,4 +949,69 @@ def tools_permission(tool_name: str, tier: str, config_path: str) -> None:
     click.echo(f"Updated permission for '{tool_name}' to '{tier}' in {config_path}")
 
 
+@main.group()
+def skill() -> None:
+    """Manage PAAF skills (install, list, enable, disable)."""
+    pass
+
+
+@skill.command(name="install")
+@click.argument("target")
+@click.option(
+    "-y",
+    "--yes",
+    "--approve-permissions",
+    "auto_approve",
+    is_flag=True,
+    help="Auto-approve permission review and security disclosure.",
+)
+def skill_install(target: str, auto_approve: bool) -> None:
+    """Install a skill from a git URL or local directory path."""
+    from paaf_llm.skills.installer import install_skill
+
+    install_skill(target=target, auto_approve=auto_approve)
+
+
+@skill.command(name="list")
+def skill_list() -> None:
+    """List installed skills, paths, enabled status, and permissions."""
+    from pathlib import Path
+    from paaf_core.config import load_config
+    from rich.table import Table
+
+    root = Path.cwd()
+    config_path = root / "paaf.yaml"
+    if not config_path.exists():
+        click.echo("No paaf.yaml found in current directory.")
+        return
+
+    config = load_config(str(config_path))
+
+    table = Table(title="Installed PAAF Skills")
+    table.add_column("Skill Name", style="bold cyan")
+    table.add_column("Path", style="magenta")
+    table.add_column("Enabled", style="green")
+    table.add_column("Permissions", style="yellow")
+
+    if not config.skills:
+        click.echo("No skills configured in paaf.yaml.")
+        return
+
+    for s_name, s_cfg in config.skills.items():
+        perms_str = (
+            ", ".join(f"{k}:{v.value}" for k, v in s_cfg.permissions.items())
+            if s_cfg.permissions
+            else "none"
+        )
+        table.add_row(
+            s_name,
+            s_cfg.path,
+            "yes" if s_cfg.enabled else "no",
+            perms_str,
+        )
+
+    _make_console().print(table)
+
+
+
 

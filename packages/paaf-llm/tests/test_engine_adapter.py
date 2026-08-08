@@ -335,7 +335,9 @@ def test_two_cloud_profiles_on_one_model_do_not_share_a_binding() -> None:
 
 def test_a_profile_with_no_endpoint_declares_no_base_url() -> None:
     """A cloud profile has no PAAF endpoint to declare — that is not a hidden one."""
-    assert LangChainAdapter.base_url(ModelProfile(provider="anthropic", model="c")) is None
+    assert (
+        LangChainAdapter.base_url(ModelProfile(provider="anthropic", model="c")) is None
+    )
 
 
 # ------------------------------------ MODEL-02: the openai_compatible provider --
@@ -584,7 +586,10 @@ def test_translation_matches_the_real_provider_exception_types() -> None:
         (anthropic.APIConnectionError(request=request), ConnectionFailed),
         (anthropic.APITimeoutError(request=request), RequestTimedOut),
         (anthropic.RateLimitError("rate", response=limited, body=None), RateLimited),
-        (anthropic.InternalServerError("boom", response=server, body=None), ServerError),
+        (
+            anthropic.InternalServerError("boom", response=server, body=None),
+            ServerError,
+        ),
     ]
 
     assert [classify(exc) for exc, _ in expected] == [want for _, want in expected]
@@ -634,7 +639,11 @@ async def test_streams_plain_str_tokens_and_maps_the_roles() -> None:
         token
         async for token in adapter.stream(
             _ollama("qwen3", "192.168.1.10"),
-            [Message("system", "be kind"), Message("user", "hi"), Message("assistant", "yo")],
+            [
+                Message("system", "be kind"),
+                Message("user", "hi"),
+                Message("assistant", "yo"),
+            ],
         )
     ]
 

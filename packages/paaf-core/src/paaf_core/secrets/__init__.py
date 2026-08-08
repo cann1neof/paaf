@@ -5,6 +5,7 @@ Secrets live behind :class:`SecretStore`, encrypted at rest with audited pyca
 ``cryptography`` (Fernet + scrypt), never in the config YAML tree and never in a
 log. The master key is derived from a passphrase at unlock (passphrase-at-boot).
 """
+
 from __future__ import annotations
 
 from paaf_core.secrets.fernet_backend import (
@@ -15,8 +16,8 @@ from paaf_core.secrets.fernet_backend import (
 from paaf_core.secrets.interface import SecretStore
 
 __all__ = [
-    "SecretStore",
     "EncryptedFileSecretStore",
     "InvalidPassphraseError",
+    "SecretStore",
     "derive_key",
 ]

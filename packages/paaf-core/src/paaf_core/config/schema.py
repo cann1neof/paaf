@@ -74,6 +74,19 @@ class ToolsConfig(BaseModel):
     )
 
 
+class SkillConfig(BaseModel):
+    """Skill configuration in paaf.yaml."""
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = Field(True, json_schema_extra={"reload_tier": ReloadTier.HOT})
+    path: str = Field(..., json_schema_extra={"reload_tier": ReloadTier.HOT})
+    permissions: dict[str, PermissionTier] = Field(
+        default_factory=dict,
+        json_schema_extra={"reload_tier": ReloadTier.HOT},
+    )
+
+
 class AppConfig(BaseModel):
     """Root of the one YAML tree the user owns.
 
@@ -94,6 +107,10 @@ class AppConfig(BaseModel):
     )
     tools: ToolsConfig = Field(
         default_factory=ToolsConfig,
+        json_schema_extra={"reload_tier": ReloadTier.HOT},
+    )
+    skills: dict[str, SkillConfig] = Field(
+        default_factory=dict,
         json_schema_extra={"reload_tier": ReloadTier.HOT},
     )
 

@@ -5,6 +5,7 @@ The load-bearing negative control submits a stale ``expected_revision`` and
 asserts both that a ``ConflictError`` is raised AND that the on-disk revision is
 unchanged — a happy-path-only test would pass vacuously (Phase-1's #1 failure).
 """
+
 import pytest
 from paaf_core.config import AppConfig
 from paaf_core.config.store import (

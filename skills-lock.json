@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "skills": {
+    "analyzing-user-feedback": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "skillPath": "skills/analyzing-user-feedback/SKILL.md",
+      "computedHash": "0d880d12eff9b28908b8a9a3f272e2d3e233b6c0f43e837e1ead7cd28185f58b"
+    },
+    "archify": {
+      "source": "tt-a1i/archify",
+      "sourceType": "github",
+      "skillPath": "archify/SKILL.md",
+      "computedHash": "d5a90a33ff06c014979b046ed63d5362aa04bf752c36c3cd4f87a68a0eba5288"
+    },
+    "customer-interviews": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "skillPath": "skills/customer-interviews/SKILL.md",
+      "computedHash": "5ea837efeebd598aa9305c4f062688fbb2a23ff214109089be07a9e802d236a4"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "781bd6d3f9b19f8c9af6b53d8d0e4876d0183841b565db34ca7092ffa412d111"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "i-have-adhd": {
+      "source": "ayghri/i-have-adhd",
+      "sourceType": "github",
+      "skillPath": "skills/i-have-adhd/SKILL.md",
+      "computedHash": "046a51e8f4720bbb8f7847048159378f4b8dcb8e4a4969afe1cc7568e985ee9c"
+    },
+    "north-star-metric": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-marketing-growth/skills/north-star-metric/SKILL.md",
+      "computedHash": "4154f922dd84e7d13f212f70d925ed8543841ccceb1164a91623b39a0616198d"
+    },
+    "opportunity-solution-tree": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-product-discovery/skills/opportunity-solution-tree/SKILL.md",
+      "computedHash": "0bbc9c2da81f4e6143d17de9e34fa9b275a6c408bf5f351ccc0a76c9ea50b11e"
+    },
+    "product-strategy": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-product-strategy/skills/product-strategy/SKILL.md",
+      "computedHash": "3c3caf28c064bdd863027fb7737133e6efd545682c82ba21beaf85ac9b21da81"
+    },
+    "product-vision": {
+      "source": "phuryn/pm-skills",
+      "sourceType": "github",
+      "skillPath": "pm-product-strategy/skills/product-vision/SKILL.md",
+      "computedHash": "6db8717df816928ce4f77e54fc42467f35892967aae84ab0eec8ca5f9edd2c88"
+    },
+    "roadmap-prioritization": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "skillPath": "skills/roadmap-prioritization/SKILL.md",
+      "computedHash": "ef4125ab0f5aa0420e6bc4cba4b3222367b41abe892e16598b1e272b6eafc4d1"
+    },
+    "startup-ideation": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "skillPath": "skills/startup-ideation/SKILL.md",
+      "computedHash": "ecd430a8166195b19024f26b802c86adc8306858fd995a11987eb1540cbf80f9"
+    }
+  }
+}

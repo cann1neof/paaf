@@ -34,13 +34,16 @@ async def test_full_path_runs_with_no_network(tmp_path) -> None:
     db_path = tmp_path / "trace.db"
     store = TraceStore(str(db_path))
     await store.start()
-    store.emit(RunEvent(id=1, prompts="audit me", model="qwen3", time_to_first_audio=0.3))
+    store.emit(
+        RunEvent(id=1, prompts="audit me", model="qwen3", time_to_first_audio=0.3)
+    )
     store.emit(ToolCallEvent(run_id=1, name="noop", args="{}", results="ok"))
     await store.stop()
 
-    async with aiosqlite.connect(str(db_path)) as db, db.execute(
-        "SELECT prompts, time_to_first_audio FROM runs WHERE id = 1"
-    ) as cur:
+    async with (
+        aiosqlite.connect(str(db_path)) as db,
+        db.execute("SELECT prompts, time_to_first_audio FROM runs WHERE id = 1") as cur,
+    ):
         row = await cur.fetchone()
     # Reaching here under --disable-socket proves the path opened no network socket.
     assert row == ("audit me", 0.3)

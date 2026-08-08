@@ -10,6 +10,7 @@ be added later without changing a single caller.
 ``list_keys`` returns NAMES only — a value must never be reachable through the
 listing API.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

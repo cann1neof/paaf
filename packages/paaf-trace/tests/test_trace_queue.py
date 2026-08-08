@@ -91,8 +91,9 @@ async def test_metrics_records_ttfa_on_run(tmp_path) -> None:
     record_time_to_first_audio(store, run_id=7, seconds=0.6)
     await store.stop()
 
-    async with aiosqlite.connect(str(db_path)) as db, db.execute(
-        "SELECT time_to_first_audio FROM runs WHERE id = 7"
-    ) as cur:
+    async with (
+        aiosqlite.connect(str(db_path)) as db,
+        db.execute("SELECT time_to_first_audio FROM runs WHERE id = 7") as cur,
+    ):
         (ttfa,) = await cur.fetchone()
     assert ttfa == 0.6

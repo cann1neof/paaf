@@ -10,6 +10,7 @@ The whole module runs under the suite-wide ``--disable-socket`` default, so a
 classification that reached for ``socket.getaddrinfo`` would fail the build —
 that is the T-02-16 (no-DNS) guard, enforced mechanically.
 """
+
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
@@ -68,7 +69,9 @@ class TestEndpointUrl:
     def test_url_without_a_path_is_scheme_host_port(self) -> None:
         # No trailing slash and no invented suffix — the endpoint means exactly
         # what the user declared.
-        assert Endpoint("192.168.1.20", 8000, "http").url() == "http://192.168.1.20:8000"
+        assert (
+            Endpoint("192.168.1.20", 8000, "http").url() == "http://192.168.1.20:8000"
+        )
 
     def test_url_with_a_path_appends_it_verbatim(self) -> None:
         # /v1 is where vLLM, llama.cpp's server and LM Studio actually serve.

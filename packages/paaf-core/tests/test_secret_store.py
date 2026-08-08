@@ -7,6 +7,7 @@ KDF over a persisted per-store salt), plaintext never lands in the file on
 disk, and list_keys exposes names only. The passphrase itself is never at rest
 (decision: passphrase-at-boot) — only the salt is.
 """
+
 import base64
 import json
 

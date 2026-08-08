@@ -15,6 +15,7 @@ rest — at the documented cost that unattended headless restart needs the
 passphrase re-supplied by an operator or an external secrets manager (Phase 9 /
 APP-* owns boot-time delivery).
 """
+
 from __future__ import annotations
 
 import base64
@@ -76,7 +77,9 @@ class EncryptedFileSecretStore:
             self._salt = salt
             try:
                 self._data: dict[str, str] = json.loads(
-                    self._fernet.decrypt(envelope["blob"].encode("ascii")).decode("utf-8")
+                    self._fernet.decrypt(envelope["blob"].encode("ascii")).decode(
+                        "utf-8"
+                    )
                 )
             except InvalidToken as exc:  # wrong passphrase / tampered file
                 raise InvalidPassphraseError(

@@ -13,6 +13,7 @@ from .schema import (
     ModelConfig,
     PermissionTier,
     ReloadTier,
+    SkillConfig,
     ToolsConfig,
     VoiceConfig,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "ModelConfig",
     "PermissionTier",
     "ReloadTier",
+    "SkillConfig",
     "ToolsConfig",
     "VoiceConfig",
     "atomic_write_bytes",

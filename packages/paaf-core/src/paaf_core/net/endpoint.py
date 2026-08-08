@@ -14,6 +14,7 @@ daemon iterates the registry and refuses to start on any ``non_lan_endpoints()``
 and hostnames with a suffix check only — it never resolves a name, so it is safe
 under the suite-wide ``--disable-socket`` default (threat T-02-16).
 """
+
 from __future__ import annotations
 
 import ipaddress

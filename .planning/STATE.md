@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 05
-current_phase_name: tools-mcp-permissions
-status: complete
+current_phase: 06
+current_phase_name: skills-pypi-release
+status: executing
 stopped_at: Phase 6 context gathered
-last_updated: "2026-08-08T14:29:29.316Z"
+last_updated: "2026-08-08T14:32:23.819Z"
 last_activity: 2026-08-08
 last_activity_desc: Phase 05 execution completed
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 46
+  total_plans: 49
   completed_plans: 46
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 05 — tools-mcp-permissions (COMPLETE)
+**Current focus:** Phase 06 — skills-pypi-release
 
 ## Current Position
 
-Phase: 05 (tools-mcp-permissions) — COMPLETE
-Plan: 5 of 5
-Status: Completed Phase 05
-Last activity: 2026-08-08 — Phase 05 execution completed
+Phase: 06 (skills-pypi-release) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 06
+Last activity: 2026-08-08 — Phase 06 execution started
 
 Progress: [██████████] 100%  (5/5 plans in phase 05)
 

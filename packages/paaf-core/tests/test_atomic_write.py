@@ -6,6 +6,7 @@ the rename: the original file must survive intact and no temp file may be left
 behind. Without temp+fsync+rename a crash mid-write would corrupt the one YAML
 tree the user owns.
 """
+
 import glob
 
 import pytest

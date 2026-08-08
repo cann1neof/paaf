@@ -5,6 +5,7 @@ The interface lives in ``paaf-core`` so every package implements it without
 importing ``paaf-llm`` or ``paaf-voice`` (FOUND-04-safe). Phase 9's APP-08
 iterates :class:`EndpointRegistry` to enforce offline mode.
 """
+
 from __future__ import annotations
 
 from paaf_core.net.endpoint import Endpoint, EndpointRegistry, NetworkComponent

@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "javascript-typescript@claude-code-workflows": true,
+    "code-refactoring@claude-code-workflows": true,
+    "documentation-standards@claude-code-workflows": true,
+    "code-documentation@claude-code-workflows": true,
+    "database-design@claude-code-workflows": true,
+    "startup-business-analyst@claude-code-workflows": true
+  }
+}

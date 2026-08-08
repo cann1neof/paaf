@@ -56,17 +56,23 @@ def _good_recorder(started_at: float, first_audio_at: float, ended_at: float) ->
     return compute_time_to_first_audio(started_at, first_audio_at)
 
 
-def _constant_recorder(started_at: float, first_audio_at: float, ended_at: float) -> float:
+def _constant_recorder(
+    started_at: float, first_audio_at: float, ended_at: float
+) -> float:
     """Broken (Pitfall 3): returns a constant, ignoring the measurement entirely."""
     return 0.0
 
 
-def _round_trip_recorder(started_at: float, first_audio_at: float, ended_at: float) -> float:
+def _round_trip_recorder(
+    started_at: float, first_audio_at: float, ended_at: float
+) -> float:
     """Broken (Pitfall 3): times the WHOLE round trip instead of first-audio."""
     return ended_at - started_at
 
 
-async def _drive_and_record(db_path: Path, clock: object, delay: float, recorder: Recorder) -> float:
+async def _drive_and_record(
+    db_path: Path, clock: object, delay: float, recorder: Recorder
+) -> float:
     """Drive FakeTTS on ``clock``, record TTFA via the Plan-07 store, read it back.
 
     Records through the real :class:`TraceStore` + ``record_time_to_first_audio`` so the
@@ -80,13 +86,16 @@ async def _drive_and_record(db_path: Path, clock: object, delay: float, recorder
 
     store = TraceStore(str(db_path))
     await store.start()
-    store.emit(RunEvent(id=1, prompts="hi", model="fake-tts", started_at=tts.started_at))
+    store.emit(
+        RunEvent(id=1, prompts="hi", model="fake-tts", started_at=tts.started_at)
+    )
     record_time_to_first_audio(store, run_id=1, seconds=seconds)
     await store.stop()
 
-    async with aiosqlite.connect(str(db_path)) as db, db.execute(
-        "SELECT time_to_first_audio FROM runs WHERE id = 1"
-    ) as cur:
+    async with (
+        aiosqlite.connect(str(db_path)) as db,
+        db.execute("SELECT time_to_first_audio FROM runs WHERE id = 1") as cur,
+    ):
         (recorded,) = await cur.fetchone()
     return recorded
 
@@ -99,7 +108,9 @@ async def test_ttfa_accuracy(tmp_path: Path, frozen_clock: object) -> None:
     assert abs(recorded - INJECTED_DELAY) < TOL
 
 
-async def test_ttfa_overhead_under_ceiling(tmp_path: Path, frozen_clock: object) -> None:
+async def test_ttfa_overhead_under_ceiling(
+    tmp_path: Path, frozen_clock: object
+) -> None:
     """Framework/measurement overhead beyond D stays under a small ceiling."""
     recorded = await _drive_and_record(
         tmp_path / "trace.db", frozen_clock, INJECTED_DELAY, _good_recorder

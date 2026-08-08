@@ -557,7 +557,9 @@ class LangChainAdapter:
         translated = classify(exc)
         if translated is not None:
             return translated(detail)
-        return EngineError(f"provider call failed and is not a degraded provider: {detail}")
+        return EngineError(
+            f"provider call failed and is not a degraded provider: {detail}"
+        )
 
     @staticmethod
     def _usage_of(aggregate: Any) -> Usage:

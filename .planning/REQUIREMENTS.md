@@ -88,7 +88,7 @@ The framework is organized around skills and agents, where an agent is another m
 - [x] **TOOL-04**: All three sources appear in one unified registry
 - [x] **TOOL-05**: Every tool carries a permission tier — observe, act, or confirm
 - [x] **TOOL-06**: A `confirm`-tier tool causes the assistant to ask out loud and wait for a spoken answer before executing
-- [ ] **TOOL-07**: The permission model is the documented defense against prompt injection via tool results — no hidden defensive instructions, ever
+- [x] **TOOL-07**: The permission model is the documented defense against prompt injection via tool results — no hidden defensive instructions, ever
 - [x] **TOOL-08**: Peer graph awareness is fed directly into system prompts (no list_peers tool); third-party smart home integrations (HA) are out of scope as out-of-the-box built-ins
 
 ### Skills (SKILL)
@@ -277,7 +277,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | TOOL-04 | Phase 5 — Tools, MCP & Permissions | Complete |
 | TOOL-05 | Phase 5 — Tools, MCP & Permissions | Complete |
 | TOOL-06 | Phase 5 — Tools, MCP & Permissions | Complete |
-| TOOL-07 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-07 | Phase 5 — Tools, MCP & Permissions | Complete |
 | TOOL-08 | Phase 5 — Tools, MCP & Permissions | Complete |
 | SKILL-01 | Phase 6 — Skills & PyPI Release | Pending |
 | SKILL-02 | Phase 6 — Skills & PyPI Release | Pending |

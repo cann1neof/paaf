@@ -5,6 +5,7 @@ Proves the discovery function is non-vacuous: every field path appears, a known
 HOT field reports HOT, an unannotated field falls back to the documented default,
 and all four tiers are represented across the schema.
 """
+
 from paaf_core.config import AppConfig, ReloadTier, reload_tiers
 from paaf_core.config.reload_tiers import DEFAULT_TIER
 
@@ -44,4 +45,9 @@ def test_unannotated_field_reports_default_tier():
 
 def test_all_four_tiers_are_represented():
     present = set(reload_tiers(AppConfig).values())
-    assert {ReloadTier.HOT, ReloadTier.WARM, ReloadTier.COLD, ReloadTier.RESTART} <= present
+    assert {
+        ReloadTier.HOT,
+        ReloadTier.WARM,
+        ReloadTier.COLD,
+        ReloadTier.RESTART,
+    } <= present

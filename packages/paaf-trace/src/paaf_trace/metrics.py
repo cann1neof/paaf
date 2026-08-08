@@ -26,8 +26,6 @@ def compute_time_to_first_audio(started_at: float, first_audio_at: float) -> flo
     return ttfa
 
 
-def record_time_to_first_audio(
-    store: TraceStore, run_id: int, seconds: float
-) -> None:
+def record_time_to_first_audio(store: TraceStore, run_id: int, seconds: float) -> None:
     """Record ``seconds`` as the run's time_to_first_audio (non-blocking emit)."""
     store.emit(TtfaUpdate(run_id=run_id, seconds=seconds))

@@ -8,11 +8,11 @@ updated: 2026-08-06T17:10:00Z
 
 ## Current Test
 
-number: 1
-name: Live Anthropic completion through an encrypted secret store
+number: 2
+name: Physical WAN cut mid-conversation
 expected: |
-  A genuine completion comes back from api.anthropic.com and is printed as
-  `<profile>> <reply>`.
+  The second turn prints `↳ fell back to <local> (connection)`, is answered by
+  the local model, and that reply shows it received the first turn's history.
 awaiting: user response
 
 ## Tests
