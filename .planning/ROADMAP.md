@@ -193,7 +193,7 @@ Plans:
   4. Each agent applies its own fallback chain, and the trace records the full handoff chain — who was awake each turn, every handoff, and whether a turn was served by a fallback — so a wrong reroute is observable after the fact.
   5. Optional hard constraints declared on an agent are enforced by the system regardless of what the model attempts, and the entire mesh runs headless in CI against the fake adapter with the agent framework uninstalled and no audio present.
 
-**Plans**: 7/9 plans executed
+**Plans**: 9/9 plans complete
 
 Plans:
 
@@ -221,11 +221,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 04-08-PLAN.md — The observer is honest when absent or unreachable, and the correction signal is a hookable endpoint (MESH-06, D-05/D-07, OQ-4)
+- [x] 04-08-PLAN.md — The observer is honest when absent or unreachable, and the correction signal is a hookable endpoint (MESH-06, D-05/D-07, OQ-4)
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 04-09-PLAN.md — Honest docs (constraint caveat, observer egress, deliberate deferrals) and the three phase gates green at one commit (MESH-01/04/05/06, SC#5)
+- [x] 04-09-PLAN.md — Honest docs (constraint caveat, observer egress, deliberate deferrals) and the three phase gates green at one commit (MESH-01/04/05/06, SC#5)
 
 **UI hint**: no
 

@@ -102,6 +102,23 @@ device** (TRACE-05) — this is also why the framework carries no network
 client (boundary #3 above). It is an append-mostly event log, so it uses
 raw SQL via `aiosqlite`, deliberately **not** an ORM.
 
+## Agent Mesh subsystem (in `paaf-llm`)
+
+Routing in PAAF is model-driven: the currently-awake model chooses, itself, by calling a handoff tool (`transfer_to_<peer>`). There is no rule table anywhere and none can be written in configuration (MESH-01). Three separate mesh concepts exist for distinct purposes:
+* **The fallback chain** (`fallback_chain`) provides *resilience* when a provider degrades or times out.
+* **The peer graph** (`peers`) enables *handoff on the merits* between complementary domain agents.
+* **The home agent** (`default_agent`) acts as the *terminator* when the turn's hop budget is exhausted.
+
+**Two-layer peer enforcement.** Only declared peers are offered to the awake model as handoff tools, and a deterministic runtime guard (`mesh.resolve_handoff`) rejects any handoff target outside the calling agent's declared peers. A model can emit a tool name that was never bound; a check that only fires when a provider behaves is not a check. The peer-graph guard is the one guarantee that holds in every configuration, observed or not.
+
+**The observer.** The observer is a reserved profile name (`observer`) within the ordinary profile namespace, configurable down to its own system prompt. Its powers are governed by capability removal via its tool grant (`observer_grants`, defaulting to retry-only) rather than a mode flag, and its re-route capabilities are strictly confined to the calling agent's own peer graph.
+
+**Constraint enforcement.** Free-text hard constraints are judged by the supervising observer model at handoff time (MESH-06). The system announces plainly when the mesh is running unobserved (when no observer profile is declared) or when the supervisor is unreachable (failing open loudly), and the peer-graph guard is the one part that holds in every configuration, observed or not.
+
+**Observer egress path.** Because the observer is an ordinary profile, pointing it at a cloud model creates a declared endpoint visible to offline enforcement. Widening the observer's window (`observer_window_messages` / `observer_window_handoffs` past their default of 0) ships a slice of conversation off-box on every handoff attempt, including rejected ones.
+
+**Inspectability of steering bytes.** Every instruction and tool description sent to a model is readable before execution: `paaf prompt --provenance` displays composed system prompt segments and the offered tool surface, while `paaf prompt --agent <name>` inspects any declared profile — including the observer, which is the only way to read a profile that is never awake.
+
 ## Where things live
 
 ```
@@ -122,7 +139,9 @@ paaf/
 └── packages/
     ├── paaf-core/              config, secrets, net  (real)
     ├── paaf-trace/             SQLite trace store    (real)
-    ├── paaf-llm/               Module 1 — LLM mgmt   (stub → Phase 3, PyPI Phase 5)
+    ├── paaf-llm/               Module 1 — LLM mgmt   (real, mesh.py & observer.py)
+    │   ├── src/paaf_llm/mesh.py      handoff tools, explainer templates, peer graph resolution
+    │   └── src/paaf_llm/observer.py  handoff supervisor, verdict decision, unobserved notices
     ├── paaf-voice/             Module 2 — voice      (stub → Phase 6+)
     └── paaf-session/           turn orchestrator     (stub → Phase 8)
 ```

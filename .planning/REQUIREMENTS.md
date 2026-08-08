@@ -73,12 +73,12 @@ Throwaway code answering questions that cannot be settled by reading. Nothing he
 
 The framework is organized around skills and agents, where an agent is another model. Each model carries its own skills and a graph of peer agents it can hand off to. Routing is the currently-awake model deciding, itself, to transfer control — not a set of user-written rules. Built headless (text-only, no audio); it lives in `paaf-llm`.
 
-- [ ] **MESH-01**: Routing between models is decided by the currently-awake model itself (LLM-driven handoff); there are no deterministic, user-written routing rules anywhere in the system
-- [ ] **MESH-02**: A model may hand off only to peers declared in its peer graph; a handoff to an undeclared peer is rejected and recorded, never silently followed
+- [x] **MESH-01**: Routing between models is decided by the currently-awake model itself (LLM-driven handoff); there are no deterministic, user-written routing rules anywhere in the system
+- [x] **MESH-02**: A model may hand off only to peers declared in its peer graph; a handoff to an undeclared peer is rejected and recorded, never silently followed
 - [x] **MESH-03**: A handoff transfers control and the full conversation context to the receiving agent, which becomes the awake agent until it hands off again — including handing back to a prior agent
 - [x] **MESH-04**: Each agent's handoff explainer is generated from its capability manifest and peer graph and is present verbatim in the composed-prompt inspector — no hidden instructions steer the routing
-- [ ] **MESH-05**: The trace records every handoff, which agent was awake each turn, and whether each turn was served by a fallback, so a wrong reroute is observable after the fact
-- [ ] **MESH-06**: A user may declare optional hard constraints on an agent that the system enforces regardless of the model's choice
+- [x] **MESH-05**: The trace records every handoff, which agent was awake each turn, and whether each turn was served by a fallback, so a wrong reroute is observable after the fact
+- [x] **MESH-06**: A user may declare optional hard constraints on an agent that the system enforces regardless of the model's choice
 
 ### Tools & MCP (TOOL)
 

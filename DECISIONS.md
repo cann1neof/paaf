@@ -271,3 +271,26 @@ Recorded from the Plan 02-05 decision checkpoint (`02-05-SUMMARY.md`):
 ---
 *Phase-2 public commitments recorded 2026-07-25 for plan 02-08 (FOUND-05, PRIV-01,
 PRIV-02). Extends — does not replace — the Phase-1 interpretation above.*
+
+---
+
+# Phase 4 — Agent Mesh: architecture and decisions (recorded 2026-08-08)
+
+The sections below record decisions made during Phase 4 (Agent Mesh):
+
+## Handoff mechanism — reserved tool calls over prose sentinels
+- **Handoffs use tool calls (`transfer_to_<peer>`).** Empirical measurement on local models demonstrated 30/30 (100%) reliable execution of structured tool calls versus brittle prose parsing.
+- **Capability removal over instruction.** Powers are granted by offering tools rather than prompting models not to act. What a model cannot name, it cannot execute.
+- **The observer as the system for MESH-06.** Free-text constraints are judged by the reserved `observer` model at handoff time. The mesh announces plainly when unobserved or when the supervisor is unreachable.
+
+## Trace schema — explicit turn legs and handoff events
+- **Per-leg trace correlation.** Rather than overloading `runs` with new columns, Phase 4 introduced `turn_legs` (to record each agent hop in a multi-leg turn) and `handoffs` (to capture attempt details, observer verdicts, and target re-routes).
+
+## Tool-streaming disposition (Assumption A1)
+- **Assumption A1 disposition.** Plan 04-04 measured tool call streaming across local engines. Handoff tool calls are processed atomically upon leg completion rather than speculatively pre-routed on partial tokens.
+
+## Deliberately not built in Phase 4 (deferred to v2 / later phases)
+1. **Mechanical no-prose-before-handoff enforcement** — deferred to v2 (founder-flagged property; currently dropped from user reply but preserved in trace).
+2. **Long-history lookup tool** — deferred to v2 (requires Phase-5 skill/tool registry and v2 memory architecture).
+3. **Observer duties beyond handoff supervision** — deferred to v2.
+4. **Routing-quality / mis-route evaluation suite (ROUTE-01)** — deferred to v2; Phase 4 provides complete trace observability rather than statistical routing quality guarantees.
