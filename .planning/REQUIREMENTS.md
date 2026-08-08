@@ -82,14 +82,14 @@ The framework is organized around skills and agents, where an agent is another m
 
 ### Tools & MCP (TOOL)
 
-- [ ] **TOOL-01**: Built-in tools ship for timers, alarms, weather, and music control
+- [ ] **TOOL-01**: Always-on built-in tools ship for mesh handoff (`handoff`), observer control (`approve_handoff`, `veto_handoff`, `reroute_handoff`), date & time lookup (`date_time_lookup`), and deep history & event log lookup (`history_lookup` querying timestamped trace logs of past turns, tool calls, and background events)
 - [ ] **TOOL-02**: User defines a custom Python tool with a single decorator
 - [ ] **TOOL-03**: User adds an MCP server by pasting its config; its tools appear in the registry
 - [ ] **TOOL-04**: All three sources appear in one unified registry
 - [ ] **TOOL-05**: Every tool carries a permission tier — observe, act, or confirm
 - [ ] **TOOL-06**: A `confirm`-tier tool causes the assistant to ask out loud and wait for a spoken answer before executing
 - [ ] **TOOL-07**: The permission model is the documented defense against prompt injection via tool results — no hidden defensive instructions, ever
-- [ ] **TOOL-08**: A Home Assistant tool package ships as an example skill, so the assistant can drive HA without depending on it
+- [ ] **TOOL-08**: Peer graph awareness is fed directly into system prompts (no list_peers tool); third-party smart home integrations (HA) are out of scope as out-of-the-box built-ins
 
 ### Skills (SKILL)
 

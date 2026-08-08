@@ -5,18 +5,19 @@
 
 **Date:** 2026-08-08
 **Phase:** 5-Tools, MCP & Permissions
-**Areas discussed:** Built-in System Tools (Mesh & Observer Infrastructure), Permission Tiers & Spoken Confirmation Loop, Unified Registry & MCP Server Config, Custom Tool Decorator API & Defaults
+**Areas discussed:** Always-On Built-in System Tools, Peer Graph System Prompt Feeding, Permission Tiers & Spoken Confirmation Loop, Unified Registry & MCP Server Config, Custom Tool Decorator API & Defaults
 
 ---
 
-## Built-in System Tools (Mesh & Observer Infrastructure)
+## Always-On Built-in System Tools & Peer Graph Awareness
 
-| Concept | Scope / Decision | Reason |
-|---------|------------------|--------|
-| Mesh Handoff Tool (`handoff`) | Registered as built-in tool in unified registry | Enables agent-to-agent delegation via standard tool calling seam |
-| Observer Tools (`approve_handoff`, `veto_handoff`, `reroute_handoff`) | Registered as built-in tools for Observer profile | Structurally bounds observer to structured tool calls (capability-removal principle) |
-| System / Peer Inspection Tools (`list_peers`) | Registered as built-in tools | Allows agents to discover declared peer graph and session context |
-| Home Assistant | **EXCLUDED** from Phase 5 out-of-the-box shipping | Deferred to future external plugin release |
+| Tool / Concept | Scope / Decision | Reason |
+|----------------|------------------|--------|
+| Peer Graph Awareness | Fed directly into System Prompt of each agent (`compose.py`) | `list_peers` tool removed; agents must inherently know available peers in context |
+| Mesh Handoff Tool (`handoff`) | Always-on built-in tool in unified registry | Enables agent-to-agent delegation via standard tool calling seam |
+| Observer Tools (`approve_handoff`, `veto_handoff`, `reroute_handoff`) | Always-on built-in decision tools for Observer profile | Structurally bounds observer to structured tool calls (capability-removal principle) |
+| Date & Time Lookup (`date_time_lookup`) | Always-on built-in tool | Provides current date, time, day of week, and timezone offsets to any agent |
+| Deep History & Event Log Lookup (`history_lookup`) | Always-on built-in tool querying `paaf-trace` | Enables querying timestamped logs of past turns, tool calls, and background/custom events (e.g., track changes, notifications) outside active conversation |
 
 ---
 
@@ -68,7 +69,7 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Prefixed names | Prefixed names internally (e.g., builtin:timer_set, mcp:server_name:tool_name) | |
+| Prefixed names | Prefixed names internally (e.g., builtin:handoff, mcp:server_name:tool_name) | |
 | Flat names with collision check | Flat names by default, collision error if duplicate | |
 | Agent discretion | You decide | ✓ |
 
@@ -136,4 +137,4 @@
 
 ## Deferred Ideas
 
-- **Home Assistant integration** — deferred to future plugin release; not included out of the box in Phase 5.
+- None.

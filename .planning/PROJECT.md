@@ -23,7 +23,8 @@ It is for two audiences equally: self-hosters and privacy-minded people who want
 - [ ] Ordered fallback chains: cloud unreachable → local; local overloaded → smaller local
 - [ ] Simple intent-based routing rules (e.g. a fast local model for home control), rules-first — sophisticated routing deferred
 - [ ] Layered persona composition: user base prompt + skill-contributed fragments + runtime context, with the *final composed prompt inspectable verbatim* — no hidden instructions, ever
-- [ ] Unified tool registry from three sources: built-ins, user Python tools via a clean decorator, and MCP servers
+- [ ] Peer graph awareness is fed directly into system prompts (no `list_peers` tool); always-on built-in tools ship for mesh handoff (`handoff`), observer control (`approve_handoff`, `veto_handoff`, `reroute_handoff`), date & time lookup (`date_time_lookup`), and deep history & event log lookup (`history_lookup`)
+- [ ] Unified tool registry from three sources: always-on built-ins, user Python tools via `@tool` decorator, and MCP servers
 - [ ] Per-tool permission tiers: `observe` / `act` / `confirm` (confirm = assistant asks out loud before executing)
 - [ ] Installable skills: a folder/git repo with a manifest (permissions, persona fragment, tools, hooks), permissions reviewed at install
 - [ ] Declarative behaviors table — what the assistant does while a request runs long, when a model is unavailable, when a tool errors, on wake

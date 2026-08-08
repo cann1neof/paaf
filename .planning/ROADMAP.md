@@ -231,16 +231,16 @@ Plans:
 
 ### Phase 5: Tools, MCP & Permissions
 
-**Goal**: The assistant can act on the world through built-ins, a plain decorated Python function, and an MCP server — with every tool carrying a permission tier the user chose.
+**Goal**: The assistant can act on the world and query its timestamped operational history through always-on built-in tools (`handoff`, observer control tools, `date_time_lookup`, `history_lookup`), custom decorated Python functions (`@tool`), and MCP servers — with every tool carrying a permission tier the user sets.
 **Mode:** mvp
 **Depends on**: Phase 4
 **Requirements**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-06, TOOL-07, TOOL-08
 **Success Criteria** (what must be TRUE):
 
-  1. Timers, alarms, weather and music control work from `paaf chat`, and a user's own function becomes a callable tool by adding one decorator.
+  1. Always-on built-in tools (`handoff`, observer control tools, `date_time_lookup`, `history_lookup`) work from `paaf chat`, and a user's own function becomes a callable tool by adding one decorator.
   2. Pasting an MCP server config makes its tools appear in the same registry as the built-ins and the user's own, distinguishable only by declared source.
   3. Every tool carries an `observe` / `act` / `confirm` tier, and a `confirm`-tier tool causes the assistant to ask and wait for approval before executing, with the trace recording whether it was approved.
-  4. A Home Assistant tool package works as an example skill, driving HA over its API, with no Home Assistant dependency anywhere in the framework.
+  4. The `history_lookup` tool enables querying timestamped past turns, tool calls, and background/custom event logs (e.g. music track changes, notifications) that were not part of the active conversation session.
   5. The docs name the permission model as the *only* defense against prompt injection via tool results, and a search of the repo turns up no hidden defensive instructions in any prompt.
 
 **Plans**: TBD
