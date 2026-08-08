@@ -4,7 +4,14 @@
 import pytest
 
 from paaf_voice.ports import AudioFrame
-from paaf_voice.testing import FakeAudioSink, FakeAudioSource
+from paaf_voice.testing import (
+    FakeSTT,
+    FakeTTS,
+    FakeVAD,
+    FakeAudioSink,
+    FakeAudioSource,
+    FakeWakeWord,
+)
 
 
 def test_fake_audio_sink_instant_mode():
@@ -87,3 +94,83 @@ async def test_fake_audio_source_stop():
 
     # Should have stopped after yielding 1 frame
     assert len(frames) == 1
+
+
+@pytest.mark.asyncio
+async def test_fake_stt_protocol_compliance():
+    from paaf_voice.ports import STT
+
+    stt = FakeSTT(canned_transcriptions=["Hello", "World"])
+    assert isinstance(stt, STT)
+
+    async def sample_stream():
+        yield AudioFrame(data=b"\x00" * 640)
+
+    results = [res async for res in stt.transcribe_stream(sample_stream())]
+    assert len(results) == 2
+    assert results[0].text == "Hello"
+    assert results[1].text == "World"
+    assert stt.transcribed_stream_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fake_tts_protocol_compliance():
+    from paaf_voice.ports import TTS
+
+    tts = FakeTTS()
+    assert isinstance(tts, TTS)
+
+    frames = [f async for f in tts.synthesize("Hello world!")]
+    assert len(frames) == 2  # max(1, 12 // 5) = 2
+    assert tts.synthesized_texts == ["Hello world!"]
+    assert frames[0].duration_ms == 20.0
+
+
+def test_fake_wake_word_protocol_compliance():
+    from paaf_voice.ports import WakeWord
+
+    ww = FakeWakeWord(target_keyword="hey_paaf")
+    assert isinstance(ww, WakeWord)
+
+    frame = AudioFrame(data=b"\x00" * 640)
+    assert ww.detect(frame).detected is False
+
+    ww.trigger()
+    res = ww.detect(frame)
+    assert res.detected is True
+    assert res.keyword == "hey_paaf"
+
+    # Second detect call should return False (trigger consumed)
+    assert ww.detect(frame).detected is False
+
+
+def test_fake_vad_protocol_compliance():
+    from paaf_voice.ports import VAD
+
+    vad = FakeVAD(speech_timeline=[True, False, True], default_speech=False)
+    assert isinstance(vad, VAD)
+
+    frame = AudioFrame(data=b"\x00" * 640)
+    assert vad.process_frame(frame).is_speech is True
+    assert vad.process_frame(frame).is_speech is False
+    assert vad.process_frame(frame).is_speech is True
+    # Timeline exhausted, falls back to default_speech
+    assert vad.process_frame(frame).is_speech is False
+
+
+def test_fake_engines_warmup():
+    stt = FakeSTT()
+    tts = FakeTTS()
+    ww = FakeWakeWord()
+    vad = FakeVAD()
+
+    stt.warmup()
+    tts.warmup()
+    ww.warmup()
+    vad.warmup()
+
+    assert stt.is_warmed_up is True
+    assert tts.is_warmed_up is True
+    assert ww.is_warmed_up is True
+    assert vad.is_warmed_up is True
+
