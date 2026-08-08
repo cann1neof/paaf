@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: agent-mesh
 status: complete
-stopped_at: Phase 5 context updated with mesh & observer built-ins
-last_updated: "2026-08-08T13:48:46.583Z"
+stopped_at: Phase 5 context & project docs updated with always-on built-ins (handoff, observer tools, date_time, history)
+last_updated: "2026-08-08T13:55:33.794Z"
 last_activity: 2026-08-08
 last_activity_desc: Phase 04 execution completed
 progress:
@@ -117,6 +117,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-08T13:48:46.574Z
-Stopped at: Phase 5 context updated with mesh & observer built-ins
+Last session: 2026-08-08T13:55:33.781Z
+Stopped at: Phase 5 context & project docs updated with always-on built-ins (handoff, observer tools, date_time, history)
 Resume file: .planning/phases/05-tools-mcp-permissions/05-CONTEXT.md
