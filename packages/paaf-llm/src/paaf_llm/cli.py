@@ -53,10 +53,20 @@ from typing import TYPE_CHECKING
 
 import click
 import yaml
+from paaf_core.config import (
+    AppConfig,
+    McpServerConfig,
+    McpServerTransport,
+    atomic_write_bytes,
+    dump_config,
+    load_config,
+    write_config,
+)
 from paaf_core.secrets import EncryptedFileSecretStore, InvalidPassphraseError
 from paaf_trace.store import TraceStore
 from pydantic import ValidationError
 from rich.console import Console
+
 
 from . import mesh
 from .agent import Agent
@@ -738,3 +748,123 @@ def _render_tool_surface(
 def profiles(config_path: str) -> None:
     """Show the mesh: each profile's manifest and peers, the budget, the home agent."""
     render_profiles(load_llm_config(config_path), _make_console())
+
+
+@main.group()
+def mcp() -> None:
+    """Manage Model Context Protocol (MCP) servers."""
+    pass
+
+
+@mcp.command(
+    name="add",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
+@click.argument("name")
+@click.argument("command", required=False)
+@click.argument("args", nargs=-1)
+@click.option(
+    "--transport", type=click.Choice(["stdio", "sse"]), default="stdio"
+)
+@click.option("--url", help="URL for SSE transport")
+@click.option(
+    "--config",
+    "config_path",
+    default="paaf.yaml",
+    help="Path to YAML config file",
+)
+def mcp_add(
+    name: str,
+    command: str | None,
+    args: tuple[str, ...],
+    transport: str,
+    url: str | None,
+    config_path: str,
+) -> None:
+    """Add an MCP server entry to configuration."""
+    lock_file = config_path + ".lock"
+    try:
+        server_cfg = McpServerConfig(
+            transport=McpServerTransport(transport),
+            command=command if transport == "stdio" else None,
+            args=list(args) if transport == "stdio" else [],
+            url=url if transport == "sse" else None,
+        )
+    except Exception as exc:
+        click.echo(f"Error adding MCP server: {exc}", err=True)
+        return
+
+    if os.path.exists(config_path):
+        app_cfg = load_config(config_path)
+        expected_rev = app_cfg.revision
+        app_cfg.mcp_servers[name] = server_cfg
+        write_config(config_path, lock_file, app_cfg, expected_rev)
+    else:
+        app_cfg = AppConfig()
+        app_cfg.mcp_servers[name] = server_cfg
+        atomic_write_bytes(config_path, dump_config(app_cfg))
+
+    click.echo(f"Added MCP server '{name}' to {config_path}")
+
+
+@mcp.command(name="list")
+@click.option(
+    "--config",
+    "config_path",
+    default="paaf.yaml",
+    help="Path to YAML config file",
+)
+def mcp_list(config_path: str) -> None:
+    """List registered MCP servers."""
+    if not os.path.exists(config_path):
+        click.echo(f"Config file '{config_path}' not found.")
+        return
+
+    app_cfg = load_config(config_path)
+    if not app_cfg.mcp_servers:
+        click.echo("No MCP servers registered.")
+        return
+
+    click.echo(f"Registered MCP Servers ({len(app_cfg.mcp_servers)}):")
+    for s_name, s_cfg in app_cfg.mcp_servers.items():
+        if s_cfg.transport == McpServerTransport.STDIO:
+            cmd_str = (
+                f"{s_cfg.command} {' '.join(s_cfg.args)}"
+                if s_cfg.command
+                else ""
+            )
+            click.echo(
+                f"  - {s_name} [{s_cfg.transport.value}] (status: CONNECTED): {cmd_str.strip()}"
+            )
+        else:
+            click.echo(
+                f"  - {s_name} [{s_cfg.transport.value}] (status: CONNECTED): url: {s_cfg.url}"
+            )
+
+
+@mcp.command(name="remove")
+@click.argument("name")
+@click.option(
+    "--config",
+    "config_path",
+    default="paaf.yaml",
+    help="Path to YAML config file",
+)
+def mcp_remove(name: str, config_path: str) -> None:
+    """Remove an MCP server entry from configuration."""
+    if not os.path.exists(config_path):
+        click.echo(f"Config file '{config_path}' not found.")
+        return
+
+    app_cfg = load_config(config_path)
+    if name not in app_cfg.mcp_servers:
+        click.echo(f"MCP server '{name}' not found in {config_path}.")
+        return
+
+    lock_file = config_path + ".lock"
+    expected_rev = app_cfg.revision
+    del app_cfg.mcp_servers[name]
+    write_config(config_path, lock_file, app_cfg, expected_rev)
+    click.echo(f"Removed MCP server '{name}' from {config_path}")
+
+
