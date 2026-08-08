@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PAAF packages: codebase map",
+    "subtitle": "Runtime spine, object model, trust seams, persistence, and current package status",
+    "output": "paaf-packages.architecture.html",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/cann1neof/paaf",
+      "revision": "fae38d5869f6d7005b7d98297dc7e34a7f1a1dfc"
+    },
+    "viewBox": [1640, 940],
+    "views": [
+      {
+        "id": "runtime-spine",
+        "label": "Runtime spine",
+        "focus": ["cli", "profiles", "agent", "ports", "adapter", "providers", "trace"],
+        "note": "Follow a chat turn from validated YAML through the PAAF port to a provider and the optional local trace."
+      },
+      {
+        "id": "object-model",
+        "label": "Objects and types",
+        "focus": ["core-config", "profiles", "ports", "trace"],
+        "note": "See the Pydantic models, dataclasses, protocols, enums, errors, and SQL event records that form the contracts."
+      },
+      {
+        "id": "mesh-supervision",
+        "label": "Mesh and observer",
+        "focus": ["profiles", "prompt-mesh", "agent", "observer", "ports", "trace"],
+        "note": "Peer tools define reachability; the agent runs bounded handoff legs and records every accepted or rejected attempt."
+      },
+      {
+        "id": "trust-seams",
+        "label": "Secrets and endpoints",
+        "focus": ["profiles", "core-security", "adapter", "providers"],
+        "note": "Config carries secret references and declared endpoints; the adapter resolves values only at bind time."
+      },
+      {
+        "id": "package-status",
+        "label": "Package status",
+        "focus": ["core-config", "core-security", "cli", "agent", "ports", "adapter", "trace", "stubs"],
+        "note": "Core, trace, and LLM contain the implementation; session and voice are explicit Phase-2 stubs."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "paaf CLI",
+      "sublabel": "chat · prompt · profiles",
+      "tag": "paaf-llm",
+      "pos": [40, 360],
+      "size": [170, 76],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/cli.py", "line": 548, "end_line": 740, "label": "Click commands"},
+        {"path": "packages/paaf-llm/pyproject.toml", "line": 50, "label": "console entrypoint"}
+      ]
+    },
+    {
+      "id": "profiles",
+      "type": "backend",
+      "label": "Config object model",
+      "sublabel": "LlmConfig · ModelProfile",
+      "tag": "Pydantic",
+      "pos": [280, 360],
+      "size": [185, 76],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/profiles.py", "line": 51, "end_line": 250, "label": "ModelProfile"},
+        {"path": "packages/paaf-llm/src/paaf_llm/profiles.py", "line": 253, "end_line": 511, "label": "LlmConfig"},
+        {"path": "packages/paaf-llm/src/paaf_llm/cli.py", "line": 200, "end_line": 215, "label": "safe YAML load"}
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent turn engine",
+      "sublabel": "handoff loop ⟲ fallback loop",
+      "tag": "paaf-llm",
+      "pos": [540, 350],
+      "size": [195, 96],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/agent.py", "line": 199, "end_line": 328, "label": "Agent + chain"},
+        {"path": "packages/paaf-llm/src/paaf_llm/agent.py", "line": 474, "end_line": 797, "label": "turn loop"},
+        {"path": "packages/paaf-llm/src/paaf_llm/agent.py", "line": 1148, "end_line": 1229, "label": "fallback stream"}
+      ]
+    },
+    {
+      "id": "ports",
+      "type": "backend",
+      "label": "PAAF port contracts",
+      "sublabel": "values · protocols · errors",
+      "tag": "framework-free",
+      "pos": [810, 350],
+      "size": [195, 96],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/ports.py", "line": 54, "end_line": 180, "label": "values + failures"},
+        {"path": "packages/paaf-llm/src/paaf_llm/ports.py", "line": 255, "end_line": 353, "label": "mesh results"},
+        {"path": "packages/paaf-llm/src/paaf_llm/ports.py", "line": 356, "end_line": 441, "label": "adapter protocols"}
+      ]
+    },
+    {
+      "id": "adapter",
+      "type": "backend",
+      "label": "LangChainAdapter",
+      "sublabel": "lazy optional [engine] bridge",
+      "tag": "only framework site",
+      "pos": [1080, 350],
+      "size": [195, 96],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/_engine/__init__.py", "line": 354, "end_line": 384, "label": "adapter state"},
+        {"path": "packages/paaf-llm/src/paaf_llm/_engine/__init__.py", "line": 580, "end_line": 731, "label": "stream mappings"},
+        {"path": "packages/paaf-llm/src/paaf_llm/_engine/__init__.py", "line": 768, "end_line": 789, "label": "adapter factory"}
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "external",
+      "label": "Model providers",
+      "sublabel": "Ollama · OpenAI wire · Anthropic",
+      "tag": "network / local",
+      "pos": [1350, 360],
+      "size": [210, 76],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/profiles.py", "line": 61, "end_line": 108, "label": "provider fields"},
+        {"path": "packages/paaf-llm/src/paaf_llm/_engine/__init__.py", "line": 119, "end_line": 150, "label": "provider mapping"}
+      ]
+    },
+    {
+      "id": "core-config",
+      "type": "cloud",
+      "label": "Typed config substrate",
+      "sublabel": "AppConfig · reload tiers · atomic YAML",
+      "tag": "paaf-core",
+      "pos": [280, 90],
+      "size": [200, 86],
+      "sources": [
+        {"path": "packages/paaf-core/src/paaf_core/config/schema.py", "line": 17, "end_line": 70, "label": "models + ReloadTier"},
+        {"path": "packages/paaf-core/src/paaf_core/config/store.py", "line": 34, "end_line": 97, "label": "atomic revision store"},
+        {"path": "packages/paaf-core/src/paaf_core/config/reload_tiers.py", "line": 17, "end_line": 43, "label": "tier discovery"}
+      ]
+    },
+    {
+      "id": "prompt-mesh",
+      "type": "backend",
+      "label": "Prompt + mesh surface",
+      "sublabel": "Segment · tools · peer guards",
+      "tag": "pure PAAF",
+      "pos": [540, 90],
+      "size": [200, 86],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/compose.py", "line": 68, "end_line": 166, "label": "composer"},
+        {"path": "packages/paaf-llm/src/paaf_llm/mesh.py", "line": 274, "end_line": 352, "label": "tool surface"},
+        {"path": "packages/paaf-llm/src/paaf_llm/mesh.py", "line": 454, "end_line": 596, "label": "prompt + guard"}
+      ]
+    },
+    {
+      "id": "observer",
+      "type": "security",
+      "label": "Handoff observer",
+      "sublabel": "approve · retry · reroute",
+      "tag": "reserved profile",
+      "pos": [810, 90],
+      "size": [195, 86],
+      "sources": [
+        {"path": "packages/paaf-llm/src/paaf_llm/observer.py", "line": 80, "end_line": 182, "label": "verdict types"},
+        {"path": "packages/paaf-llm/src/paaf_llm/observer.py", "line": 256, "end_line": 307, "label": "judge attempt"},
+        {"path": "packages/paaf-llm/src/paaf_llm/observer.py", "line": 371, "end_line": 438, "label": "grant decision"}
+      ]
+    },
+    {
+      "id": "core-security",
+      "type": "security",
+      "label": "Secrets + endpoint declarations",
+      "sublabel": "SecretStore · EndpointRegistry",
+      "tag": "paaf-core",
+      "pos": [1080, 90],
+      "size": [215, 86],
+      "sources": [
+        {"path": "packages/paaf-core/src/paaf_core/secrets/interface.py", "line": 19, "end_line": 41, "label": "SecretStore protocol"},
+        {"path": "packages/paaf-core/src/paaf_core/secrets/fernet_backend.py", "line": 45, "end_line": 131, "label": "encrypted file store"},
+        {"path": "packages/paaf-core/src/paaf_core/net/endpoint.py", "line": 29, "end_line": 128, "label": "endpoint registry"}
+      ]
+    },
+    {
+      "id": "trace",
+      "type": "database",
+      "label": "TraceStore + SQLite",
+      "sublabel": "bounded queue · WAL · raw SQL",
+      "tag": "paaf-trace",
+      "pos": [810, 625],
+      "size": [205, 90],
+      "sources": [
+        {"path": "packages/paaf-trace/src/paaf_trace/store.py", "line": 37, "end_line": 207, "label": "event dataclasses"},
+        {"path": "packages/paaf-trace/src/paaf_trace/store.py", "line": 214, "end_line": 280, "label": "single writer"},
+        {"path": "packages/paaf-trace/src/paaf_trace/schema.sql", "line": 13, "end_line": 89, "label": "four tables"}
+      ]
+    },
+    {
+      "id": "stubs",
+      "type": "external",
+      "label": "Session + Voice",
+      "sublabel": "package shells; no runtime yet",
+      "tag": "Phase-2 stubs",
+      "pos": [280, 630],
+      "size": [200, 80],
+      "sources": [
+        {"path": "packages/paaf-session/src/paaf_session/__init__.py", "line": 1, "end_line": 4, "label": "session stub"},
+        {"path": "packages/paaf-voice/src/paaf_voice/__init__.py", "line": 1, "end_line": 4, "label": "voice stub"},
+        {"path": "packages/paaf-session/pyproject.toml", "line": 1, "end_line": 14, "label": "no dependencies"}
+      ]
+    }
+  ],
+  "connections": [
+    {"id": "cli-loads-profiles", "from": "cli", "to": "profiles", "label": "safe-load", "variant": "emphasis"},
+    {"id": "profiles-configure-agent", "from": "profiles", "to": "agent", "variant": "emphasis"},
+    {"id": "agent-calls-ports", "from": "agent", "to": "ports", "variant": "emphasis"},
+    {"id": "ports-bind-adapter", "from": "ports", "to": "adapter", "variant": "emphasis"},
+    {"id": "adapter-streams-providers", "from": "adapter", "to": "providers", "label": "stream", "variant": "emphasis"},
+    {"id": "profiles-use-core", "from": "core-config", "to": "profiles", "label": "tiers", "variant": "dashed", "fromSide": "bottom", "toSide": "top"},
+    {"id": "profiles-feed-mesh", "from": "profiles", "to": "prompt-mesh", "label": "peers", "variant": "dashed"},
+    {"id": "mesh-builds-agent-surface", "from": "prompt-mesh", "to": "agent", "label": "compose", "variant": "default", "fromSide": "bottom", "toSide": "top"},
+    {"id": "agent-invokes-observer", "from": "agent", "to": "observer", "label": "judge", "variant": "security"},
+    {"id": "security-feeds-adapter", "from": "core-security", "to": "adapter", "label": "keys + URL", "variant": "security", "fromSide": "bottom", "toSide": "top"},
+    {"id": "agent-emits-trace", "from": "agent", "to": "trace", "label": "events", "variant": "dashed"}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Public LLM contract",
+      "items": [
+        "Value objects: Message, Usage, ToolSpec, ToolCall, HandoffRequest, TurnResult, MeshSignal",
+        "Protocols: ChatAdapter, ToolCallingChatAdapter, MeshSignalSink",
+        "Failures: AdapterError family, AllProvidersFailed, EngineError, UndeclaredPeer"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Turn semantics",
+      "items": [
+        "Each leg gets a fresh [system, history, user] message list",
+        "Handoffs follow declared peer tools; fallback follows the awake agent's ordered provider chain",
+        "Only time-to-first-token can trigger fallback; a started reply commits to that provider"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust and control",
+      "items": [
+        "Secret values stay outside YAML and resolve by api_key_ref at adapter bind time",
+        "Endpoint classification is lexical/numeric and performs no DNS lookup",
+        "Observer powers and hop limits are enforced by tool capability removal"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Persistence model",
+      "items": [
+        "Config writes use file lock + optimistic revision + temp/fsync/atomic rename",
+        "Trace producers use non-blocking put_nowait into one bounded writer queue",
+        "SQLite tables: runs, tool_calls, turn_legs, handoffs; mesh correlation uses turn_id"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Package dependency direction",
+      "items": [
+        "paaf-llm depends on paaf-core and paaf-trace; the framework is an optional engine extra",
+        "paaf-trace depends on paaf-core and aiosqlite; core never depends back upward",
+        "paaf-session and paaf-voice currently declare no internal or runtime dependencies"
+      ]
+    }
+  ]
+}
