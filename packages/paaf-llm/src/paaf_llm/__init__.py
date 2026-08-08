@@ -45,6 +45,7 @@ from .ports import (
     Usage,
 )
 from .profiles import LlmConfig, ModelProfile
+from .tools.decorator import execute_tool_func, tool
 
 __version__ = "0.1.0"
 
@@ -73,4 +74,7 @@ __all__ = [
     "TurnResult",
     "UndeclaredPeer",
     "Usage",
+    "execute_tool_func",
+    "tool",
 ]
+
