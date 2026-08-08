@@ -72,6 +72,22 @@ class ToolRegistry:
         self._raw_names[name] = reg_name
         return reg_name
 
+    def unregister_source(self, source: str) -> list[str]:
+        """Unregister all tools registered under a specific source. Returns list of removed tool names."""
+        to_remove = [
+            reg_name
+            for reg_name, tool in self._tools.items()
+            if tool.source == source
+        ]
+        for reg_name in to_remove:
+            del self._tools[reg_name]
+        self._raw_names = {
+            raw: reg
+            for raw, reg in self._raw_names.items()
+            if reg not in to_remove
+        }
+        return to_remove
+
     def get(self, name: str) -> RegisteredTool | None:
         return self._tools.get(name)
 

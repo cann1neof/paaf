@@ -229,11 +229,19 @@ def load_llm_config(path: str) -> LlmConfig:
 def load_skill_fragments(config: LlmConfig) -> list[tuple[str, str]]:
     """Return the ordered ``(skill_name, fragment_text)`` pairs for ``config``.
 
-    The D-09 stub source, and deliberately a *named seam* rather than an inline
-    ``[]``: it is the ONE place both the agent and the prompt inspector read
-    their fragments from, so the two cannot drift apart when Phase 6 replaces
-    this body with real skill discovery (PERS-02).
+    Reads enabled skills from paaf.yaml via ``SkillManager.get_active_persona_fragments``.
     """
+    from pathlib import Path
+    from paaf_core.config import load_config
+    from paaf_llm.skills.manager import SkillManager
+
+    config_path = Path("paaf.yaml")
+    if config_path.exists():
+        try:
+            app_cfg = load_config(str(config_path))
+            return SkillManager.get_active_persona_fragments(app_cfg)
+        except Exception:
+            pass
     return []
 
 
@@ -1011,6 +1019,26 @@ def skill_list() -> None:
         )
 
     _make_console().print(table)
+
+
+@skill.command(name="enable")
+@click.argument("name")
+def skill_enable(name: str) -> None:
+    """Enable an installed skill in paaf.yaml."""
+    from paaf_llm.skills.manager import SkillManager
+
+    SkillManager.enable_skill(name)
+    click.echo(f"Enabled skill '{name}' in paaf.yaml")
+
+
+@skill.command(name="disable")
+@click.argument("name")
+def skill_disable(name: str) -> None:
+    """Disable an installed skill in paaf.yaml."""
+    from paaf_llm.skills.manager import SkillManager
+
+    SkillManager.disable_skill(name)
+    click.echo(f"Disabled skill '{name}' in paaf.yaml")
 
 
 

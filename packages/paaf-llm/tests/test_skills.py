@@ -148,3 +148,50 @@ def test_cli_skill_commands(tmp_path: Path, sample_skill_dir: Path, monkeypatch:
     res_list = runner.invoke(main, ["skill", "list"])
     assert res_list.exit_code == 0
     assert "sample_skill" in res_list.output
+
+    # Disable skill
+    res_disable = runner.invoke(main, ["skill", "disable", "sample_skill"])
+    assert res_disable.exit_code == 0
+    assert "Disabled skill 'sample_skill'" in res_disable.output
+
+    # Enable skill
+    res_enable = runner.invoke(main, ["skill", "enable", "sample_skill"])
+    assert res_enable.exit_code == 0
+    assert "Enabled skill 'sample_skill'" in res_enable.output
+
+
+def test_enable_disable_registry_and_compose(tmp_path: Path, sample_skill_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with open(sample_skill_dir / "prompt.md", "w", encoding="utf-8") as f:
+        f.write("System instructions from sample skill.")
+
+    with open(tmp_path / "paaf.yaml", "w", encoding="utf-8") as f:
+        yaml.dump({"revision": 1}, f)
+
+    runner = CliRunner()
+    runner.invoke(main, ["skill", "install", "-y", str(sample_skill_dir)])
+
+    from paaf_core.config import load_config
+    from paaf_llm.skills.manager import SkillManager
+
+    app_cfg = load_config(str(tmp_path / "paaf.yaml"))
+    fragments = SkillManager.get_active_persona_fragments(app_cfg, project_root=tmp_path)
+    assert len(fragments) == 1
+    assert fragments[0][0] == "sample_skill"
+    assert "--- Skill: sample_skill ---" in fragments[0][1]
+
+    registry = ToolRegistry()
+    load_skill_tools(tmp_path / app_cfg.skills["sample_skill"].path, "sample_skill", registry)
+    assert len(registry.get_specs()) == 1
+
+    # Disable
+    SkillManager.disable_skill("sample_skill", project_root=tmp_path, registry=registry)
+    assert len(registry.get_specs()) == 0
+
+    app_cfg_disabled = load_config(str(tmp_path / "paaf.yaml"))
+    fragments_disabled = SkillManager.get_active_persona_fragments(app_cfg_disabled, project_root=tmp_path)
+    assert len(fragments_disabled) == 0
+
+    # Skill files still intact on disk
+    assert (tmp_path / ".paaf" / "skills" / "sample_skill" / "skill.yaml").exists()
+
