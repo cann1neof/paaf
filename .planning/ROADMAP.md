@@ -243,13 +243,13 @@ Plans:
   4. The `history_lookup` tool enables querying timestamped past turns, tool calls, and background/custom event logs (e.g. music track changes, notifications) that were not part of the active conversation session.
   5. The docs name the permission model as the *only* defense against prompt injection via tool results, and a search of the repo turns up no hidden defensive instructions in any prompt.
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 - [x] 05-01-PLAN.md
 - [x] 05-02-PLAN.md
 - [x] 05-03-PLAN.md
 - [x] 05-04-PLAN.md
-- [ ] 05-05-PLAN.md
+- [x] 05-05-PLAN.md
 
 **UI hint**: no
 
@@ -398,8 +398,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Spike Gate | 10/10 | Complete    | 2026-07-25 |
 | 2. Foundation | 9/9 | Complete    | 2026-07-25 |
 | 3. paaf-llm Core (single agent) | 13/13 | Complete   | 2026-08-06 |
-| 4. Agent Mesh | 7/9 | In Progress|  |
-| 5. Tools, MCP & Permissions | 4/5 | In Progress|  |
+| 4. Agent Mesh | 9/9 | Complete   | 2026-08-08 |
+| 5. Tools, MCP & Permissions | 5/5 | Complete   | 2026-08-08 |
 | 6. Skills & PyPI Release | 0/TBD | Not started | - |
 | 7. paaf-voice Ports & Fakes | 0/TBD | Not started | - |
 | 8. Real Engines & Live Audio | 0/TBD | Not started | - |

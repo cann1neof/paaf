@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 04
-current_phase_name: agent-mesh
+current_phase: 05
+current_phase_name: tools-mcp-permissions
 status: complete
-stopped_at: Phase 5 context & project docs updated with always-on built-ins (handoff, observer tools, date_time, history)
-last_updated: "2026-08-08T13:55:33.794Z"
+stopped_at: Phase 5 completed (built-in system tools, @tool decorator, McpServerManager, Unified ToolRegistry, PermissionEngine, spoken confirmation loop, and non-defensive governance CI test)
+last_updated: "2026-08-08T17:19:00.000Z"
 last_activity: 2026-08-08
-last_activity_desc: Phase 04 execution completed
+last_activity_desc: Phase 05 execution completed
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 41
-  completed_plans: 41
+  completed_phases: 5
+  total_plans: 46
+  completed_plans: 46
 ---
 
 # Project State
@@ -23,24 +23,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 04 — agent-mesh (COMPLETE)
+**Current focus:** Phase 05 — tools-mcp-permissions (COMPLETE)
 
 ## Current Position
 
-Phase: 04 (agent-mesh) — COMPLETE
-Plan: 9 of 9
-Status: Completed Phase 04
-Last activity: 2026-08-08 — Phase 04 execution completed
+Phase: 05 (tools-mcp-permissions) — COMPLETE
+Plan: 5 of 5
+Status: Completed Phase 05
+Last activity: 2026-08-08 — Phase 05 execution completed
 
-Progress: [██████████] 100%  (9/9 plans in phase 04)
+Progress: [██████████] 100%  (5/5 plans in phase 05)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 41
-- Average duration: ~35 min
-- Total execution time: ~24 hours
+- Total plans completed: 46
+- Average duration: ~32 min
+- Total execution time: ~25 hours
 
 **Recent Trend:**
 
