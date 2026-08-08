@@ -10,8 +10,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from paaf_core.config import AppConfig, atomic_write_bytes, dump_config, load_config, write_config
+import yaml
+from paaf_llm.cli import load_llm_config
 from paaf_llm.compose import PromptComposer
+from paaf_llm.profiles import LlmConfig
 from paaf_llm.registry import ToolRegistry
 from paaf_llm.skills.loader import load_skill_tools
 from paaf_llm.skills.manifest import SkillManifest
@@ -29,18 +31,17 @@ class SkillManager:
         """Enable a skill in paaf.yaml and hot-reload tool registry."""
         root = project_root or Path.cwd()
         config_path_str = str(root / "paaf.yaml")
-        lock_path_str = config_path_str + ".lock"
 
         if not os.path.exists(config_path_str):
             raise FileNotFoundError(f"paaf.yaml not found at {config_path_str}")
 
-        app_cfg = load_config(config_path_str)
+        app_cfg = load_llm_config(config_path_str)
         if skill_name not in app_cfg.skills:
             raise KeyError(f"Skill '{skill_name}' is not registered in paaf.yaml")
 
-        expected_rev = app_cfg.revision
         app_cfg.skills[skill_name].enabled = True
-        write_config(config_path_str, lock_path_str, app_cfg, expected_rev)
+        with open(config_path_str, "w", encoding="utf-8") as f:
+            yaml.dump(app_cfg.model_dump(mode="json"), f, sort_keys=False)
 
         if registry is not None:
             skill_dir = root / app_cfg.skills[skill_name].path
@@ -55,25 +56,24 @@ class SkillManager:
         """Disable a skill in paaf.yaml and hot-reload tool registry."""
         root = project_root or Path.cwd()
         config_path_str = str(root / "paaf.yaml")
-        lock_path_str = config_path_str + ".lock"
 
         if not os.path.exists(config_path_str):
             raise FileNotFoundError(f"paaf.yaml not found at {config_path_str}")
 
-        app_cfg = load_config(config_path_str)
+        app_cfg = load_llm_config(config_path_str)
         if skill_name not in app_cfg.skills:
             raise KeyError(f"Skill '{skill_name}' is not registered in paaf.yaml")
 
-        expected_rev = app_cfg.revision
         app_cfg.skills[skill_name].enabled = False
-        write_config(config_path_str, lock_path_str, app_cfg, expected_rev)
+        with open(config_path_str, "w", encoding="utf-8") as f:
+            yaml.dump(app_cfg.model_dump(mode="json"), f, sort_keys=False)
 
         if registry is not None:
             registry.unregister_source(f"skill:{skill_name}")
 
     @staticmethod
     def get_active_persona_fragments(
-        config: AppConfig, project_root: Path | None = None
+        config: LlmConfig, project_root: Path | None = None
     ) -> list[tuple[str, str]]:
         """Return list of (skill_name, fragment_text) pairs for all enabled skills in AppConfig."""
         root = project_root or Path.cwd()

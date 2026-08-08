@@ -1,0 +1,28 @@
+site_name: PAAF Documentation
+site_description: Personalized Agentic Assistant Framework (PAAF) — User owns the mind.
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: indigo
+    accent: cyan
+  features:
+    - navigation.expand
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Getting Started:
+      - Overview: index.md
+      - Quickstart: getting-started/quickstart.md
+  - Configuration:
+      - paaf.yaml Reference: configuration/paaf-yaml.md
+  - Architecture:
+      - Agent Mesh & Handoffs: architecture/agent-mesh.md
+      - Security Architecture: architecture/security.md
+  - Skills:
+      - Authoring & Installation: skills/authoring.md
+  - API Reference:
+      - Core & LLM API: api/reference.md
+  - Roadmap & Scope:
+      - Scope Boundaries: roadmap/scope.md

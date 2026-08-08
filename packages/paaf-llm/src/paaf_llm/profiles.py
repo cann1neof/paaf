@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from paaf_core.config.schema import ReloadTier
+from paaf_core.config.schema import ReloadTier, SkillConfig
 from paaf_core.net.endpoint import Endpoint
 from pydantic import BaseModel, Field, model_validator
 
@@ -354,6 +354,9 @@ class LlmConfig(BaseModel):
     #     field is not one: it governs presentation only.
     keep_pre_handoff_prose: bool = Field(
         True, json_schema_extra={"reload_tier": ReloadTier.WARM}
+    )
+    skills: dict[str, SkillConfig] = Field(
+        default_factory=dict, json_schema_extra={"reload_tier": ReloadTier.HOT}
     )
 
     # --- the observer (MESH-06, D-03/D-04/D-15) ---

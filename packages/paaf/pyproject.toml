@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+[project]
+name = "paaf"
+version = "0.1.0"
+description = "Personalized Agentic Assistant Framework (PAAF) — Monolithic Distribution"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "paaf-core",
+    "paaf-trace",
+    "paaf-llm",
+]
+
+[tool.uv.sources]
+paaf-core = { workspace = true }
+paaf-trace = { workspace = true }
+paaf-llm = { workspace = true }
+
+[project.optional-dependencies]
+engine = [
+    "langchain==1.3.14",
+    "langgraph==1.2.10",
+    "langchain-ollama==1.1.0",
+    "langchain-anthropic==1.4.8",
+    "langchain-openai==1.4.1",
+]
+
+[project.scripts]
+paaf = "paaf_llm.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paaf"]

@@ -13,14 +13,9 @@ from typing import Any
 
 import yaml
 from click import ClickException
-from paaf_core.config import (
-    AppConfig,
-    SkillConfig,
-    atomic_write_bytes,
-    dump_config,
-    load_config,
-    write_config,
-)
+from paaf_core.config import SkillConfig
+from paaf_llm.cli import load_llm_config
+from paaf_llm.profiles import LlmConfig, ModelProfile
 from paaf_llm.skills.manifest import SkillManifest
 from rich.console import Console
 
@@ -112,24 +107,22 @@ def install_skill(
 
         # Step 6: Update paaf.yaml config
         config_path_str = str(root / "paaf.yaml")
-        lock_path_str = config_path_str + ".lock"
         if os.path.exists(config_path_str):
-            app_cfg = load_config(config_path_str)
-            expected_rev = app_cfg.revision
-            app_cfg.skills[skill_name] = SkillConfig(
-                enabled=True,
-                path=f".paaf/skills/{skill_name}",
-                permissions=manifest.permissions,
-            )
-            write_config(config_path_str, lock_path_str, app_cfg, expected_rev)
+            app_cfg = load_llm_config(config_path_str)
         else:
-            app_cfg = AppConfig()
-            app_cfg.skills[skill_name] = SkillConfig(
-                enabled=True,
-                path=f".paaf/skills/{skill_name}",
-                permissions=manifest.permissions,
+            app_cfg = LlmConfig(
+                active_profile="cloud",
+                profiles={"cloud": ModelProfile(provider="ollama", model="llama3.1")},
             )
-            atomic_write_bytes(config_path_str, dump_config(app_cfg))
+
+        app_cfg.skills[skill_name] = SkillConfig(
+            enabled=True,
+            path=f".paaf/skills/{skill_name}",
+            permissions=manifest.permissions,
+        )
+
+        with open(config_path_str, "w", encoding="utf-8") as f:
+            yaml.dump(app_cfg.model_dump(mode="json"), f, sort_keys=False)
 
         _console.print(f"[bold green]Successfully installed skill '{skill_name}' to .paaf/skills/{skill_name}[/]")
         return manifest

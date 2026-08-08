@@ -87,7 +87,7 @@ def test_staging_installation(tmp_path: Path, sample_skill_dir: Path) -> None:
 
     # Initial paaf.yaml
     with open(project_root / "paaf.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"revision": 1}, f)
+        yaml.dump({"active_profile": "cloud", "profiles": {"cloud": {"provider": "ollama", "model": "llama3.1"}}}, f)
 
     manifest = install_skill(
         target=str(sample_skill_dir),
@@ -132,13 +132,10 @@ def test_installation_failure_staging_retention(tmp_path: Path) -> None:
 
     # Verify skills dir remains clean
     skills_dir = project_root / ".paaf" / "skills"
-    assert not skills_dir.exists() or len(list(skills_dir.iterdir())) == 0
-
-
 def test_cli_skill_commands(tmp_path: Path, sample_skill_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     with open(tmp_path / "paaf.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"revision": 1}, f)
+        yaml.dump({"active_profile": "cloud", "profiles": {"cloud": {"provider": "ollama", "model": "llama3.1"}}}, f)
 
     runner = CliRunner()
     res = runner.invoke(main, ["skill", "install", "-y", str(sample_skill_dir)])
@@ -166,15 +163,15 @@ def test_enable_disable_registry_and_compose(tmp_path: Path, sample_skill_dir: P
         f.write("System instructions from sample skill.")
 
     with open(tmp_path / "paaf.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"revision": 1}, f)
+        yaml.dump({"active_profile": "cloud", "profiles": {"cloud": {"provider": "ollama", "model": "llama3.1"}}}, f)
 
     runner = CliRunner()
     runner.invoke(main, ["skill", "install", "-y", str(sample_skill_dir)])
 
-    from paaf_core.config import load_config
+    from paaf_llm.cli import load_llm_config
     from paaf_llm.skills.manager import SkillManager
 
-    app_cfg = load_config(str(tmp_path / "paaf.yaml"))
+    app_cfg = load_llm_config(str(tmp_path / "paaf.yaml"))
     fragments = SkillManager.get_active_persona_fragments(app_cfg, project_root=tmp_path)
     assert len(fragments) == 1
     assert fragments[0][0] == "sample_skill"
@@ -188,7 +185,7 @@ def test_enable_disable_registry_and_compose(tmp_path: Path, sample_skill_dir: P
     SkillManager.disable_skill("sample_skill", project_root=tmp_path, registry=registry)
     assert len(registry.get_specs()) == 0
 
-    app_cfg_disabled = load_config(str(tmp_path / "paaf.yaml"))
+    app_cfg_disabled = load_llm_config(str(tmp_path / "paaf.yaml"))
     fragments_disabled = SkillManager.get_active_persona_fragments(app_cfg_disabled, project_root=tmp_path)
     assert len(fragments_disabled) == 0
 

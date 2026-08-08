@@ -993,7 +993,9 @@ def skill_list() -> None:
         click.echo("No paaf.yaml found in current directory.")
         return
 
-    config = load_config(str(config_path))
+    from paaf_llm.cli import load_llm_config
+
+    config = load_llm_config(str(config_path))
 
     table = Table(title="Installed PAAF Skills")
     table.add_column("Skill Name", style="bold cyan")
