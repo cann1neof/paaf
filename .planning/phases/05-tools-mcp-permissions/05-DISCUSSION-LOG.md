@@ -5,7 +5,18 @@
 
 **Date:** 2026-08-08
 **Phase:** 5-Tools, MCP & Permissions
-**Areas discussed:** Permission Tiers & Spoken Confirmation Loop, Unified Registry & MCP Server Config, Custom Tool Decorator API & Defaults, Built-in Tools & Home Assistant Skill
+**Areas discussed:** Built-in System Tools (Mesh & Observer Infrastructure), Permission Tiers & Spoken Confirmation Loop, Unified Registry & MCP Server Config, Custom Tool Decorator API & Defaults
+
+---
+
+## Built-in System Tools (Mesh & Observer Infrastructure)
+
+| Concept | Scope / Decision | Reason |
+|---------|------------------|--------|
+| Mesh Handoff Tool (`handoff`) | Registered as built-in tool in unified registry | Enables agent-to-agent delegation via standard tool calling seam |
+| Observer Tools (`approve_handoff`, `veto_handoff`, `reroute_handoff`) | Registered as built-in tools for Observer profile | Structurally bounds observer to structured tool calls (capability-removal principle) |
+| System / Peer Inspection Tools (`list_peers`) | Registered as built-in tools | Allows agents to discover declared peer graph and session context |
+| Home Assistant | **EXCLUDED** from Phase 5 out-of-the-box shipping | Deferred to future external plugin release |
 
 ---
 
@@ -18,7 +29,6 @@
 | User Constraint | By default all tools are executable by agent ('act'). User can enforce 'confirm' on specific tools. Agent confirmation prompt must be clean ('Can I use tool <toolName>?') without command/path syntax noise. | ✓ |
 
 **User's choice:** Custom constraint: All tools executable by default ('act'), user can enforce confirm check for specific tools. Spoken confirmation prompt must be clean and concise ("Can I use tool <toolName>?") with zero path/command syntax noise.
-**Notes:** Added requirement for clean spoken/chat prompts during confirmation.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
@@ -118,42 +128,6 @@
 
 ---
 
-## Built-in Tools & Home Assistant Skill
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Built-in package | paaf_llm.tools.builtin with in-memory asyncio Timer/Alarm manager and mockable Weather/Music adapters | ✓ |
-| Real API keys/hardware required | Require real APIs for built-ins | |
-| Agent discretion | You decide | |
-
-**User's choice:** Built-in package (paaf_llm.tools.builtin) with in-memory asyncio Timer/Alarm manager and mockable Weather/Music adapters for offline testing.
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Standalone example skill | Standalone example skill module driving HA REST/WebSocket API via httpx/aiohttp, zero dependencies on HA library | ✓ |
-| Include homeassistant library | Include homeassistant client library in paaf-llm dependencies | |
-| Agent discretion | You decide | |
-
-**User's choice:** Standalone example skill module driving Home Assistant REST/WebSocket API via httpx/aiohttp, with 0 dependencies on homeassistant library in core framework.
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Secret store integration | HA_URL and HA_TOKEN stored in encrypted secret store via paaf secrets plus fallback to env vars | ✓ |
-| Environment variables only | Environment variables only | |
-| Agent discretion | You decide | |
-
-**User's choice:** Secret store integration (HA_URL and HA_TOKEN stored in encrypted secret store via paaf secrets) plus fallback to env vars.
-
-| Option | Description | Selected |
-|--------|-------------|----------|
-| Document permission model as only guard | Permission model is ONLY prompt injection guard, verify zero defensive prompt instructions exist in codebase | ✓ |
-| Defensive system prompt instructions | Add defensive system prompt instructions alongside permission tiers | |
-| Agent discretion | You decide | |
-
-**User's choice:** Document permission model as the ONLY prompt injection guard, verify in test suite that zero defensive prompt instructions exist in codebase.
-
----
-
 ## Agent's Discretion
 
 - Namespacing fallback: Flat tool names when unique, scoped prefix on collision.
@@ -162,4 +136,4 @@
 
 ## Deferred Ideas
 
-- None.
+- **Home Assistant integration** — deferred to future plugin release; not included out of the box in Phase 5.
