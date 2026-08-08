@@ -83,7 +83,7 @@ The framework is organized around skills and agents, where an agent is another m
 ### Tools & MCP (TOOL)
 
 - [x] **TOOL-01**: Always-on built-in tools ship for mesh handoff (`handoff`), observer control (`approve_handoff`, `veto_handoff`, `reroute_handoff`), date & time lookup (`date_time_lookup`), and deep history & event log lookup (`history_lookup` querying timestamped trace logs of past turns, tool calls, and background events)
-- [ ] **TOOL-02**: User defines a custom Python tool with a single decorator
+- [x] **TOOL-02**: User defines a custom Python tool with a single decorator
 - [ ] **TOOL-03**: User adds an MCP server by pasting its config; its tools appear in the registry
 - [ ] **TOOL-04**: All three sources appear in one unified registry
 - [ ] **TOOL-05**: Every tool carries a permission tier — observe, act, or confirm
@@ -272,7 +272,7 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | MESH-05 | Phase 4 — Agent Mesh | Pending |
 | MESH-06 | Phase 4 — Agent Mesh | Pending |
 | TOOL-01 | Phase 5 — Tools, MCP & Permissions | Complete |
-| TOOL-02 | Phase 5 — Tools, MCP & Permissions | Pending |
+| TOOL-02 | Phase 5 — Tools, MCP & Permissions | Complete |
 | TOOL-03 | Phase 5 — Tools, MCP & Permissions | Pending |
 | TOOL-04 | Phase 5 — Tools, MCP & Permissions | Pending |
 | TOOL-05 | Phase 5 — Tools, MCP & Permissions | Pending |
