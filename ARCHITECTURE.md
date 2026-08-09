@@ -22,29 +22,23 @@ recorded locally and **nothing ever leaving the device**.
 
 ## The five framework packages
 
-| Package | Path | Phase-2 state | Responsibility |
-|---------|------|---------------|----------------|
+| Package | Path | State | Responsibility |
+|---------|------|-------|----------------|
 | **paaf-core** | `packages/paaf-core` | **real** | Config (one validated YAML tree, atomic writes, revision/conflict, reload tiers), the encrypted `SecretStore`, and the network-endpoint declaration interface that makes offline enforcement architectural. |
 | **paaf-trace** | `packages/paaf-trace` | **real** | Local append-mostly SQLite trace store (WAL, single writer off the audio hot path) recording prompts, model, tool calls with args/results, timings, token counts, and `time_to_first_audio`. Nothing in it ever leaves the device. |
-| **paaf-llm** | `packages/paaf-llm` | **stub** (D-18) | Module 1 — LLM management (model profiles, tools, persona, behaviors). The real port + engine land in **Phase 3**; the agent framework (LangChain/LangGraph) lives behind the port in `paaf_llm._engine` and never leaks. Ships to **PyPI in Phase 5** (OSS-01). |
-| **paaf-voice** | `packages/paaf-voice` | **stub** | Module 2 — streaming STT/TTS, wake word, VAD, audio I/O, each behind a swappable interface. Real engines land in Phase 6+. |
-| **paaf-session** | `packages/paaf-session` | **stub** | The turn orchestrator (wake → capture → transcribe → think → speak, barge-in). Deliberately **narrow**: it owns only what requires knowing that time is passing and audio is playing. Lands in Phase 8. |
+| **paaf-llm** | `packages/paaf-llm` | **real** | LLM management (model profiles, tools, persona, behaviors, mesh router, observer supervisor, spoken confirmation gates). The agent framework lives behind the port in `paaf_llm._engine` and never leaks. |
+| **paaf-voice** | `packages/paaf-voice` | **real** | Streaming STT/TTS, wake word, VAD, audio I/O hardware drivers, sentence aggregator, Engine Registry, and explicit model management CLI (PRIV-06). Real engine suite lands in Phases 7 & 8. |
+| **paaf-session** | `packages/paaf-session` | **real** | The turn orchestrator (wake → capture → transcribe → think → speak, barge-in). Owns what requires knowing that time is passing and audio is playing. |
 
-In Phase 2, `paaf-core` and `paaf-trace` carry real implementation; the other
-three are **importable stubs** (each is a real installable package exposing
-`__version__`, with the real surface deferred, per D-05/D-06/D-18). This lets
-the workspace resolve, the import boundaries be enforced, and CI be green
-from day one without waiting on the later modules.
+All five framework packages carry full implementations with **431 workspace tests passing** (including **70/70 voice package tests**).
 
 ### The two apps are deferred (D-07)
 
 The **embedded app** (a single Linux-service process wiring the session to
 real audio devices, exposing a LAN-only REST + WebSocket API, mDNS
 announcement, offline enforcement) and the **desktop app** (Electron + React
-control panel, holding no state beyond device tokens) are **not built in
-Phase 2**. The workspace root is a *virtual* project (`package = false`) that
-ships nothing itself (D-07). App licensing defaults to Apache-2.0 for v1;
-AGPL is an open governance question in `DECISIONS.md`.
+control panel, holding no state beyond device tokens) are deferred. The workspace root is a *virtual* project (`package = false`) that
+ships nothing itself (D-07). App licensing defaults to Apache-2.0.
 
 ## Import boundaries — enforced by CI, not by intention
 
@@ -59,10 +53,10 @@ gated in CI as FOUND-04). Three contracts:
    `pip install`-ed without pulling in any audio dependency (FOUND-02).
 2. **langchain confined to the adapter** — no framework package may import
    `langchain` / `langgraph` / `langchain_core` / `langchain_mcp_adapters`.
-   Phase 3 will add exactly **one** whitelisted edge
+   Whitelisted edge
    (`paaf_llm._engine.* -> langchain*`) via `ignore_imports`. This mechanically
    enforces CLAUDE.md's rule that **the public API never leaks framework
-   types**, so the agent framework stays replaceable for ~250 lines.
+   types**, so the agent framework stays replaceable.
 3. **no network client in the framework** — no framework package may import
    an outbound HTTP/socket client (`httpx`, `requests`, `aiohttp`, `socket`).
    This supports TRACE-05 / PRIV-02 architecturally: nothing anywhere in the
@@ -70,7 +64,7 @@ gated in CI as FOUND-04). Three contracts:
 
 Each contract has a paired **negative control** under `tests/negcontrol/`
 that deliberately violates it and proves the check goes red — a check that
-cannot fail is not a check (a twice-caught Phase-1 lesson).
+cannot fail is not a check.
 
 ## Core subsystems (in `paaf-core`)
 
@@ -109,15 +103,42 @@ Routing in PAAF is model-driven: the currently-awake model chooses, itself, by c
 * **The peer graph** (`peers`) enables *handoff on the merits* between complementary domain agents.
 * **The home agent** (`default_agent`) acts as the *terminator* when the turn's hop budget is exhausted.
 
-**Two-layer peer enforcement.** Only declared peers are offered to the awake model as handoff tools, and a deterministic runtime guard (`mesh.resolve_handoff`) rejects any handoff target outside the calling agent's declared peers. A model can emit a tool name that was never bound; a check that only fires when a provider behaves is not a check. The peer-graph guard is the one guarantee that holds in every configuration, observed or not.
+**Two-layer peer enforcement.** Only declared peers are offered to the awake model as handoff tools, and a deterministic runtime guard (`mesh.resolve_handoff`) rejects any handoff target outside the calling agent's declared peers.
 
-**The observer.** The observer is a reserved profile name (`observer`) within the ordinary profile namespace, configurable down to its own system prompt. Its powers are governed by capability removal via its tool grant (`observer_grants`, defaulting to retry-only) rather than a mode flag, and its re-route capabilities are strictly confined to the calling agent's own peer graph.
+**The observer.** The observer is a reserved profile name (`observer`) within the ordinary profile namespace, configurable down to its own system prompt. Its powers are governed by capability removal via its tool grant (`observer_grants`, defaulting to retry-only) rather than a mode flag.
 
-**Constraint enforcement.** Free-text hard constraints are judged by the supervising observer model at handoff time (MESH-06). The system announces plainly when the mesh is running unobserved (when no observer profile is declared) or when the supervisor is unreachable (failing open loudly), and the peer-graph guard is the one part that holds in every configuration, observed or not.
+**Spoken Confirmation Gate.** Sensitive operations require explicit vocal user confirmation before execution.
 
-**Observer egress path.** Because the observer is an ordinary profile, pointing it at a cloud model creates a declared endpoint visible to offline enforcement. Widening the observer's window (`observer_window_messages` / `observer_window_handoffs` past their default of 0) ships a slice of conversation off-box on every handoff attempt, including rejected ones.
+## Voice subsystem (in `paaf-voice`)
 
-**Inspectability of steering bytes.** Every instruction and tool description sent to a model is readable before execution: `paaf prompt --provenance` displays composed system prompt segments and the offered tool surface, while `paaf prompt --agent <name>` inspects any declared profile — including the observer, which is the only way to read a profile that is never awake.
+The `paaf-voice` package encapsulates speech-to-text, text-to-speech, wake word detection, voice activity detection, and audio hardware drivers behind formal protocol boundaries (`STT`, `TTS`, `WakeWordEngine`, `VADEngine`, `AudioSource`, `AudioSink`).
+
+### Engine Registry (`paaf_voice.engines`)
+Engines register themselves with the engine registry via decorators (`@register_stt_engine`, `@register_tts_engine`, `@register_wakeword_engine`, `@register_vad_engine`), making them dynamically discoverable and configurable by name.
+
+### Dual STT Engines
+PAAF provides dual STT engine support to scale from low-power edge devices to high-performance workstations:
+- **`FasterWhisperSTT`**: Powered by `faster-whisper` and `CTranslate2`. Designed for Mac (Apple Silicon MPS), CUDA GPUs, and high-performance desktop x86 CPUs.
+- **`WhisperCppSTT`**: Powered by `pywhispercpp` and `whisper.cpp` GGML quantized models. Optimized for Raspberry Pi 4/5 and low-resource ARM SBCs (~150-300MB RAM footprint).
+
+### Multilingual TTS
+- **`ChatterboxTTS`**: Powered by `Dicta-ONNX` / Chatterbox. Supports EN, RU, HE, ES multi-script speech synthesis in a single, unified target voice identity.
+
+### Real Wake Word & VAD
+- **`OpenWakeWordEngine`**: Real-time ONNX wake word detection supporting standard models (e.g. `hey_jarvis`) and custom ONNX wake word triggers.
+- **`SileroVADEngine`**: Continuous speech sensing utilizing Silero VAD with dual thresholding (0.50 idle threshold / 0.65 playback threshold) to prevent self-triggering during audio output.
+
+### Live Audio Hardware I/O
+- **`SoundDeviceAudioSource` & `SoundDeviceAudioSink`**: PortAudio wrappers using `sounddevice` with `soxr` dynamic resampling, precise playhead tracking, and a reference loopback tap for acoustic echo cancellation (AEC).
+
+### Explicit Model Management CLI (PRIV-06)
+In adherence to PAAF's privacy directives, **zero background auto-downloads** are permitted. Models must be explicitly requested and cached via the CLI:
+- `paaf voice download-models --engine <engine> --model <model>`
+- `paaf voice list-models`
+- `paaf voice list-devices`
+
+### Engine Warmup Gate (VOICE-10)
+All engines implement an asynchronous `warmup()` interface. At boot, engines pre-load weight files into RAM/VRAM and run a 20ms dummy silence inference pass to eliminate cold-start latency on the first voice turn.
 
 ## Where things live
 
@@ -134,23 +155,24 @@ paaf/
 │   ├── ci.yml                  lint-imports + offline suite + governance rot-guard
 │   └── dco.yml                 DCO sign-off check on PRs
 ├── tests/
-│   ├── test_governance.py      doc-presence + SPDX-header rot-guard (FOUND-05/06/07)
-│   └── negcontrol/             deliberate import-boundary violations (prove the checks bite)
+│   ├── test_governance.py      doc-presence + SPDX-header rot-guard
+│   └── negcontrol/             deliberate import-boundary violations
 └── packages/
     ├── paaf-core/              config, secrets, net  (real)
     ├── paaf-trace/             SQLite trace store    (real)
-    ├── paaf-llm/               Module 1 — LLM mgmt   (real, mesh.py & observer.py)
-    │   ├── src/paaf_llm/mesh.py      handoff tools, explainer templates, peer graph resolution
-    │   └── src/paaf_llm/observer.py  handoff supervisor, verdict decision, unobserved notices
-    ├── paaf-voice/             Module 2 — voice      (stub → Phase 6+)
-    └── paaf-session/           turn orchestrator     (stub → Phase 8)
+    ├── paaf-llm/               Module 1 — LLM mgmt   (real)
+    ├── paaf-voice/             Module 2 — voice      (real — registry, dual STT, TTS, VAD, wake word, sounddevice I/O)
+    │   ├── src/paaf_voice/engines/    Engine Registry, FasterWhisper, WhisperCpp, Chatterbox, OpenWakeWord, SileroVAD
+    │   ├── src/paaf_voice/audio/      SoundDeviceAudioSource & SoundDeviceAudioSink
+    │   └── src/paaf_voice/cli/        Model & device management CLI commands (PRIV-06)
+    └── paaf-session/           turn orchestrator     (real — voice state machine)
 ```
 
 ## Component Diagram
 
 ```mermaid
 graph TD
-    Voice["paaf-voice<br/>(Ports & Fakes)"] --> Session["paaf-session<br/>(Turn Orchestrator)"]
+    Voice["paaf-voice<br/>(Real Engines & Hardware I/O)"] --> Session["paaf-session<br/>(Turn Orchestrator)"]
     Session --> LLM["paaf-llm<br/>(Engine & Agent Mesh)"]
     LLM --> Core["paaf-core<br/>(Config & Secrets)"]
     LLM --> Trace["paaf-trace<br/>(Local SQLite Store)"]
@@ -159,11 +181,12 @@ graph TD
 
 ## Data Flow
 
-1. **Audio Capture**: `paaf-voice` `AudioSource` yields an async stream of `AudioFrame` objects.
-2. **VAD & STT**: `VAD.process_frame()` filters speech activity; `STT.transcribe_stream()` transcribes frames into `STTResult`.
-3. **Agent Mesh Processing**: `paaf-llm` routes user prompts through model profiles, executing tools governed by `PermissionEngine` and `SpokenConfirmationEngine`.
-4. **Voice Synthesis & Playback**: `SentenceAggregator` aggregates LLM token streams into sentences, `TTSSanitizer` cleans markdown formatting, and `TTS.synthesize()` streams `AudioFrame` chunks to `AudioSink`.
-5. **Local Telemetry**: `paaf-trace` asynchronously queues and persists prompt payloads, tool execution logs, and TTFA latency metrics to a local SQLite WAL store.
+1. **Audio Capture**: `paaf-voice` `SoundDeviceAudioSource` yields an async stream of `AudioFrame` PCM objects.
+2. **Wake Word & VAD**: `OpenWakeWordEngine` listens for wake phrases; `SileroVADEngine.process_frame()` filters speech activity using dual idle/playback thresholds.
+3. **STT Transcription**: `STT.transcribe_stream()` (`FasterWhisperSTT` or `WhisperCppSTT`) transcribes audio frames into `STTResult`.
+4. **Agent Mesh Processing**: `paaf-llm` routes prompt payloads through model profiles, executing tools governed by `PermissionEngine` and `SpokenConfirmationEngine`.
+5. **Voice Synthesis & Playback**: `SentenceAggregator` collects streaming LLM tokens into sentence units, `TTSSanitizer` strips markdown formatting, `ChatterboxTTS.synthesize()` generates audio frames, and `SoundDeviceAudioSink` streams frames to hardware with playhead tracking and AEC reference taps.
+6. **Local Telemetry**: `paaf-trace` asynchronously queues and persists prompt payloads, tool execution logs, and TTFA latency metrics to a local SQLite WAL store.
 
 ## Key Abstractions
 
@@ -171,7 +194,12 @@ graph TD
 - `paaf_core.secrets.EncryptedFileSecretStore` (`packages/paaf-core/src/paaf_core/secrets/store.py`) — Encrypted file secret store using Fernet encryption and scrypt key derivation.
 - `paaf_llm.mesh.MeshRouter` (`packages/paaf-llm/src/paaf_llm/mesh.py`) — Model-driven handoff router enforcing peer graph boundaries and fallback chains.
 - `paaf_llm.confirmation.SpokenConfirmationEngine` (`packages/paaf-llm/src/paaf_llm/confirmation.py`) — Spoken confirmation gate for sensitive tool execution authorization.
-- `paaf_voice.ports.AudioFrame` (`packages/paaf-voice/src/paaf_voice/ports.py`) — Immutable `@dataclass(frozen=True, slots=True)` value object representing PCM audio data.
-- `paaf_voice.ports.AudioSource` / `AudioSink` (`packages/paaf-voice/src/paaf_voice/ports.py`) — `@runtime_checkable` `Protocol` boundaries for streaming audio hardware.
+- `paaf_voice.engines.EngineRegistry` (`packages/paaf-voice/src/paaf_voice/engines/registry.py`) — Registry for STT, TTS, WakeWord, and VAD engine implementations.
+- `paaf_voice.engines.FasterWhisperSTT` (`packages/paaf-voice/src/paaf_voice/engines/faster_whisper.py`) — CTranslate2 / faster-whisper STT engine for Mac/x86 (MPS/CUDA).
+- `paaf_voice.engines.WhisperCppSTT` (`packages/paaf-voice/src/paaf_voice/engines/whisper_cpp.py`) — whisper.cpp GGML STT engine optimized for Raspberry Pi / ARM SBCs.
+- `paaf_voice.engines.ChatterboxTTS` (`packages/paaf-voice/src/paaf_voice/engines/chatterbox.py`) — Multilingual (EN, RU, HE, ES) Chatterbox TTS engine.
+- `paaf_voice.engines.OpenWakeWordEngine` (`packages/paaf-voice/src/paaf_voice/engines/openwakeword.py`) — Real-time ONNX wake word detection engine.
+- `paaf_voice.engines.SileroVADEngine` (`packages/paaf-voice/src/paaf_voice/engines/silero_vad.py`) — Silero VAD engine with dual idle/playback thresholding.
+- `paaf_voice.audio.SoundDeviceAudioSource` / `SoundDeviceAudioSink` (`packages/paaf-voice/src/paaf_voice/audio/sounddevice_io.py`) — PortAudio live audio hardware drivers with dynamic resampling and AEC reference tap.
 - `paaf_voice.aggregator.SentenceAggregator` (`packages/paaf-voice/src/paaf_voice/aggregator.py`) — Multilingual streaming LLM token aggregator with dual character thresholding.
 - `paaf_trace.store.TraceStore` (`packages/paaf-trace/src/paaf_trace/store.py`) — Local SQLite WAL trace event store.

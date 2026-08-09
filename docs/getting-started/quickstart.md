@@ -16,9 +16,15 @@ To enable heavy LLM engine adapters (Ollama, OpenAI, Anthropic), install the opt
 pip install "paaf[engine]"
 ```
 
+To enable local voice processing (STT, TTS, WakeWord, VAD), install the `[voice]` extra:
+
+```bash
+pip install "paaf[voice]"
+```
+
 ## 2. Initialize Configuration
 
-Create a `paaf.yaml` in your workspace:
+Create a `paaf.yaml` in your workspace to bind LLM profiles and voice engines:
 
 ```yaml
 active_profile: main_assistant
@@ -27,9 +33,55 @@ profiles:
     provider: ollama
     model: llama3.1
     capabilities: "General assistance and reasoning"
+
+voice:
+  stt:
+    engine: "faster_whisper"    # or "whisper_cpp" (for Raspberry Pi / low RAM)
+    model: "base"               # or "ggml-base.bin"
+    device: "auto"              # "cpu", "mps", "cuda"
+    compute_type: "int8"
+
+  tts:
+    engine: "chatterbox"
+    voice_id: "default"
+
+  wake_word:
+    engine: "openwakeword"
+    model: "hey_jarvis"
+
+  vad:
+    engine: "silero"
+    speech_threshold_idle: 0.50
+    speech_threshold_playback: 0.65
 ```
 
-## 3. Inspect Composed Prompt
+## 3. Hardware Device Selection & Voice Model Setup
+
+### List Audio Hardware Devices
+
+List available physical audio input (microphone) and output (speaker) devices:
+
+```bash
+paaf voice list-devices
+```
+
+### Download Voice Models (Explicit Consent Required)
+
+In alignment with local-first privacy policies, model downloads require explicit CLI consent and will never initiate automatically in the background.
+
+Download offline engine weights for your chosen STT engine:
+
+Standard hardware (`faster_whisper`):
+```bash
+paaf voice download-models --engine faster_whisper --model base
+```
+
+Raspberry Pi or low-RAM environments (`whisper_cpp`):
+```bash
+paaf voice download-models --engine whisper_cpp --model ggml-base.bin
+```
+
+## 4. Inspect Composed Prompt
 
 Run the prompt inspector to verify the byte-exact system prompt:
 
@@ -37,7 +89,7 @@ Run the prompt inspector to verify the byte-exact system prompt:
 paaf prompt --config paaf.yaml
 ```
 
-## 4. Start Chat
+## 5. Start Chat
 
 Run interactive chat:
 
@@ -60,6 +112,10 @@ paaf chat --config paaf.yaml
 2. **Network Egress Blocked in Tests**:
    - *Symptom*: `SocketBlockedError: A socket open attempt was intercepted`.
    - *Solution*: PAAF test suites enforce zero network egress by default (`--disable-socket`). Use `FakeLLMAdapter` or `FakeAudioSource` test doubles instead of making live API requests in unit tests.
+
+3. **Uncached Voice Model Error**:
+   - *Symptom*: Model file not found when initializing voice pipeline.
+   - *Solution*: Run `paaf voice download-models --engine <engine> --model <model>` to explicitly download required weights with CLI consent.
 
 ## Next Steps
 

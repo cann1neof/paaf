@@ -5,7 +5,7 @@ title: "Testing Guide"
 
 # Testing Guide
 
-This document details the testing architecture, test execution commands, zero-egress network isolation, and CI integration for PAAF.
+This document details the testing architecture, test execution commands, zero-egress network isolation, voice subsystem test strategies, and CI integration for PAAF.
 
 ## Test Framework & Setup
 
@@ -54,6 +54,28 @@ addopts = "--disable-socket --allow-unix-socket --import-mode=importlib -p no:la
 2. **`--allow-unix-socket`**: Allows local Unix domain sockets (`AF_UNIX`) required for local IPC and Python `asyncio` event-loop self-pipes.
 3. **`-p no:langsmith_plugin`**: Disables third-party cloud telemetry plugins from loading into test processes.
 
+## Voice Subsystem Testing (Zero-Hardware Architecture)
+
+The `paaf-voice` package is engineered for deterministic, high-speed execution without requiring physical microphone/speaker hardware or live audio devices:
+
+- **Test Suite Metrics**: 70 unit and integration tests execute cleanly in under `0.3s`.
+- **Synthetic & File Fixtures**: Audio streaming, VAD, Wake Word, STT, and TTS engines are validated using synthetic PCM byte buffers (e.g. `b"\x00" * 640` chunk frames) and local WAV test fixtures (`packages/paaf-voice/tests/fixtures/wav/`).
+- **Test Doubles**: `paaf_voice.testing` provides isolated test doubles that avoid all system audio driver and hardware dependencies:
+  - `FakeAudioSource`: Simulates hardware microphone streams by yielding controllable PCM frames.
+  - `FakeAudioSink`: Simulates hardware speaker outputs by capturing rendered audio bytes in memory.
+  - `FakeSTT`: Returns deterministic transcripts from audio frames without invoking deep neural networks.
+  - `FakeTTS`: Generates synthetic PCM frames for string prompts without loading TTS models.
+  - `FakeVAD`: Produces predictable speech activity state transitions.
+  - `FakeWakeWord`: Triggers simulated detection events on demand.
+
+### Running Voice Package Tests
+
+Run the full `paaf-voice` test suite directly:
+
+```bash
+uv run pytest packages/paaf-voice/
+```
+
 ## Writing New Tests
 
 1. **Location & Naming**: Place tests in `packages/<package-name>/tests/test_<feature>.py`.
@@ -68,7 +90,7 @@ addopts = "--disable-socket --allow-unix-socket --import-mode=importlib -p no:la
        frames = [frame async for frame in source.read_frames()]
        assert len(frames) == 1
    ```
-3. **Test Doubles**: Use built-in test doubles (`FakeLLMAdapter`, `FakeAudioSink`, `FakeAudioSource`, `FakeSTT`, `FakeTTS`, `FakeVAD`, `FakeWakeWord`) instead of live network services or hardware.
+3. **Test Doubles**: Use built-in test doubles (`FakeLLMAdapter`, `FakeAudioSink`, `FakeAudioSource`, `FakeSTT`, `FakeTTS`, `FakeVAD`, `FakeWakeWord`) instead of live network services or physical hardware.
 
 ## Import Boundary Negative Controls
 
