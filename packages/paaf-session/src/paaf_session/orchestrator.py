@@ -9,6 +9,7 @@ from typing import Callable
 from paaf_voice.ports import AudioSource, AudioSink, STT, TTS, AudioFrame
 from paaf_voice.aggregator import SentenceAggregator
 from paaf_session.arbitration import AudioPriorityQueue, AudioPriority
+from paaf_session.behaviors import BehaviorTable
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class TurnOrchestrator:
         self.stt = stt
         self.tts = tts
         self.audio_queue = AudioPriorityQueue(audio_sink)
+        self.behaviors = BehaviorTable()
         self.llm_generate = llm_generate
         self.follow_up_timeout = 5.0
         self.state = TurnState.IDLE
@@ -118,7 +120,9 @@ class TurnOrchestrator:
                         monitor_task = tg.create_task(self._monitor_interrupt())
                         
                         async def speak_and_cancel():
-                            await self._think_and_speak(self._last_transcription)
+                            async def do_think():
+                                await self._think_and_speak(self._last_transcription)
+                            await self.behaviors.run_with_escalations("THINK", do_think, self.audio_queue)
                             monitor_task.cancel()
                             
                         tg.create_task(speak_and_cancel())
