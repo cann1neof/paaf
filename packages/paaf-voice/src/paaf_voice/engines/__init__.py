@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """PAAF Voice Engine implementations and pluggable registry."""
 
+from paaf_voice.engines.chatterbox import ChatterboxTTS
 from paaf_voice.engines.faster_whisper import FasterWhisperSTT
 from paaf_voice.engines.openwakeword import OpenWakeWordEngine
 from paaf_voice.engines.registry import (
@@ -23,6 +24,7 @@ from paaf_voice.engines.silero_vad import SileroVADEngine
 from paaf_voice.engines.whisper_cpp import WhisperCppSTT
 
 __all__ = [
+    "ChatterboxTTS",
     "FasterWhisperSTT",
     "OpenWakeWordEngine",
     "SileroVADEngine",
