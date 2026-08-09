@@ -14,6 +14,13 @@ class EscalationTask:
 class BehaviorTable:
     def __init__(self):
         self._escalations: Dict[str, List[EscalationTask]] = {}
+        self._events: Dict[str, AudioFrame] = {}
+
+    def set_event_behavior(self, event_name: str, frame: AudioFrame) -> None:
+        self._events[event_name] = frame
+
+    def get_event_behavior(self, event_name: str) -> AudioFrame | None:
+        return self._events.get(event_name)
         
     def add_escalation(self, state: str, task: EscalationTask) -> None:
         if state not in self._escalations:

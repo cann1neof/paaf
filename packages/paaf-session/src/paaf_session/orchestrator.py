@@ -20,6 +20,13 @@ class ModelUnavailableError(Exception):
 class ToolError(Exception):
     pass
 
+
+class ModelUnavailableError(Exception):
+    pass
+
+class ToolError(Exception):
+    pass
+
 class BargeInInterrupt(Exception):
     pass
 
@@ -102,52 +109,68 @@ class TurnOrchestrator:
             self.state = TurnState.WAKE
         
         while self.state != TurnState.IDLE:
-            if self.state == TurnState.WAKE:
-                self.state = TurnState.CAPTURE
+            try:
+                if self.state == TurnState.WAKE:
+                    frame = self.behaviors.get_event_behavior("wake")
+                    if frame:
+                        self.audio_queue.emit(AudioPriority.FILLER, frame)
+                    self.state = TurnState.CAPTURE
 
-            elif self.state == TurnState.CAPTURE:
-                self.state = TurnState.TRANSCRIBE
-                # Capture and transcribe concurrently
-                transcribed_text = await self._capture_and_transcribe(timeout)
-                if not transcribed_text:
-                    self.state = TurnState.IDLE
-                else:
-                    self._last_transcription = transcribed_text
-                    self.state = TurnState.THINK
+                elif self.state == TurnState.CAPTURE:
+                    self.state = TurnState.TRANSCRIBE
+                    # Capture and transcribe concurrently
+                    transcribed_text = await self._capture_and_transcribe(timeout)
+                    if not transcribed_text:
+                        self.state = TurnState.IDLE
+                    else:
+                        self._last_transcription = transcribed_text
+                        self.state = TurnState.THINK
 
-            elif self.state == TurnState.THINK:
-                # We start LLM generation, but speech starts as soon as we have a sentence
-                self.state = TurnState.SPEAK
+                elif self.state == TurnState.THINK:
+                    # We start LLM generation, but speech starts as soon as we have a sentence
+                    self.state = TurnState.SPEAK
 
-            elif self.state == TurnState.SPEAK:
-                monitor_task = None
-                interrupt_detected = False
-                try:
-                    async with asyncio.TaskGroup() as tg:
-                        monitor_task = tg.create_task(self._monitor_interrupt())
-                        
-                        async def speak_and_cancel():
-                            async def do_think():
-                                await self._think_and_speak(self._last_transcription)
-                            await self.behaviors.run_with_escalations("THINK", do_think, self.audio_queue)
-                            monitor_task.cancel()
+                elif self.state == TurnState.SPEAK:
+                    monitor_task = None
+                    interrupt_detected = False
+                    try:
+                        async with asyncio.TaskGroup() as tg:
+                            monitor_task = tg.create_task(self._monitor_interrupt())
                             
-                        tg.create_task(speak_and_cancel())
-                except* BargeInInterrupt:
-                    interrupt_detected = True
-                except* asyncio.CancelledError:
-                    pass
+                            async def speak_and_cancel():
+                                async def do_think():
+                                    await self._think_and_speak(self._last_transcription)
+                                await self.behaviors.run_with_escalations("THINK", do_think, self.audio_queue)
+                                monitor_task.cancel()
+                                
+                            tg.create_task(speak_and_cancel())
+                    except* BargeInInterrupt:
+                        interrupt_detected = True
+                    except* asyncio.CancelledError:
+                        pass
 
-                played = self.sink.get_played_chunks()
-                self.committed_history.extend(played)
+                    played = self.sink.get_played_chunks()
+                    self.committed_history.extend(played)
 
-                if interrupt_detected:
-                    self.state = TurnState.CAPTURE
-                    timeout = None
-                else:
-                    # D-04: Transition back to CAPTURE after SPEAK with a follow-up timeout
-                    self.state = TurnState.CAPTURE
-                    timeout = self.follow_up_timeout
+                    if interrupt_detected:
+                        self.state = TurnState.CAPTURE
+                        timeout = None
+                    else:
+                        # D-04: Transition back to CAPTURE after SPEAK with a follow-up timeout
+                        self.state = TurnState.CAPTURE
+                        timeout = self.follow_up_timeout
+
+            except ModelUnavailableError:
+                frame = self.behaviors.get_event_behavior("model_unavailable")
+                if frame:
+                    self.audio_queue.emit(AudioPriority.FILLER, frame)
+                self.state = TurnState.IDLE
+
+            except ToolError:
+                frame = self.behaviors.get_event_behavior("tool_error")
+                if frame:
+                    self.audio_queue.emit(AudioPriority.FILLER, frame)
+                self.state = TurnState.IDLE
 
     async def _capture_and_transcribe(self, timeout: float | None) -> str:
         """Capture audio and run STT, respecting the timeout."""
