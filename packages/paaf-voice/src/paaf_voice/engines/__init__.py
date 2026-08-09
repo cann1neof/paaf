@@ -2,6 +2,7 @@
 """PAAF Voice Engine implementations and pluggable registry."""
 
 from paaf_voice.engines.faster_whisper import FasterWhisperSTT
+from paaf_voice.engines.openwakeword import OpenWakeWordEngine
 from paaf_voice.engines.registry import (
     clear_registries,
     create_stt_engine,
@@ -18,10 +19,13 @@ from paaf_voice.engines.registry import (
     register_vad_engine,
     register_wake_engine,
 )
+from paaf_voice.engines.silero_vad import SileroVADEngine
 from paaf_voice.engines.whisper_cpp import WhisperCppSTT
 
 __all__ = [
     "FasterWhisperSTT",
+    "OpenWakeWordEngine",
+    "SileroVADEngine",
     "WhisperCppSTT",
     "clear_registries",
     "create_stt_engine",
