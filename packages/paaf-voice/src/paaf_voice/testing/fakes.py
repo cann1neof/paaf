@@ -32,6 +32,19 @@ class FakeAudioSink(AudioSink):
         self.recorded_frames: list[AudioFrame] = []
         self._start_wall_time: float | None = None
         self._stepped_time_s: float = 0.0
+        self._chunks: list[str] = []
+
+    def mark_chunk(self, text: str) -> None:
+        """Mark the boundary of a new text chunk being written."""
+        self._chunks.append(text)
+
+    def get_played_chunks(self) -> list[str]:
+        """Get list of sentences/chunks that were completely played out."""
+        # For a fake sink, we'll just return all marked chunks if mode="instant"
+        # Since it's instant, they are immediately "played"
+        if self.mode == "instant":
+            return self._chunks.copy()
+        return []
 
     def write_frame(self, frame: AudioFrame) -> None:
         """Record an incoming audio frame."""

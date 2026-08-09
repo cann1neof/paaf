@@ -38,6 +38,7 @@ class TurnOrchestrator:
         self.llm_generate = llm_generate
         self.follow_up_timeout = 5.0
         self.state = TurnState.IDLE
+        self.committed_history: list[str] = []
         self._shutdown = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
         self._wake_event = asyncio.Event()
@@ -122,6 +123,9 @@ class TurnOrchestrator:
                 except* asyncio.CancelledError:
                     pass
 
+                played = self.sink.get_played_chunks()
+                self.committed_history.extend(played)
+
                 if interrupt_detected:
                     self.state = TurnState.CAPTURE
                     timeout = None
@@ -174,8 +178,8 @@ class TurnOrchestrator:
         
         async def sentence_generator():
             async for sentence in sentence_stream:
-                # We could run TTS sequentially or concurrently.
-                # A robust approach sends chunks to TTS sequentially to keep order.
+                if hasattr(self.sink, "mark_chunk"):
+                    self.sink.mark_chunk(sentence)
                 async for frame in self.tts.synthesize(sentence):
                     self.sink.write_frame(frame)
                     

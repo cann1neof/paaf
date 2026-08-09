@@ -91,6 +91,14 @@ class AudioSink(Protocol):
         """Get played audio buffer for acoustic echo cancellation (AEC)."""
         ...
 
+    def mark_chunk(self, text: str) -> None:
+        """Mark the boundary of a new text chunk being written."""
+        ...
+
+    def get_played_chunks(self) -> list[str]:
+        """Get list of sentences/chunks that were completely played out."""
+        ...
+
 
 @runtime_checkable
 class STT(Protocol):

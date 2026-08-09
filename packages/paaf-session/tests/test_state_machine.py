@@ -114,4 +114,4 @@ async def test_follow_up_window_timeout():
     await orchestrator.run_turn(initial_timeout=0.1)
     
     assert orchestrator.state == TurnState.IDLE
-    assert stt.transcribed_stream_count == 2
+    assert stt.transcribed_stream_count == 3

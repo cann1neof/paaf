@@ -83,3 +83,56 @@ async def test_barge_in_cancellation():
         assert latency < 0.250, f"Barge-in latency was {latency}, expected < 0.250s"
     finally:
         await orchestrator.stop()
+
+class TrackingAudioSink(FakeAudioSink):
+    def __init__(self):
+        super().__init__(mode="instant")
+        self.chunks = []
+    
+    def mark_chunk(self, text: str) -> None:
+        pass
+        
+    def get_played_chunks(self) -> list[str]:
+        # For testing, we just simulate that the first chunk finished, but the second didn't
+        return ["This is a long sentence. "]
+
+@pytest.mark.asyncio
+async def test_history_truncation():
+    silence = b"\x00" * int(16000 * 2 * 0.1)
+    interrupt_audio = b"\x01" * int(16000 * 2 * 0.1)
+    source = FakeAudioSource(pcm_data=silence + interrupt_audio, realtime=True)
+    
+    sink = TrackingAudioSink()
+    stt = InterruptSTT()
+    tts = SlowFakeTTS()
+    
+    orchestrator = TurnOrchestrator(
+        audio_source=source,
+        audio_sink=sink,
+        stt=stt,
+        tts=tts,
+        llm_generate=mock_llm_generate
+    )
+    
+    asyncio.create_task(orchestrator.start())
+    orchestrator.trigger_wake()
+    
+    try:
+        # Wait until it reaches SPEAK state
+        start_time = time.monotonic()
+        while orchestrator.state != TurnState.SPEAK:
+            await asyncio.sleep(0.01)
+            if time.monotonic() - start_time > 4.0:
+                pytest.fail("Did not reach SPEAK state in time")
+
+        # Now wait until it reaches TRANSCRIBE after interrupt
+        interrupt_time = time.monotonic()
+        while orchestrator.state != TurnState.TRANSCRIBE:
+            await asyncio.sleep(0.01)
+            if time.monotonic() - interrupt_time > 4.0:
+                pytest.fail("Did not reach TRANSCRIBE state after interrupt")
+                
+        # At this point, the orchestrator should have committed ONLY the played chunks
+        assert getattr(orchestrator, "committed_history", None) == ["This is a long sentence. "]
+    finally:
+        await orchestrator.stop()
