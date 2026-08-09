@@ -25,7 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Skills & PyPI Release** - Installable skills, and `paaf-llm` — mesh included — shipped publicly before voice exists (completed 2026-08-08)
 - [x] **Phase 7: paaf-voice Ports & Fakes** - Test doubles and the language-agnostic sentence aggregator, before any engine (completed 2026-08-08)
 - [x] **Phase 8: Real Engines & Live Audio** - Whisper, Chatterbox, wake word and VAD behind the ports; the machine hears and speaks (completed 2026-08-09)
-- [ ] **Phase 9: paaf-session** - The turn loop and truthful barge-in, hardened in CI with no audio hardware
+- [x] **Phase 9: paaf-session** - The turn loop and truthful barge-in, hardened in CI with no audio hardware (completed 2026-08-09)
 - [ ] **Phase 10: The Appliance** - One Linux process with a LAN API, mDNS, hot reload, and enforced offline mode
 - [ ] **Phase 11: Desktop Core** - Discovery, pairing, models, persona, and chat, with the device as the only truth
 - [ ] **Phase 12: Desktop Remaining Pages** - Skills, tools, behaviors, voice, traces, and privacy
@@ -323,7 +323,12 @@ Plans:
   4. A behavior sound and a reply sentence never play over each other; a ready reply sentence preempts a filler mid-word.
   5. A user-editable escalation table fires at its configured thresholds during a long request and also on model-unavailable, tool-error and wake events, and the conversation continues without re-waking inside a configurable follow-up window.
 
-**Plans**: TBD
+**Plans**: 3/3 plans executed
+
+- [x] 09-01-PLAN.md
+- [x] 09-02-PLAN.md
+- [x] 09-03-PLAN.md
+
 **UI hint**: no
 
 ### Phase 10: The Appliance
@@ -409,7 +414,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Skills & PyPI Release | 3/3 | Complete   | 2026-08-08 |
 | 7. paaf-voice Ports & Fakes | 4/4 | Complete    | 2026-08-08 |
 | 8. Real Engines & Live Audio | 5/5 | Complete    | 2026-08-09 |
-| 9. paaf-session | 0/TBD | Not started | - |
+| 9. paaf-session | 3/3 | Complete    | 2026-08-09 |
 | 10. The Appliance | 0/TBD | Not started | - |
 | 11. Desktop Core | 0/TBD | Not started | - |
 | 12. Desktop Remaining Pages | 0/TBD | Not started | - |

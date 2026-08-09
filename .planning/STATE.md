@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 06
-current_phase_name: skills-pypi-release
-status: complete
-stopped_at: Phase 9 context gathered
-last_updated: "2026-08-09T13:20:13.454Z"
-last_activity: 2026-08-08
-last_activity_desc: Phase 06 execution completed
+current_phase: 10
+current_phase_name: The Appliance
+status: planning
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-08-09T15:56:17.759Z"
+last_activity: 2026-08-09
+last_activity_desc: Phase 09 execution started
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 61
-  completed_plans: 58
+  completed_plans: 61
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-19)
 
 **Core value:** The user owns the assistant's mind — they pick the model, write its persona, install its skills, expose its tools, and decide what it does while it thinks, without writing code and with nothing hidden from them.
-**Current focus:** Phase 06 complete
+**Current focus:** Phase 09 — paaf-session
 
 ## Current Position
 
-Phase: 06 (skills-pypi-release) — COMPLETE
-Plan: 3 of 3 complete
-Status: Completed Phase 06
-Last activity: 2026-08-08 — Phase 06 execution completed
+Phase: 10 — The Appliance
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-09 — Phase 09 complete, transitioned to Phase 10
 
 Progress: [██████████] 100%  (3/3 plans in phase 06)
 
@@ -74,6 +74,13 @@ Progress: [██████████] 100%  (3/3 plans in phase 06)
 | Phase 04 P07 | ~70 min | 3 tasks | 7 files |
 | Phase 04 P08 | ~35 min | 3 tasks | 6 files |
 | Phase 04 P09 | ~20 min | 2 tasks | 5 files |
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 09 P01 | 5min | 3 tasks | 2 files |
+| Phase 09-paaf-session P02 | 9min | 2 tasks | 5 files |
+| Phase 09 P03 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -94,6 +101,11 @@ Recent decisions affecting current work:
 - [Phase 04]: Trace schema carries turn_legs and handoffs rows correlated by turn_id (MESH-05).
 - [Phase 04]: The observer is a reserved profile name ('observer') judging handoffs via tool grants (MESH-06).
 - [Phase 04]: Unobserved mesh operations and fail-open loud behavior state plainly when unobserved or unreachable (D-07, OQ-4).
+- [Phase ?]: [Phase 09]: Combined all 3 tasks (tracer, streaming TTS, follow-up window) into a single atomic commit because they were implemented concurrently with the same testbed.
+- [Phase ?]: Wrapped TTS synthesis inside a TaskGroup to allow immediate cancellation via BargeInInterrupt.
+- [Phase ?]: Updated AudioSink port to track history via mark_chunk and get_played_chunks.
+- [Phase ?]: Decided to implement audio arbitration as a non-blocking queue to prevent hot path stalls.
+- [Phase ?]: Implemented declarative behaviors using task group racing so background delays handle escalation.
 
 ### Pending Todos
 
@@ -117,6 +129,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-09T12:53:55.530Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-paaf-session/09-CONTEXT.md
+Last session: 2026-08-09T15:52:07.184Z
+Stopped at: Completed 09-03-PLAN.md
+Resume file: None

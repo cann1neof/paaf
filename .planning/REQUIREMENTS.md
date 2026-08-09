@@ -118,15 +118,15 @@ The framework is organized around skills and agents, where an agent is another m
 
 Narrow by design: only what requires knowing that time is passing and audio is playing.
 
-- [ ] **SESS-01**: A turn state machine drives wake → capture → transcribe → think → speak, with explicit cancellation scopes
-- [ ] **SESS-02**: LLM tokens stream into sentence-chunked TTS so speech begins on the first complete sentence, not the full reply
-- [ ] **SESS-03**: User interrupts the assistant mid-sentence; playback stops and capture begins within 250ms
-- [ ] **SESS-04**: On interruption, conversation history is truncated to what was actually played out of the speaker, not what the model generated
-- [ ] **SESS-05**: Audio output is arbitrated by priority so a behavior sound and a reply sentence never play over each other
-- [ ] **SESS-06**: A declarative behaviors table drives timed escalation during a long request — a sound at one threshold, speech at another, ambient audio at a third
-- [ ] **SESS-07**: Behaviors also cover model-unavailable, tool-error, and on-wake events
-- [ ] **SESS-08**: The full turn lifecycle including barge-in is tested deterministically in CI with fake audio and a virtual playhead, no hardware
-- [ ] **SESS-09**: Conversation continues without re-waking for a configurable follow-up window
+- [x] **SESS-01**: A turn state machine drives wake → capture → transcribe → think → speak, with explicit cancellation scopes
+- [x] **SESS-02**: LLM tokens stream into sentence-chunked TTS so speech begins on the first complete sentence, not the full reply
+- [x] **SESS-03**: User interrupts the assistant mid-sentence; playback stops and capture begins within 250ms
+- [x] **SESS-04**: On interruption, conversation history is truncated to what was actually played out of the speaker, not what the model generated
+- [x] **SESS-05**: Audio output is arbitrated by priority so a behavior sound and a reply sentence never play over each other
+- [x] **SESS-06**: A declarative behaviors table drives timed escalation during a long request — a sound at one threshold, speech at another, ambient audio at a third
+- [x] **SESS-07**: Behaviors also cover model-unavailable, tool-error, and on-wake events
+- [x] **SESS-08**: The full turn lifecycle including barge-in is tested deterministically in CI with fake audio and a virtual playhead, no hardware
+- [x] **SESS-09**: Conversation continues without re-waking for a configurable follow-up window
 
 ### Embedded App (APP)
 
@@ -296,15 +296,15 @@ Populated during roadmap creation (2026-07-19). Every v1 requirement maps to exa
 | VOICE-10 | Phase 8 — Real Engines & Live Audio | Pending |
 | VOICE-11 | Phase 7 — paaf-voice Ports & Fakes | Complete |
 | VOICE-12 | Phase 8 — Real Engines & Live Audio | Pending |
-| SESS-01 | Phase 9 — paaf-session | Pending |
-| SESS-02 | Phase 9 — paaf-session | Pending |
-| SESS-03 | Phase 9 — paaf-session | Pending |
-| SESS-04 | Phase 9 — paaf-session | Pending |
-| SESS-05 | Phase 9 — paaf-session | Pending |
-| SESS-06 | Phase 9 — paaf-session | Pending |
-| SESS-07 | Phase 9 — paaf-session | Pending |
-| SESS-08 | Phase 9 — paaf-session | Pending |
-| SESS-09 | Phase 9 — paaf-session | Pending |
+| SESS-01 | Phase 9 — paaf-session | Complete |
+| SESS-02 | Phase 9 — paaf-session | Complete |
+| SESS-03 | Phase 9 — paaf-session | Complete |
+| SESS-04 | Phase 9 — paaf-session | Complete |
+| SESS-05 | Phase 9 — paaf-session | Complete |
+| SESS-06 | Phase 9 — paaf-session | Complete |
+| SESS-07 | Phase 9 — paaf-session | Complete |
+| SESS-08 | Phase 9 — paaf-session | Complete |
+| SESS-09 | Phase 9 — paaf-session | Complete |
 | APP-01 | Phase 10 — The Appliance | Pending |
 | APP-02 | Phase 10 — The Appliance | Pending |
 | APP-03 | Phase 10 — The Appliance | Pending |
