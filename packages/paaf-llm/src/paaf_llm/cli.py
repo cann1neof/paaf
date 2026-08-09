@@ -574,13 +574,6 @@ def main() -> None:
     """
 
 
-try:
-    from paaf_voice.cli import voice_cli
-
-    main.add_command(voice_cli, name="voice")
-except ImportError:
-    pass
-
 
 @main.command()
 @_config_option
