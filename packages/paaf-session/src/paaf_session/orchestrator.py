@@ -8,6 +8,7 @@ from typing import Callable
 
 from paaf_voice.ports import AudioSource, AudioSink, STT, TTS, AudioFrame
 from paaf_voice.aggregator import SentenceAggregator
+from paaf_session.arbitration import AudioPriorityQueue, AudioPriority
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class TurnOrchestrator:
         self.sink = audio_sink
         self.stt = stt
         self.tts = tts
+        self.audio_queue = AudioPriorityQueue(audio_sink)
         self.llm_generate = llm_generate
         self.follow_up_timeout = 5.0
         self.state = TurnState.IDLE
@@ -48,6 +50,7 @@ class TurnOrchestrator:
             return
         self._shutdown.clear()
         self._loop_task = asyncio.create_task(self._run_loop())
+        await self.audio_queue.start()
 
     async def stop(self) -> None:
         if self._loop_task is None:
@@ -55,6 +58,7 @@ class TurnOrchestrator:
         self._shutdown.set()
         self._wake_event.set()
         self._loop_task.cancel()
+        await self.audio_queue.stop()
         try:
             await self._loop_task
         except asyncio.CancelledError:
@@ -181,7 +185,7 @@ class TurnOrchestrator:
                 if hasattr(self.sink, "mark_chunk"):
                     self.sink.mark_chunk(sentence)
                 async for frame in self.tts.synthesize(sentence):
-                    self.sink.write_frame(frame)
+                    self.audio_queue.emit(AudioPriority.REPLY, frame)
                     
         await sentence_generator()
 

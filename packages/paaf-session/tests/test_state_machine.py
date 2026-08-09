@@ -45,7 +45,9 @@ async def test_happy_path_turn_loop():
     )
     
     # run_turn directly for deterministic testing without background loop overhead
+    await orchestrator.audio_queue.start()
     await orchestrator.run_turn(initial_timeout=0.1)
+    await orchestrator.audio_queue.stop()
     
     assert orchestrator.state == TurnState.IDLE
     assert len(tts.synthesized_texts) == 2
@@ -87,7 +89,9 @@ async def test_streaming_tts_starts_early():
         llm_generate=slow_mock_llm
     )
     
+    await orchestrator.audio_queue.start()
     await orchestrator.run_turn(initial_timeout=0.1)
+    await orchestrator.audio_queue.stop()
     
     assert first_sentence_time > 0
     assert full_response_time > 0
@@ -111,7 +115,9 @@ async def test_follow_up_window_timeout():
     
     orchestrator.follow_up_timeout = 0.1 
 
+    await orchestrator.audio_queue.start()
     await orchestrator.run_turn(initial_timeout=0.1)
+    await orchestrator.audio_queue.stop()
     
     assert orchestrator.state == TurnState.IDLE
     assert stt.transcribed_stream_count == 3
