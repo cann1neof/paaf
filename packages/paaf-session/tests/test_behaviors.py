@@ -25,7 +25,7 @@ async def test_timeout_escalation():
         await asyncio.sleep(0.15)
         return "done"
         
-    result = await table.run_with_escalations("THINK", main_task_slow(), mock_queue)
+    result = await table.run_with_escalations("THINK", main_task_slow, mock_queue)
     assert result == "done"
     
     calls = mock_queue.emit.call_args_list
