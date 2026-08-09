@@ -4,7 +4,10 @@ name = "paaf-voice"
 version = "0.1.0"
 description = "PAAF voice (stub in Phase 2). No internal deps, no audio deps until Phase 4+."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+]
 
 [build-system]
 requires = ["hatchling"]

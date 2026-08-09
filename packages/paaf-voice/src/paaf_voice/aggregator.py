@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Multilingual sentence aggregator for LLM token streams."""
 
+import re
 from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
-import re
 
 from paaf_voice.sanitizer import TTSSanitizer
 
@@ -75,11 +75,7 @@ class SentenceAggregator:
             if (
                 len(self._buffer) >= self.config.first_chunk_min_chars
                 and (last_char in CLAUSE_PUNCTUATION or last_char in SENTENCE_TERMINATORS)
-            ):
-                should_emit = True
-            elif self._token_count >= self.config.max_first_chunk_tokens:
-                should_emit = True
-            elif last_char in SENTENCE_TERMINATORS:
+            ) or self._token_count >= self.config.max_first_chunk_tokens or last_char in SENTENCE_TERMINATORS:
                 should_emit = True
         else:
             # Subsequent chunk rules:

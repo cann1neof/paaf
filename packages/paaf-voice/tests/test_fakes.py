@@ -2,14 +2,13 @@
 """Tests for paaf_voice hardware test doubles."""
 
 import pytest
-
 from paaf_voice.ports import AudioFrame
 from paaf_voice.testing import (
+    FakeAudioSink,
+    FakeAudioSource,
     FakeSTT,
     FakeTTS,
     FakeVAD,
-    FakeAudioSink,
-    FakeAudioSource,
     FakeWakeWord,
 )
 

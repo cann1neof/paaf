@@ -1325,6 +1325,16 @@ requires-dist = [
 name = "paaf-voice"
 version = "0.1.0"
 source = { editable = "packages/paaf-voice" }
+dependencies = [
+    { name = "click" },
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0" },
+    { name = "rich", specifier = ">=13.0" },
+]
 
 [[package]]
 name = "paaf-workspace"

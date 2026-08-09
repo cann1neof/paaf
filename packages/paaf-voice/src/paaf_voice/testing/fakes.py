@@ -2,11 +2,22 @@
 """Fake implementations of voice hardware ports for testing."""
 
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator
 import time
+from collections.abc import AsyncIterable, AsyncIterator
 from typing import Literal
 
-from paaf_voice.ports import STT, TTS, VAD, AudioFrame, AudioSink, AudioSource, STTResult, VADResult, WakeWord, WakeWordResult
+from paaf_voice.ports import (
+    STT,
+    TTS,
+    VAD,
+    AudioFrame,
+    AudioSink,
+    AudioSource,
+    STTResult,
+    VADResult,
+    WakeWord,
+    WakeWordResult,
+)
 
 
 class FakeAudioSink(AudioSink):

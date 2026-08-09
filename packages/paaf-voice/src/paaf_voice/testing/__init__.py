@@ -2,11 +2,11 @@
 """Test doubles and utilities for paaf-voice."""
 
 from paaf_voice.testing.fakes import (
+    FakeAudioSink,
+    FakeAudioSource,
     FakeSTT,
     FakeTTS,
     FakeVAD,
-    FakeAudioSink,
-    FakeAudioSource,
     FakeWakeWord,
 )
 from paaf_voice.testing.generators import create_wav_bytes, generate_pcm_sine_bytes
@@ -16,8 +16,8 @@ __all__ = [
     "FakeAudioSource",
     "FakeSTT",
     "FakeTTS",
-    "FakeWakeWord",
     "FakeVAD",
-    "generate_pcm_sine_bytes",
+    "FakeWakeWord",
     "create_wav_bytes",
+    "generate_pcm_sine_bytes",
 ]

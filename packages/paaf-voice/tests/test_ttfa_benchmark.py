@@ -2,7 +2,6 @@
 """Empirical TTFA (Time-To-First-Audio) benchmark test suite."""
 
 import pytest
-
 from paaf_voice.aggregator import AggregatorConfig, SentenceAggregator
 
 

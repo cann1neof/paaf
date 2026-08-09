@@ -2,10 +2,10 @@
 """Tests for WAV file fixtures and audio generator utilities."""
 
 import io
-from pathlib import Path
 import wave
-import pytest
+from pathlib import Path
 
+import pytest
 from paaf_voice.testing import (
     FakeAudioSink,
     FakeAudioSource,

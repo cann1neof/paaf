@@ -1,20 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for paaf_voice core port protocols and value objects."""
 
-from dataclasses import FrozenInstanceError
 import sys
-import pytest
+from dataclasses import FrozenInstanceError
 
+import pytest
 from paaf_voice.ports import (
-    STT,
-    TTS,
-    VAD,
     AudioFrame,
     AudioSink,
     AudioSource,
     STTResult,
     VADResult,
-    WakeWord,
     WakeWordResult,
 )
 

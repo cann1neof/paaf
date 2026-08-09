@@ -2,7 +2,6 @@
 """Tests for SentenceAggregator."""
 
 import pytest
-
 from paaf_voice.aggregator import AggregatorConfig, SentenceAggregator
 
 
