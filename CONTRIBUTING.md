@@ -126,3 +126,21 @@ an HTML/`#` comment) rather than a code header.
 - [ ] `uv run lint-imports` is green (no boundary violations).
 - [ ] The change does not weaken a commitment recorded in `DECISIONS.md`
       (no telemetry, no accounts, no hidden injection defenses).
+
+## Code of Conduct
+
+PAAF is committed to providing a welcoming, inclusive, and harassment-free experience for all contributors regardless of background. Please maintain respectful, constructive, and professional communication in all issue discussions and pull requests.
+
+## Coding Standards
+
+- **Formatting & Linting**: Code formatting is managed by `ruff`. Run `uv run ruff check .` and `uv run ruff format --check .` before committing.
+- **Type Checking**: Static typing is enforced by `mypy` across all packages (`uv run mypy packages/`).
+- **Import Boundaries**: Architecture isolation contracts are enforced via `import-linter` (`uv run lint-imports`).
+
+## Issue Reporting
+
+When reporting bugs or feature requests:
+1. Search existing GitHub Issues to ensure the problem has not already been reported.
+2. Provide environment details: OS, Python version (`python --version`), and PAAF version.
+3. Include a minimal, reproducible code example or clear steps to reproduce.
+4. Describe the expected behavior versus the actual behavior observed.

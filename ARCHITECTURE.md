@@ -145,3 +145,33 @@ paaf/
     ├── paaf-voice/             Module 2 — voice      (stub → Phase 6+)
     └── paaf-session/           turn orchestrator     (stub → Phase 8)
 ```
+
+## Component Diagram
+
+```mermaid
+graph TD
+    Voice["paaf-voice<br/>(Ports & Fakes)"] --> Session["paaf-session<br/>(Turn Orchestrator)"]
+    Session --> LLM["paaf-llm<br/>(Engine & Agent Mesh)"]
+    LLM --> Core["paaf-core<br/>(Config & Secrets)"]
+    LLM --> Trace["paaf-trace<br/>(Local SQLite Store)"]
+    Session --> Trace
+```
+
+## Data Flow
+
+1. **Audio Capture**: `paaf-voice` `AudioSource` yields an async stream of `AudioFrame` objects.
+2. **VAD & STT**: `VAD.process_frame()` filters speech activity; `STT.transcribe_stream()` transcribes frames into `STTResult`.
+3. **Agent Mesh Processing**: `paaf-llm` routes user prompts through model profiles, executing tools governed by `PermissionEngine` and `SpokenConfirmationEngine`.
+4. **Voice Synthesis & Playback**: `SentenceAggregator` aggregates LLM token streams into sentences, `TTSSanitizer` cleans markdown formatting, and `TTS.synthesize()` streams `AudioFrame` chunks to `AudioSink`.
+5. **Local Telemetry**: `paaf-trace` asynchronously queues and persists prompt payloads, tool execution logs, and TTFA latency metrics to a local SQLite WAL store.
+
+## Key Abstractions
+
+- `paaf_core.config.PaafConfig` (`packages/paaf-core/src/paaf_core/config/schema.py`) — Pydantic-validated `paaf.yaml` configuration schema with atomic writes and reload tier classification.
+- `paaf_core.secrets.EncryptedFileSecretStore` (`packages/paaf-core/src/paaf_core/secrets/store.py`) — Encrypted file secret store using Fernet encryption and scrypt key derivation.
+- `paaf_llm.mesh.MeshRouter` (`packages/paaf-llm/src/paaf_llm/mesh.py`) — Model-driven handoff router enforcing peer graph boundaries and fallback chains.
+- `paaf_llm.confirmation.SpokenConfirmationEngine` (`packages/paaf-llm/src/paaf_llm/confirmation.py`) — Spoken confirmation gate for sensitive tool execution authorization.
+- `paaf_voice.ports.AudioFrame` (`packages/paaf-voice/src/paaf_voice/ports.py`) — Immutable `@dataclass(frozen=True, slots=True)` value object representing PCM audio data.
+- `paaf_voice.ports.AudioSource` / `AudioSink` (`packages/paaf-voice/src/paaf_voice/ports.py`) — `@runtime_checkable` `Protocol` boundaries for streaming audio hardware.
+- `paaf_voice.aggregator.SentenceAggregator` (`packages/paaf-voice/src/paaf_voice/aggregator.py`) — Multilingual streaming LLM token aggregator with dual character thresholding.
+- `paaf_trace.store.TraceStore` (`packages/paaf-trace/src/paaf_trace/store.py`) — Local SQLite WAL trace event store.
