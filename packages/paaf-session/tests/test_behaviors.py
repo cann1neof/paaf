@@ -34,3 +34,56 @@ async def test_timeout_escalation():
     assert calls[0].args == (AudioPriority.FILLER, frame_ambient)
     # Second escalation
     assert calls[1].args == (AudioPriority.REPLY, frame_speech)
+
+from paaf_session.orchestrator import TurnOrchestrator, TurnState, ModelUnavailableError, ToolError
+
+@pytest.mark.asyncio
+async def test_error_wake_behaviors():
+    """Model-unavailable or tool-error exceptions trigger specific behavior feedback."""
+    mock_source = Mock()
+    mock_sink = Mock()
+    mock_stt = Mock()
+    mock_tts = Mock()
+    mock_llm = Mock()
+    
+    orchestrator = TurnOrchestrator(
+        mock_source, mock_sink, mock_stt, mock_tts, mock_llm
+    )
+    
+    frame_wake = AudioFrame(data=b"wake")
+    frame_model_err = AudioFrame(data=b"model_error")
+    frame_tool_err = AudioFrame(data=b"tool_error")
+    
+    orchestrator.behaviors.set_event_behavior("wake", frame_wake)
+    orchestrator.behaviors.set_event_behavior("model_unavailable", frame_model_err)
+    orchestrator.behaviors.set_event_behavior("tool_error", frame_tool_err)
+    
+    orchestrator.audio_queue = Mock()
+    
+    call_count = 0
+    async def mock_capture_transcribe(*args, **kwargs):
+        nonlocal call_count
+        if call_count == 0:
+            call_count += 1
+            raise ModelUnavailableError("model down")
+        elif call_count == 1:
+            call_count += 1
+            raise ToolError("tool failed")
+        return ""
+        
+    orchestrator._capture_and_transcribe = mock_capture_transcribe
+    
+    orchestrator.state = TurnState.WAKE
+    await orchestrator.run_turn()
+    assert orchestrator.state == TurnState.IDLE
+    
+    orchestrator.state = TurnState.WAKE
+    await orchestrator.run_turn()
+    assert orchestrator.state == TurnState.IDLE
+    
+    calls = orchestrator.audio_queue.emit.call_args_list
+    assert len(calls) == 4
+    assert calls[0].args == (AudioPriority.FILLER, frame_wake)
+    assert calls[1].args == (AudioPriority.FILLER, frame_model_err)
+    assert calls[2].args == (AudioPriority.FILLER, frame_wake)
+    assert calls[3].args == (AudioPriority.FILLER, frame_tool_err)

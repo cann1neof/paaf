@@ -13,6 +13,13 @@ from paaf_session.behaviors import BehaviorTable
 
 logger = logging.getLogger(__name__)
 
+
+class ModelUnavailableError(Exception):
+    pass
+
+class ToolError(Exception):
+    pass
+
 class BargeInInterrupt(Exception):
     pass
 
