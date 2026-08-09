@@ -11,6 +11,9 @@ from paaf_voice.aggregator import SentenceAggregator
 
 logger = logging.getLogger(__name__)
 
+class BargeInInterrupt(Exception):
+    pass
+
 class TurnState(Enum):
     IDLE = auto()
     WAKE = auto()
@@ -81,7 +84,8 @@ class TurnOrchestrator:
     async def run_turn(self, initial_timeout: float | None = None) -> None:
         """Run the end-to-end turn loop."""
         timeout = initial_timeout
-        self.state = TurnState.WAKE
+        if self.state == TurnState.IDLE:
+            self.state = TurnState.WAKE
         
         while self.state != TurnState.IDLE:
             if self.state == TurnState.WAKE:
@@ -102,10 +106,29 @@ class TurnOrchestrator:
                 self.state = TurnState.SPEAK
 
             elif self.state == TurnState.SPEAK:
-                await self._think_and_speak(self._last_transcription)
-                # D-04: Transition back to CAPTURE after SPEAK with a follow-up timeout
-                self.state = TurnState.CAPTURE
-                timeout = self.follow_up_timeout
+                monitor_task = None
+                interrupt_detected = False
+                try:
+                    async with asyncio.TaskGroup() as tg:
+                        monitor_task = tg.create_task(self._monitor_interrupt())
+                        
+                        async def speak_and_cancel():
+                            await self._think_and_speak(self._last_transcription)
+                            monitor_task.cancel()
+                            
+                        tg.create_task(speak_and_cancel())
+                except* BargeInInterrupt:
+                    interrupt_detected = True
+                except* asyncio.CancelledError:
+                    pass
+
+                if interrupt_detected:
+                    self.state = TurnState.CAPTURE
+                    timeout = None
+                else:
+                    # D-04: Transition back to CAPTURE after SPEAK with a follow-up timeout
+                    self.state = TurnState.CAPTURE
+                    timeout = self.follow_up_timeout
 
     async def _capture_and_transcribe(self, timeout: float | None) -> str:
         """Capture audio and run STT, respecting the timeout."""
@@ -158,3 +181,9 @@ class TurnOrchestrator:
                     
         await sentence_generator()
 
+    async def _monitor_interrupt(self) -> None:
+        """Monitor audio input during playback for interruptions."""
+        stream = self.source.read_frames(frame_duration_ms=20)
+        async for result in self.stt.transcribe_stream(stream):
+            if result.text.strip():
+                raise BargeInInterrupt()
