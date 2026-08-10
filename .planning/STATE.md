@@ -5,12 +5,12 @@ milestone_name: milestone
 current_phase: 10
 current_phase_name: The Appliance
 status: planning
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-08-09T15:56:17.759Z"
+stopped_at: Phase 09.1 context gathered
+last_updated: "2026-08-10T08:33:00.042Z"
 last_activity: 2026-08-09
 last_activity_desc: Phase 09 execution started
 progress:
-  total_phases: 9
+  total_phases: 11
   completed_phases: 9
   total_plans: 61
   completed_plans: 61
@@ -118,6 +118,7 @@ None.
 ### Roadmap Evolution
 
 - Phase 4 completed: Agent Mesh (LLM-driven handoff with observer constraints and trace auditability).
+- Phase 9.1 inserted after Phase 9: Restructure project folders and publish framework to PyPI (URGENT)
 
 ## Deferred Items
 
@@ -129,6 +130,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-09T15:52:07.184Z
-Stopped at: Completed 09-03-PLAN.md
-Resume file: None
+Last session: 2026-08-10T08:33:00.020Z
+Stopped at: Phase 09.1 context gathered
+Resume file: /Users/alexanderikonnikov/Documents/repos/paaf/.planning/phases/09.1-restructure-project-folders-and-publish-framework-to-pypi/09.1-CONTEXT.md
