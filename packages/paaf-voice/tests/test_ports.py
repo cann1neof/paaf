@@ -70,6 +70,12 @@ def test_runtime_checkable_protocols():
         def get_reference_tap(self) -> bytes:
             return b""
 
+        def mark_chunk(self, text: str) -> None:
+            pass
+
+        def get_played_chunks(self) -> list[str]:
+            return []
+
     class DummySource:
         async def read_frames(self, frame_duration_ms: int = 20):
             yield AudioFrame(data=b"")

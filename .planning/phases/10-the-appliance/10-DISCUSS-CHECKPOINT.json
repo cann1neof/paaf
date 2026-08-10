@@ -1,0 +1,53 @@
+{
+  "phase": "10",
+  "phase_name": "The Appliance",
+  "timestamp": "2026-08-10T10:08:00+03:00",
+  "areas_completed": ["Web server integration"],
+  "areas_remaining": ["Pairing PIN presentation", "GPIO abstraction", "Config hot-reloading"],
+  "decisions": {
+    "Web server integration": [
+      {
+        "question": "Which async web framework should we use for the REST and WebSocket APIs?",
+        "answer": "(Recommended) aiohttp (Lightweight, plays very well with raw asyncio which paaf-session uses)",
+        "options_presented": [
+          "(Recommended) aiohttp (Lightweight, plays very well with raw asyncio which paaf-session uses)",
+          "FastAPI / uvicorn (Standard, but might be overkill and heavier for an embedded appliance)",
+          "You decide"
+        ]
+      },
+      {
+        "question": "How should the web server run alongside the `paaf-session` turn loop?",
+        "answer": "(Recommended) Run aiohttp's AppRunner inside an asyncio.Task in the same event loop (shares state easily)",
+        "options_presented": [
+          "(Recommended) Run aiohttp's AppRunner inside an asyncio.Task in the same event loop (shares state easily)",
+          "Run aiohttp in a separate thread (harder to share asyncio state, requires thread-safe queues)",
+          "You decide"
+        ]
+      },
+      {
+        "question": "How should the WebSocket text chat channel (APP-03) interact with the voice loop?",
+        "answer": "(Recommended) Text inputs are treated as synthetic voice barge-ins (interrupts current audio, resets state, processes text as next turn)",
+        "options_presented": [
+          "(Recommended) Text inputs are treated as synthetic voice barge-ins (interrupts current audio, resets state, processes text as next turn)",
+          "Text inputs queue up and wait until the assistant is idle (does not interrupt speaking)",
+          "You decide"
+        ]
+      },
+      {
+        "question": "How should we enforce the LAN-only restriction for the API (APP-04)?",
+        "answer": "Bind to 0.0.0.0 and assume the router firewall protects the LAN (no application-level checks)",
+        "options_presented": [
+          "(Recommended) Reject requests whose `Origin` or `Host` header is not a private IP or `.local` (protects against DNS rebinding)",
+          "Bind to 0.0.0.0 and assume the router firewall protects the LAN (no application-level checks)",
+          "Bind strictly to the local network IP (e.g. 192.168.x.x) instead of 0.0.0.0",
+          "You decide"
+        ]
+      }
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": [
+    ".planning/ROADMAP.md",
+    ".planning/REQUIREMENTS.md"
+  ]
+}

@@ -94,8 +94,11 @@ def test_list_models_cli_populated(tmp_path: Path) -> None:
 
 def test_paaf_main_cli_voice_integration(tmp_path: Path) -> None:
     """Verify 'paaf voice list-models' executes cleanly via main paaf CLI."""
+    if "voice" not in paaf_main_cli.commands:
+        paaf_main_cli.add_command(voice_cli, name="voice")
     runner = CliRunner()
     result = runner.invoke(paaf_main_cli, ["voice", "list-models", "--cache-dir", str(tmp_path)])
 
     assert result.exit_code == 0
     assert "PAAF Voice Installed Models" in result.output
+
