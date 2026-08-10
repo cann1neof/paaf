@@ -99,6 +99,10 @@ Import boundary enforcement is verified by negative control test files in `tests
 - `tests/negcontrol/test_langchain_leak.py` — Verifies `langchain` types cannot leak outside `paaf_llm._engine`.
 - `tests/negcontrol/test_network_client_leak.py` — Verifies network client libraries (`httpx`, `requests`) are blocked in core packages.
 
+## Coverage Requirements
+
+No coverage threshold configured.
+
 ## CI Integration
 
 Continuous Integration is configured via `.github/workflows/ci.yml`:
