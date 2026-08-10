@@ -331,6 +331,17 @@ Plans:
 
 **UI hint**: no
 
+### Phase 09.1: Restructure project folders and publish framework to PyPI (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 09.1 to break down)
+
 ### Phase 10: The Appliance
 
 **Goal**: One Linux process that owns the session's lifecycle, announces itself on the LAN, reloads config without restarting, and can prove it is offline.
