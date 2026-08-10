@@ -1,15 +1,13 @@
 ---
-phase: 9
+phase: 09
 slug: paaf-session
-# status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
-# audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-09
 ---
 
-# Phase 9 — Validation Strategy
+# Phase 09 — Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
 
@@ -19,18 +17,18 @@ created: 2026-08-09
 
 | Property | Value |
 |----------|-------|
-| **Framework** | {pytest 7.x / jest 29.x / vitest / go test / other} |
-| **Config file** | {path or "none — Wave 0 installs"} |
-| **Quick run command** | `{quick command}` |
-| **Full suite command** | `{full command}` |
-| **Estimated runtime** | ~9 seconds |
+| **Framework** | pytest 9.x |
+| **Config file** | pyproject.toml |
+| **Quick run command** | `uv run pytest packages/paaf-session/tests/test_state_machine.py` |
+| **Full suite command** | `uv run pytest packages/paaf-session/tests` |
+| **Estimated runtime** | ~1.5 seconds |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `{quick run command}`
-- **After every plan wave:** Run `{full suite command}`
+- **After every task commit:** Run quick run command
+- **After every plan wave:** Run full suite command
 - **Before `/gsd-verify-work`:** Full suite must be green
 - **Max feedback latency:** 9 seconds
 
@@ -40,7 +38,14 @@ created: 2026-08-09
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 9-01-01 | 01 | 1 | REQ-{XX} | T-9-01 / — | {expected secure behavior or "N/A"} | unit | `{command}` | ✅ / ❌ W0 | ⬜ pending |
+| 09-01-01 | 01 | 1 | SESS-01, SESS-08 | T-09-01 | Enforce timeout boundary | unit | `uv run pytest packages/paaf-session/tests/test_state_machine.py -k test_happy_path_turn_loop` | ✅ | ✅ green |
+| 09-01-02 | 01 | 1 | SESS-02 | — | N/A | unit | `uv run pytest packages/paaf-session/tests/test_state_machine.py -k test_streaming_tts_starts_early` | ✅ | ✅ green |
+| 09-01-03 | 01 | 1 | SESS-09 | — | N/A | unit | `uv run pytest packages/paaf-session/tests/test_state_machine.py -k test_follow_up_window_timeout` | ✅ | ✅ green |
+| 09-02-01 | 02 | 2 | SESS-03 | — | N/A | unit | `uv run pytest packages/paaf-session/tests/test_barge_in.py -k test_barge_in_cancellation` | ✅ | ✅ green |
+| 09-02-02 | 02 | 2 | SESS-04 | T-09-02 | Safe truncation | unit | `uv run pytest packages/paaf-session/tests/test_barge_in.py -k test_history_truncation` | ✅ | ✅ green |
+| 09-03-01 | 03 | 3 | SESS-05 | — | N/A | unit | `uv run pytest packages/paaf-session/tests/test_audio_arbitration.py` | ✅ | ✅ green |
+| 09-03-02 | 03 | 3 | SESS-06 | T-09-03 | declarative execution | unit | `uv run pytest packages/paaf-session/tests/test_behaviors.py -k test_timeout_escalation` | ✅ | ✅ green |
+| 09-03-03 | 03 | 3 | SESS-07 | — | N/A | unit | `uv run pytest packages/paaf-session/tests/test_behaviors.py -k test_error_wake_behaviors` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -48,31 +53,32 @@ created: 2026-08-09
 
 ## Wave 0 Requirements
 
-- [ ] `{tests/test_file.py}` — stubs for REQ-{XX}
-- [ ] `{tests/conftest.py}` — shared fixtures
-- [ ] `{framework install}` — if no framework detected
-
-*If none: "Existing infrastructure covers all phase requirements."*
+Existing infrastructure covers all phase requirements.
 
 ---
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| {behavior} | REQ-{XX} | {reason} | {steps} |
-
-*If none: "All phase behaviors have automated verification."*
+All phase behaviors have automated verification.
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 9s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 9s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** {pending / approved YYYY-MM-DD}
+**Approval:** approved 2026-08-10
+
+---
+
+## Validation Audit 2026-08-10
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
